@@ -1,0 +1,33 @@
+#!/bin/sh
+# Run the drift checker's self-test before anything leaves the machine.
+#
+# Enable once per clone, the same setting that turns on the pre-commit guard:
+#     git config core.hooksPath hooks
+#
+# Opt out for one push:   SKIP_SELFTEST=1 git push
+if [ -n "${SKIP_SELFTEST:-}" ]; then
+    echo "test-doc-drift: skipped (SKIP_SELFTEST set)" >&2
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# Git exports these to hooks. The self-test builds throwaway repositories, and
+# an inherited GIT_DIR would point those commands at this one instead.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+
+if [ ! -f test-doc-drift.py ]; then
+    echo "test-doc-drift: test-doc-drift.py is missing from the repository root." >&2
+    echo "  Restore it, or bypass with: SKIP_SELFTEST=1 git push" >&2
+    exit 1
+fi
+
+if command -v python >/dev/null 2>&1; then PY=python
+elif command -v python3 >/dev/null 2>&1; then PY=python3
+else
+    echo "test-doc-drift: no python on PATH." >&2
+    echo "  Install python, or bypass with: SKIP_SELFTEST=1 git push" >&2
+    exit 1
+fi
+
+exec "$PY" test-doc-drift.py
