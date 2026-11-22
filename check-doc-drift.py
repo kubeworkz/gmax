@@ -8,7 +8,7 @@ Checks four things and exits 1 on any failure, so it can gate a commit:
     3. ids-defined    every WP-nnn / Gx.y cited in any of the three documents is
                       defined in the plan, and every D-DIAG-* id cited anywhere is
                       defined in the diagnosis protocol
-    4. ids-unique     no work-package or gate id is defined twice
+    4. ids-unique     no work-package, gate or D-DIAG id is defined twice
 
 Two sources of truth, picked by flag:
 
@@ -140,7 +140,8 @@ else:
 # 3. no citation of an id that does not exist
 wp_defs = package_defs(plan)
 g_defs = gate_defs(plan)
-defined = set(wp_defs) | set(g_defs) | set(diag_defs(diag))
+d_defs = diag_defs(diag)
+defined = set(wp_defs) | set(g_defs) | set(d_defs)
 cited = {}
 for path, text in ((PLAN, plan), (ARCH, arch), (DIAG, diag)):
     for hit in re.finditer(r"WP-\d{3}\b|G\d+\.\d+\b|D-DIAG(?:-[A-Z]+)*-\d+\b", text):
@@ -152,7 +153,7 @@ report("ids-defined", not dangling, "" if not dangling else
        ", ".join("%s (%s)" % (t, "+".join(sorted(cited[t]))) for t in dangling))
 
 # 4. no id defined twice, which would let 3 pass against the wrong row
-all_ids = wp_defs + g_defs
+all_ids = wp_defs + g_defs + d_defs
 dupes = sorted({i for i in all_ids if all_ids.count(i) > 1})
 report("ids-unique", not dupes, "" if not dupes else ", ".join(dupes))
 
