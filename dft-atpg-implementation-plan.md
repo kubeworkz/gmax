@@ -1,7 +1,8 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.1 for review; not committed.
+**Status:** Draft v0.2 for review; not committed — supersedes v0.1, which carried Phase 5 as a candidate appendix.
 **Date:** 2026-11-22
+**Revision:** v0.2, 2026-11-22 — Phase 5 promoted to a scheduled phase; what moved and the plan hash are recorded in section 15.1.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
 **Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at commit `cbaae93`, blob `9e87feffad9341f4f152c9ee2264a8af9af9ba87`.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
@@ -16,7 +17,9 @@ Rules of precedence:
 
 - Where this plan and the architecture disagree, the **architecture wins** and this plan is corrected.
 - The plan may **not** add scope to v1. Anything not in the architecture is not in this plan; new scope needs an architecture change and a new plan revision.
-- The plan may make execution choices the architecture leaves open (sequencing, team split, which package is built first). Those are listed in section 14, not buried in the phase tables.
+- The plan may make execution choices the architecture leaves open (sequencing, team split, which package is built first). Those are listed in section 15, not buried in the phase tables.
+
+Phase 5 (section 8) is scheduled in this document but sits outside v1 and outside the 24-month baseline. Sequencing it here makes the work visible; it does not authorise it to start. Its scope enters the architecture first, under the revision in 8.1, and no package in it may begin before that revision is recorded.
 
 Estimate accuracy is **±30%** at this stage (AACE class 4). Estimates are engineer-weeks (ew) of direct work, excluding holidays, reviews, and gate administration. They are not dates. The four largest and least precedent-bound estimates are pressure-tested in Appendix C.
 
@@ -43,7 +46,7 @@ Package states: `planned` → `active` → `merged` → `gate-evidenced`. A pack
 
 ### 1.2 Capacity basis
 
-Capacity is FTE × working weeks for the phase, from the architecture's staffing table. The plan does **not** re-derive headcount. Role mix is checked per phase, not just phase totals; section 11.1 records the audit and what it changed.
+Capacity is FTE × working weeks for the phase, from the architecture's staffing table. The plan does **not** re-derive headcount. Role mix is checked per phase, not just phase totals; section 12.1 records the audit and what it changed.
 
 | Phase | Months | Weeks | FTE | Capacity (ew) | Planned effort (ew) | Load |
 |---|---|---|---|---|---|---|
@@ -52,26 +55,28 @@ Capacity is FTE × working weeks for the phase, from the architecture's staffing
 | P2 — Production stuck-at | 6–9 | 17 | 11 | 187 | 166 | 89% |
 | P3 — Transition and diagnosis | 10–15 | 26 | 11 | 286 | 186 | 65% |
 | P4 — Scale and AI | 16–24 | 39 | 11 | 429 | 314 | 73% |
-| **Total** | **0–24** | **105** | — | **1066** | **817** | **77%** |
+| **Baseline total (M0–M24)** | **0–24** | **105** | — | **1066** | **817** | **77%** |
+| P5 — Boundary scan and memory BIST | 25–33 | 39 | 6.0 | 234 | 142 | 61% |
+| **Programme total (M0–M33)** | **0–33** | **144** | — | **1300** | **959** | **74%** |
 
-The 249 ew difference is **phase reserve**, not unallocated staff. It is spent on parity and accuracy re-runs, gate shortfalls, and defect work arriving from real blocks. A parity or accuracy re-run costs one to three weeks of the whole team and produces no code, which is why P3 and P4 show the most reserve.
+The 249 ew difference is **phase reserve**, not unallocated staff. It is spent on parity and accuracy re-runs, gate shortfalls, and defect work arriving from real blocks. A parity or accuracy re-run costs one to three weeks of the whole team and produces no code, which is why P3 and P4 show the most reserve. Phase 5's 92 ew reserve sits inside its own 234 ew line and is not available to P0–P4.
 
 The reserve is **not** funding for the 8–12 engineer-year maturity gap the architecture names in section 17.3. Path delay, cell-aware, and compression IP maturity remain outside this plan (Appendix A).
 
 ### 1.3 Phase gate protocol
 
-Phase gates are hard (architecture 17.1). A phase starts when the previous gate is **met**, or **waived in writing** with a named risk acceptance, approved by the authority section 14 names for that class — the architecture owner for a narrowed criterion or a late capability, the PM for a release limitation. The DFT lead chairs the review and signs the decision; chairing a gate is not approval authority over an architecture-scope gap. "Calendar says so" is not an entry condition.
+Phase gates are hard (architecture 17.1). A phase starts when the previous gate is **met**, or **waived in writing** with a named risk acceptance, approved by the authority section 15 names for that class — the architecture owner for a narrowed criterion or a late capability, the PM for a release limitation. The DFT lead chairs the review and signs the decision; chairing a gate is not approval authority over an architecture-scope gap. "Calendar says so" is not an entry condition.
 
 Each gate review produces a gate pack:
 
-1. The gate criterion table for that phase (section 9) marked met / not met / waived.
+1. The gate criterion table for that phase (section 10) marked met / not met / waived.
 2. The evidence artifacts, by path and hash.
 3. Open defects with severity and owner.
 4. Parity ledger state, if the phase has one.
 5. A one-page decision: **go / go-with-waivers / stop**, signed by DFT lead, architect, and verification lead — and by the PM at the release gate, where the production sign-off sits.
-6. Where a criterion names a set, the set as it stood at the gate. G1.2's rule list has no other authoritative record, so the pack carries it, with each removal attributed to the contingency that made it and the approval that allowed it. The parity block sets in G2.4, G3.1 and G4.5 need the same treatment for a different reason: the ledger is indexed by difference, so a block with no differences leaves no entry, and the ledger alone cannot prove that three blocks were compared. The pack carries the block list with each block's profile hash. The waiver sets behind every criterion that cites a waiver audit — G1.2, G2.9, G4.1 and G4.3 — do have one, the waiver file, so the pack carries the file hash, its count and the audit result: every entry with an owner and an expiry, none expired. Engineering waivers take no separate approver by design (section 14); pinning the hash is what makes the file's contents the gate's evidence rather than a later reconstruction. Criteria whose set is already pinned by hash — G3.3's corpus, G4.6's manifest, G1.1's fault list — need only that pinned artifact, which item 2 already carries.
+6. Where a criterion names a set, the set as it stood at the gate. G1.2's rule list has no other authoritative record, so the pack carries it, with each removal attributed to the contingency that made it and the approval that allowed it. The parity block sets in G2.4, G3.1 and G4.5 need the same treatment for a different reason: the ledger is indexed by difference, so a block with no differences leaves no entry, and the ledger alone cannot prove that three blocks were compared. The pack carries the block list with each block's profile hash. The waiver sets behind every criterion that cites a waiver audit — G1.2, G2.9, G4.1 and G4.3 — do have one, the waiver file, so the pack carries the file hash, its count and the audit result: every entry with an owner and an expiry, none expired. Engineering waivers take no separate approver by design (section 15); pinning the hash is what makes the file's contents the gate's evidence rather than a later reconstruction. Criteria whose set is already pinned by hash — G3.3's corpus, G4.6's manifest, G1.1's fault list — need only that pinned artifact, which item 2 already carries.
 
-A gate waiver without an owner, a reason, an expiry date, a written risk acceptance, and an approver under section 14 is not a waiver.
+A gate waiver without an owner, a reason, an expiry date, a written risk acceptance, and an approver under section 15 is not a waiver.
 
 ### 1.4 Definition of done
 
@@ -98,6 +103,7 @@ build/CI → DB → {Liberty, Yosys} → fault list → {PODEM, fault sim} → S
   → grouped capture → compression → parity harness → 3-block parity → 1 M scale                    [G2]
   → two-timeframe transition → transition parity → chain diagnosis → diagnosis benchmark           [G3]
   → full chip → runtime parity → second chip → shadow AI → silicon correlation → release qualification [G4]
+  → boundary scan → memory BIST → BSDL and BIST vectors                                   [G5]
 ```
 
 The chain is not parallelizable at its ends. Two consequences drive the schedule:
@@ -118,14 +124,14 @@ Each overlap is a start date, not a second cost: the early work is drawn from th
 
 ### 2.2 Schedule-critical external inputs
 
-These are not engineering work and cannot be recovered by working harder: **G100 bring-up block freeze**, **TMAX version/license/scripts**, **libraries with `test_cell`**, **scan spec**, **SDC clock intent**. Section 12 maps each to the packages it blocks.
+These are not engineering work and cannot be recovered by working harder: **G100 bring-up block freeze**, **TMAX version/license/scripts**, **libraries with `test_cell`**, **scan spec**, **SDC clock intent**. Section 13 maps each to the packages it blocks.
 
 ---
 
 ## 3. Phase 0 — Foundation (M0–M2)
 
 **Architecture exit gate:** 100% coverage on ISCAS'85 c432/c499; SAT smoke test passes; deterministic hashes; no sanitizer failures.
-**Expanded gate:** G0.1–G0.7 (section 9). **Demo:** M1.
+**Expanded gate:** G0.1–G0.7 (section 10). **Demo:** M1.
 
 | ID | Work package | Deliverables | ew | Depends on | Owner |
 |---|---|---|---|---|---|
@@ -146,7 +152,7 @@ These are not engineering work and cannot be recovered by working harder: **G100
 
 **Deliberately out of P0:** PPSFP, FAN, dynamic compaction, STIL, full equivalence/dominance collapsing with SAT proofs, ISCAS'89. Each moves to P1 or P2 and is listed there. P0 runs at 58/60 (97%); anything added must still displace something.
 
-**Ownership follows competency, not headcount.** Liberty/`test_cell` handling and fault-list generation are DFT intake work; the scalar four-state model is verification's independent oracle for the vectorized engine; the command schema is an architectural contract. Section 11.1 is what forced those assignments to be explicit.
+**Ownership follows competency, not headcount.** Liberty/`test_cell` handling and fault-list generation are DFT intake work; the scalar four-state model is verification's independent oracle for the vectorized engine; the command schema is an architectural contract. Section 12.1 is what forced those assignments to be explicit.
 
 **P0 risks**
 
@@ -257,7 +263,7 @@ These are not engineering work and cannot be recovered by working harder: **G100
 
 | ID | Work package | Deliverables | ew | Depends on | Owner |
 |---|---|---|---|---|---|
-| WP-401 | Full-chip runs | grx930 and G100 top level, 64-thread runs, runtime and memory within the section 15.1 budgets; domain partitioning fallback above 32 GB, checkpoint/restart at 10 M gates, abort triage on both chips | 36 | G3 | ATPG |
+| WP-401 | Full-chip runs | grx930 and G100 top level, 64-thread runs, runtime and memory within the architecture 15.1 budgets; domain partitioning fallback above 32 GB, checkpoint/restart at 10 M gates, abort triage on both chips | 36 | G3 | ATPG |
 | WP-402 | Runtime to parity | 64-thread profiling, hot-path work, SAT call reduction, ≤ 1.0× TMAX target | 24 | WP-401 | ATPG |
 | WP-403 | Second chip profile | Profile, intake audit, bring-up, library-gap closure, and the 16.5 acceptance evidence for that chip | 28 | WP-401 | DFT |
 | WP-404 | Fault difficulty classifier | Training pipeline, model registry with hashes, ONNX inference; features and dataset come from WP-314 | 6 | WP-314 | ML |
@@ -287,18 +293,144 @@ These are not engineering work and cannot be recovered by working harder: **G100
 
 **Notes**
 
-- **Scope was corrected, not the roster.** Three acceptance items in architecture 16.5 had no package and two packages were costed at block scale; section 11.1 carries the before and after. The roster is unchanged because the phase contains two tape-out and silicon cycles where the constraint is calendar, not effort.
+- **Scope was corrected, not the roster.** Three acceptance items in architecture 16.5 had no package and two packages were costed at block scale; section 12.1 carries the before and after. The roster is unchanged because the phase contains two tape-out and silicon cycles where the constraint is calendar, not effort.
 - WP-404 through WP-407 are gated by shadow evidence, not by model quality claims. Disabling the model must restore the deterministic baseline **byte-identically**; that test is part of WP-405's definition of done.
 - WP-408 is an experiment with an explicit stop. The CPU engine remains the reference implementation (architecture 10.5).
 - WP-409 is the only package that requires silicon. Its schedule is calendar-bound, which is why P4 carries the largest reserve.
 
 ---
 
-## 8. Cross-cutting workstreams
+## 8. Phase 5 — Boundary scan and memory BIST (M25–M33)
+
+**Exit gate:** G5.1–G5.6 on both chips' test designs; BSDL and BIST vectors accepted by the board and ATE teams. **Expanded gate:** G5.1–G5.6. **Demo:** M6.
+
+**Standing.** Phase 5 is scheduled and resourced in this plan: it has its own capacity line in section 1.2, a milestone at M33, packages WP-501–WP-516 and a gate family in section 10. It is not part of the 24-month baseline. The baseline stays at 817 ew against 1066 ew and no P0–P4 package, gate or date moves because of it — the phase is funded from a separate 234 ew line that begins after M24.
+
+Its scope is not yet in the architecture. Section 2.2 still lists memory BIST and boundary scan as non-goals, and section 21 has no rows for either. Section 0 forbids this plan from adding scope ahead of the architecture, so the phase is scheduled but **not startable**: no WP-501–WP-516 work begins until the architecture revision lands. It appears here so the work is costed, sequenced and gated rather than rediscovered in month 25. If the revision is refused, this section is withdrawn without touching the baseline and both capabilities return to Appendix A.
+
+**Architecture revision required before start.** Section 2.2 removes memory BIST and boundary scan from the non-goals; section 21 gains boundary-scan, memory-BIST and memory-coverage rows; 9.1 gains `MEMORY_ARRAY` as a named exclusion reason; 17.1 splits its coverage row into a logic row and a memory row with no cross-comparison, for the reason set out in 8.5. The revision is ARCH 6 ew, carried in this phase's total and not in P0–P4.
+
+### 8.1 Entry conditions
+
+- Architecture revision complete as above, and this revision recorded under section 15.1.
+- TBD-13 package/bond map (die pad → package pin). Without it BSR ordering is guesswork and EXTEST has no pin reference.
+- TBD-14 SRAM behavioural models with defect injection, replacing `BLACKBOX` for memory instances.
+- TBD-15 SRAM redundancy and eFuse specification. Without it WP-514 analyses repair but emits nothing programmable.
+- TBD-16 board/interconnect model for EXTEST vector proof.
+- One reporting rule, specified in 8.5: memory coverage is its own column and never enters the logic parity ledger.
+- TBD-13 through TBD-16 are registered in section 13 with an M25 needed-by date. They are not P0–P4 inputs, and the baseline's critical-inputs list does not depend on them.
+
+### 8.2 Boundary scan — 56 ew
+
+The TestMAX DFT / BSD Compiler equivalent: 1149.1 insertion, TAP, BSDL and interconnect vectors. 1149.6 is not included; it adds approximately 8 ew if the board requires AC-coupled testing.
+
+| ID | Work package | Deliverables | ew | Depends on | Owner |
+|---|---|---|---|---|---|
+| WP-501 | Boundary-scan cells and BSR insertion | 1149.1 cell variants, BSR ordering across pads and package pins, boundary-cell type in the DB, package/pad map intake | 10 | TBD-13 | DFT |
+| WP-502 | TAP and instruction register | TAP FSM, IR plus IDCODE/BYPASS/EXTEST/SAMPLE/PRELOAD, optional INTEST/CLAMP/HIGHZ, test-mode pin model | 12 | WP-501 | DFT |
+| WP-503 | BSDL writer and validator | 1149.1 BSDL text, package map, attribute set, lint and round-trip parse before release | 10 | WP-502 | FE |
+| WP-504 | Boundary-scan vectors | EXTEST interconnect and SAMPLE/PRELOAD on the existing pattern IR, STIL/WGL output, board-model constraints | 10 | WP-502 | DFT |
+| WP-505 | Boundary-scan DRC | TAP pin conflicts, BSR reachability, chain integrity, instruction coverage, the WP-103 waiver mechanism | 6 | WP-501 | DFT |
+| WP-506 | Boundary-scan verification | TAP FSM and EXTEST simulation, BSDL validation, injected board opens/shorts, comparison against BSD Compiler on a test design | 8 | WP-503–WP-505 | VER |
+
+### 8.3 Memory BIST — 76 ew
+
+The TestMAX SMS equivalent: SRAM intake, collars, March engine, repair and integration. This is the larger risk of the two: it needs models the program does not currently consume, and there is no silicon on this program to confirm it.
+
+| ID | Work package | Deliverables | ew | Depends on | Owner |
+|---|---|---|---|---|---|
+| WP-511 | SRAM intake and memory fault models | Memory instances leave `BLACKBOX`; behavioural models, SAF/transition/coupling/word-line fault classes, per-macro metadata | 10 | TBD-14 | DFT |
+| WP-512 | Collar and wrapper generation | Address/data/control muxing, comparator, pipeline, functional-mode bypass, clock/reset handling, BIST-mode pin model; reports the collar gate count per macro that 8.5 needs | 16 | WP-511 | DFT |
+| WP-513 | March engine and BIST controller | March C-/MATS+ and programmable sequences, address/data generation, signature, controller RTL | 20 | WP-512 | DFT |
+| WP-514 | Repair analysis | Row/column redundancy analysis, BIRA, fuse/signature output | 12 | WP-513, TBD-15 | DFT |
+| WP-515 | BIST integration and mode DRC | BIST bypass in scan, test-mode pin conflicts, memory coverage accounting separate from logic coverage, report changes | 8 | WP-513, WP-514 | DFT |
+| WP-516 | BIST verification and ATE vectors | Defect-injected model runs, March coverage, BIST-mode ATE vectors, post-insertion parity re-run on one block (8.5), warning closure | 10 | WP-515 | VER 6 / ATE 4 |
+
+**Phase total: 132 ew** (range 92–172 at ±30%). With gate and decision overhead — ARCH 6 for the architecture revision and gate packs, PM 4 — the phase plans **142 ew** against its 234 ew line, leaving 92 ew of phase reserve.
+
+### 8.4 Role load
+
+The phase carries its own roster for 39 weeks: 3.0 DFT, 1.0 VER, 0.5 FE, 0.5 ATE, 0.5 ARCH, 0.5 PM — 6.0 FTE. No role among the baseline's eleven changes, and no baseline capacity is consumed. Role capacities are taken from section 12.1 as printed, so the audit and this table use the same numbers.
+
+| Role | FTE | Capacity (ew) | Demand (ew) | Load |
+|---|---|---|---|---|
+| DFT | 3.0 | 117 | 104 | 89% |
+| VER | 1.0 | 39 | 14 | 36% |
+| FE | 0.5 | 19.5 | 10 | 51% |
+| ATE | 0.5 | 19.5 | 4 | 21% |
+| ARCH | 0.5 | 19.5 | 6 | 31% |
+| PM | 0.5 | 19.5 | 4 | 21% |
+| **Total** | **6.0** | **234** | **142** | **61%** |
+
+Every role is under 110% with margin. DFT is the tightest at 89%, and the 11 ew of slack there is the phase reserve, not a second project.
+
+**Why the phase is not absorbed into P0–P4.** The alternative was tested and rejected on the role rule, not on the aggregate. Absorbing 142 ew into the existing 1066 would land at 959/1066 — 90% aggregate, which looks acceptable — but DFT's share is 104 ew against a 44 ew reserve, and the role rule is per role:
+
+| Role | P0–P4 demand / capacity | With Phase 5 work | Load |
+|---|---|---|---|
+| ARCH | 37 / 105 | 43 / 105 | 41% |
+| ATPG | 286 / 292 | 286 / 292 | 98% |
+| DFT | 186 / 230 | 290 / 230 | **126%** |
+| VER | 175 / 187 | 189 / 187 | 101% |
+| FE | 48 / 105 | 58 / 105 | 55% |
+| ML | 44 / 65 | 44 / 65 | 68% |
+| ATE | 31 / 43.5 | 35 / 43.5 | 80% |
+| PM | 10 / 41 | 14 / 41 | 34% |
+| **Total** | **817 / 1066** | **959 / 1066** | **90%** |
+
+DFT lands at 126%, a 60 ew gap: roughly one additional DFT engineer from P2 through P4, which changes the roster the architecture fixes at 11. Section 12.1 records the same finding. Absorption is therefore available only as a staffing decision, and this phase is the version that needs no such decision.
+
+### 8.5 Effect on G2.1: the coverage denominator
+
+G2.1 measures one pool today. Architecture 9.9 defines testable coverage as `detected ÷ (detected + not_detected + aborted)`, and 9.1 fixes the fault sites: gate inputs and outputs, primary inputs and outputs, scan-cell data inputs and outputs, and chain segments, with black-box internals excluded by reason code. Memory macros are `BLACKBOX` (architecture 6.2), so their internals contribute no sites at all. The denominator G2.1 has been comparing against TMAX is logic-only **because there is no memory in it**, not because a rule keeps memory out — the reporting rule in 8.1 has nothing to enforce until arrays leave black box.
+
+Memory BIST breaks that by accident of structure, in three places that must not land in the same bucket.
+
+| Pool | Contents | Sites, illustrative 1 M-gate block with 24 macros | Detected by | TMAX-comparable |
+|---|---|---|---|---|
+| Logic `D_L` | gates, PIs/POs, scan cells, plus collar muxes, comparators, March controller and BIRA once inserted | 2.00 M → 2.03 M (+2–3%) | scan ATPG | yes, on an identical netlist |
+| Memory `D_M` | bit cells, word lines, decoders, sense amps — SAF, transition and coupling classes per WP-511 | 0 → 3.15 M (24 × 65,536 × 2) | March signature through the collar | no — TMAX has no sites for them |
+| Pooled | both, as one number | 5.18 M | neither mechanism alone | no |
+
+The collar count is the one figure the plan does not have yet: 1–1.5 k gates per mid-size macro, and WP-512 must report the real number out of the DB. The memory count is arithmetic on a stated macro geometry, not a design measurement; it is here to show the ratio, because the ratio is what decides the wording.
+
+**Why the two pools are never summed.** Take the illustration at face value: 99.5% of 2.03 M logic and 95% of 3.15 M memory is 5.01 M of 5.18 M — **96.8%**, a number worse than either input and descriptive of neither. Reverse the March figure to 99% and the pooled result is **99.2%**: inside G2.1's 0.5 pt band, passing, while 31 k memory faults are unreported as memory faults. Pooling is not conservative or aggressive; it is uninterpretable in both directions, and it destroys the TMAX comparison because TMAX supplies a denominator for only one of the two pools.
+
+**The netlist-identity problem is the sharper one.** 17.1 accepts a coverage comparison only when both tools ran the same netlist, fault list, constraints, chain count and options. The three P2 parity blocks are graded pre-insertion. Inserting collars changes the netlist hash and adds 2–3% to the denominator, so a post-insertion GMAX run compared with a pre-insertion TMAX run is not a 0.5 pt comparison — it is two unrelated numbers that happen to sit near each other. The phase takes the first reading: both tools re-run on the post-insertion netlist for one block, reusing the WP-205 harness, which is why WP-516 carries that re-run in its VER share. If it overruns, WP-516 and the phase total move by the overrun; the requirement is not dropped.
+
+**Gate wording this phase inherits.** G2.1 and G2.4 are restated as follows when the architecture revision lands. The rows below are what section 10 will carry; they are not in force until then, and the P2 gate is measured against the current wording in the meantime.
+
+*G2.1, as written:* `Testable coverage | ≥ 99.5% and within 0.5 pt of TMAX | coverage + ledger | VER`
+
+*G2.1, restated:* `Logic testable coverage | On the post-insertion netlist, over architecture 9.1's fault sites with collar and BIST-controller logic included: ≥ 99.5%, and within 0.5 pt of TMAX on the identical netlist, fault list, constraints, chain count and options, both hashes recorded. SRAM array internals are excluded under reason code MEMORY_ARRAY and the excluded count is reported. Memory faults never enter this denominator; a pooled figure satisfies this criterion at no value. | coverage report stating denominator count, netlist hash and fault-list hash; ledger; comparison report naming the shared netlist | VER`
+
+*G2.4, as written:* `Parity coverage | ≥ 3 blocks, every difference closed in the ledger | ledger + compared-block list with profile hashes | ARCH`
+
+*G2.4, restated:* `Parity coverage | ≥ 3 blocks, every difference closed in the ledger; the compared-block list records each block's netlist hash with inserted collars counted, and a block is not counted twice under two netlists | ledger + compared-block list with profile and netlist hashes | ARCH`
+
+Memory coverage is deliberately not a G2 criterion and gets no M9 threshold. It is reported beside G2.1 from the moment arrays leave `BLACKBOX` — its own column, its own denominator, blank where no BIST exists — and it is gated at G5.4, on injected faults per macro class, against a target fixed at the architecture revision. A figure with no threshold is still worth printing: it is the only thing that would reveal a collar that is present but testing nothing.
+
+G4.1 is unchanged, because this phase follows M24. G3.1's transition pool gains the same collar sites at roughly a third of the stuck-at increment after collapse, inside its 1.0 pt band, so its threshold does not move.
+
+### 8.6 Risks
+
+- **No silicon.** G5.2 rests on a board model and G5.4 on defect-injected models. Neither substitutes for the silicon correlation G4.2 requires of the baseline, and there is no G5.7 equivalent to it on this program. Treat the phase's claims as simulation-grade.
+- **The inputs may not exist.** TBD-13 and TBD-16 are new design and board deliverables. If they are unavailable the failure mode is the one TBD-08 already shows: the run cannot be executed on the schedule, and the gate moves rather than the evidence being simulated.
+- **Coverage contamination.** If memory coverage enters the logic parity ledger, G2.1 becomes incomparable to TMAX, which excludes memories. 8.5 fixes the gate wording and WP-515's separate column enforces it; neither is a formatting choice.
+- **Repair without eFuse data.** WP-514 can analyse redundancy without TBD-15 but cannot emit programmable repair; that is a partial deliverable, not a pass.
+- **Two capabilities in one phase.** If boundary scan slips, memory BIST should not be held behind it; the phase can split after G5.1/G5.3 with two separate exit gates.
+
+### 8.7 Licensing fork
+
+If TestMAX SMS and BSD Compiler are licensed rather than built, most of this phase disappears: WP-501–WP-506 are cancelled because the vendor supplies BSR insertion, TAP, BSDL and vectors, and WP-511–WP-514 reduce to SRAM model intake and collar-instantiation checks. What remains is approximately 14 ew of integration — test-mode pin and DB model (4), BIST bypass and mode DRC (4), collar checks and BIST access vectors (6) — planned inside P2/P3 where WP-110 already models test mode. That is a work package inside the 1066 ew, not a phase, and it consumes baseline reserve rather than this phase's line.
+
+TBD-09 therefore decides between a 142 ew phase and a 14 ew package. The phase is written as the build branch because the baseline cannot start either one until the architecture revision lands; if TBD-09 resolves to licence, 8.2 and 8.3 are deleted, the G5 family reduces to G5.3/G5.4 on vendor collars, and section 1.2 loses its Phase 5 row.
+
+## 9. Cross-cutting workstreams
 
 These are not separate packages; they are obligations attached to packages, and they are checked at every gate.
 
-### 8.1 Verification and CI
+### 9.1 Verification and CI
 
 | Level | Owner | First required | Gate |
 |---|---|---|---|
@@ -311,29 +443,29 @@ These are not separate packages; they are obligations attached to packages, and 
 
 The benchmark ladder is the release spine. A rung is entered only when its predecessor exits; a rung's results are recorded with input hashes, or they do not count.
 
-### 8.2 Determinism
+### 9.2 Determinism
 
 Determinism is a release property, not a P4 cleanup item. It is enforced from P0 by stable IDs, merge-by-fault-ID, and the hash test in WP-011. Any package that changes merge order, iteration order, or ID assignment must show an unchanged or explained hash before merge.
 
-### 8.3 Parity ledger
+### 9.3 Parity ledger
 
 One ledger, opened in WP-204, closed per difference in WP-205 and WP-306. Every entry has: dimension, expected, observed, cause, owner, resolution, status. A coverage or pattern-count claim that cites the ledger is evidence; one that does not is an opinion.
 
-### 8.4 Intake and profiles
+### 9.4 Intake and profiles
 
-Profiles are versioned YAML, never code branches (architecture 3). Every gate pack records the profile hash used. Intake items are tracked in section 12; an item marked `[INTAKE]` in the architecture that is still open at its needed-by date is escalated at the gate, not absorbed silently.
+Profiles are versioned YAML, never code branches (architecture 3). Every gate pack records the profile hash used. Intake items are tracked in section 13; an item marked `[INTAKE]` in the architecture that is still open at its needed-by date is escalated at the gate, not absorbed silently.
 
-### 8.5 Legal and licensing
+### 9.5 Legal and licensing
 
 TBD-11 must close before any code leaves the company and before `third_party` contents are frozen in WP-001. Internal use is lower risk, but attribution and notice obligations still apply. A dependency whose license is unclear blocks WP-001, not the release.
 
-### 8.6 Documentation and ADRs
+### 9.6 Documentation and ADRs
 
 ADRs 009–011 (SAT, pattern IR, threading) are P0 deliverables. Every later package that makes an architectural choice — solver reuse, compactor model, diagnosis suspect schema — writes or amends an ADR in the same change set. Docs are reviewed like code.
 
 ---
 
-## 9. Gate criteria and evidence
+## 10. Gate criteria and evidence
 
 ### G0 — M2 (Foundation)
 
@@ -390,7 +522,7 @@ ADRs 009–011 (SAT, pattern IR, threading) are P0 deliverables. Every later pac
 
 | # | Criterion | Threshold | Evidence | Owner |
 |---|---|---|---|---|
-| G4.1 | Full chip | Testable coverage ≥ 99.5% and within 0.5 pt of TMAX; pattern count ≤ 1.10× TMAX; runtime and memory within section 15.1 budgets; DRC clean or every waiver documented and unexpired — on both chips | full-chip report, WP-413 parity report and ledger, WP-415 DRC report and waiver audit | ATPG + DFT |
+| G4.1 | Full chip | Testable coverage ≥ 99.5% and within 0.5 pt of TMAX; pattern count ≤ 1.10× TMAX; runtime and memory within architecture 15.1 budgets; DRC clean or every waiver documented and unexpired — on both chips | full-chip report, WP-413 parity report and ledger, WP-415 DRC report and waiver audit | ATPG + DFT |
 | G4.2 | Silicon correlation | ATE run, failure mapped to chain/net, patterns re-issued; loop closed at least once | correlation report | ATE |
 | G4.3 | Second chip | Supported to the same acceptance criteria (16.5) | chip sign-off, WP-415 DRC and waiver audit | DFT |
 | G4.4 | AI guardrails | Shadow evidence recorded; disabling the model restores the baseline byte-identically | promotion report + fallback test | ML |
@@ -411,9 +543,24 @@ Every item in architecture 16.5 maps to a criterion; nothing is gated only by a 
 
 WP-415 produces the DRC evidence for both tops; G4.5 packages the report without restating the threshold. G4.2 (silicon correlation, architecture 14.5) and G4.4 (AI guardrails, 13.4) sit outside 16.5 by design.
 
+### G5 — M33 (Boundary scan and memory BIST)
+
+Not in force until the architecture revision in 8.1 lands; until then this family is a reservation, and no gate pack cites it.
+
+| # | Criterion | Threshold | Evidence | Owner |
+|---|---|---|---|---|
+| G5.1 | Boundary-scan insertion | Every pad has a BSR cell; TAP present; functional-mode bypass equivalence proven; boundary-scan DRC clean or every waiver documented and unexpired | BSR map, equivalence log, WP-505 DRC report | DFT |
+| G5.2 | BSDL and interconnect | BSDL passes 1149.1 syntax validation and an independent validator; EXTEST/SAMPLE vectors detect every injected open and short in the board model; replay matches simulation | BSDL file, validator log, board-model results | VER |
+| G5.3 | BIST insertion | Collar on every SRAM instance; BIST bypass equivalence proven; March executes in simulation; memory coverage reported in its own column | collar map, equivalence log, March report | DFT |
+| G5.4 | March coverage | Target fixed at the architecture revision (proposed ≥ 95% of injected memory faults per macro class, with signature check) | injection ledger and coverage report | VER |
+| G5.5 | Repair | Repair analysis localizes injected row/column defects and emits the correct fuse/signature; no false repair | repair report on injected defects | DFT |
+| G5.6 | Integration and release | BIST and boundary-scan modes run from ATE vectors without unresolved warnings; the run manifest reproduces the vectors; memory coverage stays separate in every report | ATE log, run manifest, report samples | ATE |
+
+G5.4 is deliberately the only threshold the phase sets for memory, and it is measured on injected faults rather than silicon, for the reason in 8.6. The logic claim stays with G2.1 under its restated wording.
+
 ---
 
-## 10. Milestones and demos
+## 11. Milestones and demos
 
 | Milestone | Date | Demo | Gate evidence |
 |---|---|---|---|
@@ -423,12 +570,15 @@ WP-415 produces the DRC evidence for both tops; G4.5 packages the report without
 | M3 | Month 9 | TMAX parity on ≥ 3 blocks; 1 M-gate subsystem | G2 pack |
 | M4 | Month 15 | Transition ATPG and diagnosis demo against M9 targets | G3 pack |
 | M5 | Month 24 | Program production sign-off package for grx930 and G100 | G4 pack |
+| M6 | Month 33 | BSDL and BIST modes accepted by the board and ATE teams | G5 pack |
 
 The M1 demo is deliberately narrow: one command, two runs, byte-identical output. It is the first proof that the reproducibility claim in architecture 2.1 is real rather than aspirational.
 
+M6 is the first milestone outside the 24-month baseline: it exists only because Phase 5 is scheduled (section 8), and it cannot be claimed before the architecture revision in 8.1 lands.
+
 ---
 
-## 11. Staffing and load
+## 12. Staffing and load
 
 | Phase | FTE | Composition |
 |---|---|---|
@@ -437,10 +587,11 @@ The M1 demo is deliberately narrow: one command, two runs, byte-identical output
 | P2 | 11 | +1 ATPG, +1 VER, +0.5 ATE, +0.5 PM |
 | P3 | 11 | −1 DFT, +1 ML |
 | P4 | 11 | unchanged |
+| P5 | 6.0 | 0.5 architect, 3 DFT, 1 VER, 0.5 FE, 0.5 ATE, 0.5 PM — separate line from M25 |
 
-Capacity, effort and load per phase are in section 1.2. Total headcount stays at the architecture's 11; what moved is the phase each role sits in. Section 11.1 holds the role-level view, the rule it is held to, and what changed.
+Capacity, effort and load per phase are in section 1.2. Total headcount stays at the architecture's 11; what moved is the phase each role sits in. Phase 5 is the one exception and is not counted here: it is a separate 6.0 FTE team after M24, so the eleven are untouched. Section 12.1 holds the role-level view, the rule it is held to, and what changed.
 
-### 11.1 Role load audit
+### 12.1 Role load audit
 
 An owner is an accountable lead, not a sole implementer. But a lead assignment above the role's capacity is a delivery risk dressed up as a label, so the plan applies one rule: **every role's lead-assigned effort is ≤ 110% of that role's capacity in the phase.** Anything above that is fixed by ownership, by phase mix, or by moving the package — never by an undisclosed contribution.
 
@@ -451,10 +602,11 @@ An owner is an accountable lead, not a sole implementer. But a lead assignment a
 | P2 | 15/17 | 44/51 | 48/51 | 33/34 | 17/17 | — | 9/11 | 0/8.5 |
 | P3 | 6/26 | 84/78 | 35/52 | 41/52 | 0/26 | 8/26 | 2/13 | 10/13 |
 | P4 | 0/39 | 114/117 | 54/78 | 80/78 | 10/39 | 36/39 | 20/19.5 | 0/19.5 |
+| P5 | 6/19.5 | — | 104/117 | 14/39 | 10/19.5 | — | 4/19.5 | 4/19.5 |
 
 Demand / capacity in engineer-weeks. ATE is carried at 0.65 FTE in P2 (11 ew) and 0.5 FTE elsewhere; PM at 0.5 FTE. `0` means the role is on the phase roster with no costed package; `—` means it is not on the roster.
 
-No cell exceeds 110%. The tightest are P3's ATPG at 108%, and P1's DFT, P4's VER and P4's ATE at 103%.
+No cell exceeds 110%. The tightest are P3's ATPG at 108%, and P1's DFT, P4's VER and P4's ATE at 103%. Phase 5's tightest is DFT at 89%, on its own line, with no baseline role in it.
 
 | Phase | Before the audit | Finding | Fix |
 |---|---|---|---|
@@ -463,6 +615,7 @@ No cell exceeds 110%. The tightest are P3's ATPG at 108%, and P1's DFT, P4's VER
 | P2 | DFT 50/34 (147%), ATPG 55/51 (108%), ATE 11/8.5 (129%) | Three roles over; architect and ML seats unallocated | Third DFT, WP-203 to ARCH, WP-208 to VER, ATE at 0.65 FTE |
 | P3 | ATPG 104/78 (133%) | Sustaining was charged entirely to ATPG | WP-313 split 6/12/13/2 across ATPG, DFT, VER and ATE |
 | P4 | ML 44/39 (113%), ATPG 126/117 (108%), VER 0/78; 202 ew against 429 (47%) | Role mix and scope both wrong: features scheduled a phase after the data exists, sustaining charged entirely to ATPG, verification uncosted, and three 16.5 items without a package | WP-314 takes the feature schema and dataset, WP-404 keeps training; WP-412 split 30/20/10; WP-413–WP-415 added and WP-401/402/403/409 re-estimated — 314 ew (73%) |
+| P5 | DFT 290/230 (126%) if absorbed into P0–P4, against a 90% aggregate | The aggregate test passed while the role rule failed by 60 ew — the same shape as P1's hidden 181% | Phase 5 given its own 234 ew line after M24: 104/117 (89%); absorption remains available only as a staffing decision |
 
 **Idle seats are not spare capacity.** The architect and PM rows carry review, gate packs and parity-ledger sign-off that the work-package estimates do not itemise; P4's remaining front-end time is release maintenance. P3's front end (0/26) and P4's architect (0/39) are the largest gaps; P1's architect now carries the SDC subset at 6/13. If one of them starts carrying implementation, the phase estimate is revised rather than the seat absorbing it silently.
 
@@ -470,7 +623,7 @@ No cell exceeds 110%. The tightest are P3's ATPG at 108%, and P1's DFT, P4's VER
 
 ---
 
-## 12. Critical inputs and decisions
+## 13. Critical inputs and decisions
 
 | Item | ID | Owner | Needed by | Blocks |
 |---|---|---|---|---|
@@ -485,12 +638,16 @@ No cell exceeds 110%. The tightest are P3's ATPG at 108%, and P1's DFT, P4's VER
 | Compression IP decision | TBD-05 | DFT + tools | M3 | WP-202, chain target selection |
 | X-source inventory and policy | TBD-07 | DFT | M2 | WP-209 |
 | DEF/LEF physical data | TBD-12 | Design | M13 | WP-311 |
+| Package/bond map (pad → pin) | TBD-13 | Design | M25 | WP-501, WP-505, G5.1 |
+| SRAM models with defect injection | TBD-14 | Design | M25 | WP-511, WP-512 |
+| SRAM redundancy and eFuse spec | TBD-15 | Design | M25 | WP-514, G5.5 |
+| Board/interconnect model | TBD-16 | Board + ATE | M25 | WP-504, G5.2 |
 
-Two of these deserve executive attention rather than engineering attention: **TBD-09** decides whether the plan runs at all, and **TBD-08** decides whether the P2 gate is measurable. Without TMAX, G2.2 and G2.3 cannot be evaluated as written (section 14).
+Two of these deserve executive attention rather than engineering attention: **TBD-09** decides whether the plan runs at all — and, for Phase 5, whether it is a 142 ew phase or a 14 ew package (8.7) — and **TBD-08** decides whether the P2 gate is measurable. Without TMAX, G2.2 and G2.3 cannot be evaluated as written (section 15).
 
 ---
 
-## 13. Risk register mapped to the plan
+## 14. Risk register mapped to the plan
 
 | Risk (architecture 18) | Early warning | Plan response | Packages |
 |---|---|---|---|
@@ -509,9 +666,20 @@ The register is reviewed at each gate, not monthly in isolation, so a risk that 
 
 ---
 
-## 14. Change control and what would change this plan
+## 15. Change control and what would change this plan
 
-The plan's baseline is the architecture blob recorded at the top of this document. A new architecture commit triggers a traceability re-check (section 16) and, if scope moved, a plan revision with a new hash.
+The plan's baseline is the architecture blob recorded at the top of this document. A new architecture commit triggers a traceability re-check (section 17) and, if scope moved, a plan revision with a new hash. The revision record and the hash rule are in 15.1.
+
+### 15.1 Plan revision record
+
+| Rev | Date | What moved | Plan hash |
+|---|---|---|---|
+| v0.2 | 2026-11-22 | Phase 5 promoted from a candidate appendix to a scheduled phase. Appendix D dissolved into section 8 (WP-501–WP-516, 132 ew; 142 ew with ARCH 6 and PM 4); G5.1–G5.6 moved into section 10; a 234 ew capacity line and a 959/1300 programme total added to 1.2; milestone M6 at M33 in section 11; a 6.0 FTE row and an audit row in section 12; TBD-13–TBD-16 in section 13; Appendix A's memory-BIST row replaced by a pointer to section 8. Sections 8–16 renumbered to 9–17 and every internal reference updated. P0–P4 are unchanged: 817 ew against 1066 ew. | `sha256:12348591f24eb76b6b65fd99319d34f102d3d7327a89e88f1d27d38cd2f8f52d` |
+| v0.1 | — | First issue for review. Phase 5 carried as Appendix D, outside the baseline and outside any capacity line. | not recorded |
+
+The digest is SHA-256 over this file, UTF-8 with LF line endings, with the 64-hex-digit string in the v0.2 row replaced by `HASH` — a record cannot hash itself, so that substitution is the convention rather than a loophole. `sed -E 's/[0-9a-f]{64}/HASH/g' dft-atpg-implementation-plan.md | sha256sum` reproduces it, and the file contains no other 64-hex string for the substitution to catch.
+
+This is the revision section 8.1 requires before Phase 5 work starts. It records the document, not the authority to begin: Phase 5 still waits on the architecture revision in 8.1, which is recorded against the architecture's own hash at the top of this file. A v0.3 that changes any Phase 5 scope, total or gate adds a row here rather than editing this one.
 
 Scope additions are not accepted inside a phase. A new fault model, a new format, or a new chip goes through the architecture first.
 
@@ -537,7 +705,7 @@ The 8–12 engineer-year maturity gap in architecture 17.3 is out of scope. Clos
 
 ---
 
-## 15. First 30 days
+## 16. First 30 days
 
 Derived from architecture 20.2, ordered by dependency rather than by listing.
 
@@ -554,11 +722,12 @@ If c432 runs but the profile is not frozen, the 30 days failed on the input side
 
 ---
 
-## 16. Traceability to the architecture
+## 17. Traceability to the architecture
 
 | Architecture section | Covered by |
 |---|---|
-| 3 Profiles and intake | WP-111, WP-403, section 12 |
+| 2.2, 21 (Phase 5 rows, pending the revision in 8.1) | WP-501–WP-516, section 8 |
+| 3 Profiles and intake | WP-111, WP-403, section 13 |
 | 4.2 Control flow, 4.3 threading | WP-010, WP-011, WP-012 |
 | 6.1–6.3 DB and graph | WP-002 |
 | 6.4 Four-state and word encoding | WP-005, WP-009, WP-213 |
@@ -578,11 +747,11 @@ If c432 runs but the profile is not frozen, the 30 days failed on the input side
 | 14 Verification, parity, CI | WP-107, WP-204, WP-205, WP-212, WP-414 |
 | 15 Performance and scale | WP-206, WP-307, WP-402 |
 | 16 Bring-up and acceptance | WP-111, WP-205, WP-403, WP-413, WP-415 |
-| 17 Roadmap, staffing, milestones | Sections 1.2, 10, 11 |
-| 18 Risks | Section 13 |
+| 17 Roadmap, staffing, milestones | Sections 1.2, 11, 12 |
+| 18 Risks | Section 14 |
 | 19 Interfaces, repository, build | WP-001, WP-010, WP-210 |
-| 20.1 Decisions | Section 12 |
-| 20.2 Next 30 days | Section 15 |
+| 20.1 Decisions | Section 13 |
+| 20.2 Next 30 days | Section 16 |
 | P2 transition protocol | WP-301–WP-306 |
 | P3 diagnosis benchmark | WP-308–WP-310, G3.3–G3.6 |
 
@@ -590,13 +759,15 @@ If c432 runs but the profile is not frozen, the 30 days failed on the input side
 
 ## Appendix A — Deferred and out of scope
 
-Not in this plan. Each needs an architecture change and a new plan revision.
+Not in the 24-month baseline. Each needs an architecture change and a new plan revision.
+
+Memory BIST and boundary scan have left this appendix. They are Phase 5 (section 8): scheduled, costed on their own 234 ew line, and gated on the architecture revision in 8.1. Until that revision lands they remain non-goals in architecture 2.2 and no package in the phase may start.
 
 | Item | Reason | Revisit |
 |---|---|---|
 | Path-delay ATPG | Not in the 24-month scope (architecture 21) | After P4 |
 | IDDQ, cell-aware, bridging **ATPG** | v1 fault models are stuck-at; bridging appears only in diagnosis | After P4 |
-| Memory BIST, boundary scan, analog test, multi-die | Explicit non-goals (architecture 2.2) | Not planned |
+| Analog test, multi-die | Explicit non-goals (architecture 2.2) | Not planned |
 | UPF / power-aware ATPG | Out of scope for the 24-month program (architecture 20.1) | After P4 |
 | GUI | Do not build one early (architecture 21) | Optional, post-P4 |
 | Bit-exact TMAX command compatibility | TMAX-like surface plus migration layer only (architecture 2.2) | Never as a goal |
@@ -614,7 +785,7 @@ Not in this plan. Each needs an architecture change and a new plan revision.
 | Vendor ATE format details | TBD-04 unresolved; WP-211 cannot start without it | ATE | M6 |
 | Exact FTE names and start dates | Staffing is the schedule-critical path (architecture 17.2) | PM | M0 |
 
-An item that misses its needed-by date is escalated at the gate (8.4). If closing it requires changing a gate criterion or shipping a limitation, that change follows section 14 rather than a local decision.
+An item that misses its needed-by date is escalated at the gate (9.4). If closing it requires changing a gate criterion or shipping a limitation, that change follows section 15 rather than a local decision.
 
 ---
 
@@ -637,7 +808,7 @@ What the revisions changed:
 - **P3 → 186 ew (65%).** Chain diagnosis absorbs 4 ew, the WP-102 swap pass adds 1 ew, replay localization adds 1 ew, and ATE writer warning closure adds 2 ew; the WP-313 sustaining split shifts to 6 ATPG / 12 DFT / 13 VER / 2 ATE — also where sustaining defects and late format polish actually land. ATPG lands at 84/78 (108%).
 - **P4 → 314 ew (73%).** Full-chip parity absorbs 8 ew; VER reaches 80/78 (103%).
 
-Plan total 817 ew against 1066 ew capacity (77%), reserve 249 ew. Every role remains at or below 110%.
+Baseline total 817 ew against the 1066 ew baseline capacity (77%), reserve 249 ew. Every role remains at or below 110%.
 
 ### WP-208, derived rather than decremented
 
@@ -673,16 +844,16 @@ WP-101, WP-102, the WP-107/WP-111 and WP-204/WP-205 pairs, WP-211 and P0's archi
 
 | Package | Overrun | Action | After |
 |---|---|---|---|
-| P0 ARCH | > 1 ew | The remaining 10 ew are the DB, the CLI and the architecture-mandated ADRs (20.2 item 6); the only verification-shaped slice, the run manifest, already moved to WP-011. Nothing further can leave P0 without an architecture change, so G0 moves by the overrun, approved by the program manager (PM) and recorded in the P0 gate pack as a plan revision under section 14. | P0 ARCH 10/10 (100%); G0 moves by the overrun |
+| P0 ARCH | > 1 ew | The remaining 10 ew are the DB, the CLI and the architecture-mandated ADRs (20.2 item 6); the only verification-shaped slice, the run manifest, already moved to WP-011. Nothing further can leave P0 without an architecture change, so G0 moves by the overrun, approved by the program manager (PM) and recorded in the P0 gate pack as a plan revision under section 15. | P0 ARCH 10/10 (100%); G0 moves by the overrun |
 | WP-101 scan replacement | > 1 ew | Defer the dedicated scan-flop path and its library-specific equivalence check (≈ 2 ew) to WP-313, and ship mux-D insertion. G1.1 and G1.3 do not distinguish them, and the branch belongs with library variants in sustaining. Approved by the DFT lead and recorded in the P1 gate pack. | P1 93 ew, DFT 40/39 |
 | WP-102 chain stitching | > 1 ew | No deferrable scope remains after the swap pass moved to WP-311, so the overrun is paid for out of DRC breadth: one rule per engineer-week leaves WP-103 for WP-313. That is a change-control narrowing of G1.2, not a local decision — architecture owner, P1 gate pack. | P1 93 ew, DFT 40/39 |
-| WP-107 / WP-111 | > 2 ew combined | Localization already moved to WP-313, so nothing left here can be cut without weakening G1.1 or G1.4. First the WP-111 debug log goes (≈ 0.5 ew); beyond that the phase takes a schedule decision — G1 moves by the overrun, approved by the program manager (PM) and recorded in the P1 gate pack as a plan revision under section 14, not as a gate waiver. | P1 ≤ 93 ew, VER ≤ 14/13 (108%) |
-| WP-204 / WP-205 | > 4 ew combined | Tooling already moved to ATPG; what remains is comparison logic and the three-block runs G2.4 counts, so nothing can be cut without a G2.4 narrowing. The phase takes a schedule decision — G2 moves by the overrun, approved by the program manager (PM) and recorded in the P2 gate pack as a plan revision under section 14. | P2 ≤ 170 ew, VER ≤ 37/34 (109%) |
+| WP-107 / WP-111 | > 2 ew combined | Localization already moved to WP-313, so nothing left here can be cut without weakening G1.1 or G1.4. First the WP-111 debug log goes (≈ 0.5 ew); beyond that the phase takes a schedule decision — G1 moves by the overrun, approved by the program manager (PM) and recorded in the P1 gate pack as a plan revision under section 15, not as a gate waiver. | P1 ≤ 93 ew, VER ≤ 14/13 (108%) |
+| WP-204 / WP-205 | > 4 ew combined | Tooling already moved to ATPG; what remains is comparison logic and the three-block runs G2.4 counts, so nothing can be cut without a G2.4 narrowing. The phase takes a schedule decision — G2 moves by the overrun, approved by the program manager (PM) and recorded in the P2 gate pack as a plan revision under section 15. | P2 ≤ 170 ew, VER ≤ 37/34 (109%) |
 | WP-211 vendor writer | > 3 ew | Warning closure already moved to WP-313; the vendor simulator loop (4 ew) is the next separable piece and already waits on TBD-04's format details, so it follows to WP-313's ATE share. G4.6 is the only criterion that consumes either and it is measured at M5, after P3. Approved by the ATE lead and recorded in the P2 gate pack. | P2 ATE 9/11 (82%), P2 166 ew; P3 ATE 6/13 (46%), P3 190 ew |
 
-Rule cuts here and in WP-103's own row draw on the same 20-rule set, are cumulative, and apply in the order the overruns are found; G1.2 records the remainder, never a fixed count. The floor is the error-severity class — the rules whose violation would invalidate G1.1's coverage or G1.4's replay. Its size is fixed at M1, when the 20 rule issues are opened (section 15, week 1), so the plan does not pre-empt it; no cut may take a rule from that class, and if the arithmetic would reach it, the phase takes a gate decision under section 1.3 with a named risk acceptance, approved by the architecture owner, rather than a smaller DRC set. Neither remedy touches insertion correctness, the scan map, or G1.3 — the trade is a library optimisation first and DRC breadth second, in that order.
+Rule cuts here and in WP-103's own row draw on the same 20-rule set, are cumulative, and apply in the order the overruns are found; G1.2 records the remainder, never a fixed count. The floor is the error-severity class — the rules whose violation would invalidate G1.1's coverage or G1.4's replay. Its size is fixed at M1, when the 20 rule issues are opened (section 16, week 1), so the plan does not pre-empt it; no cut may take a rule from that class, and if the arithmetic would reach it, the phase takes a gate decision under section 1.3 with a named risk acceptance, approved by the architecture owner, rather than a smaller DRC set. Neither remedy touches insertion correctness, the scan map, or G1.3 — the trade is a library optimisation first and DRC breadth second, in that order.
 
-One rule applies to every contingency here: reduced scope is never claimed as a pass. G1.2 changes by change control, G2.10 records a limitation, WP-307's deferral, WP-101's scan-flop branch and WP-208's corpus cut are sequencing changes, P0's architect, WP-107/WP-111 and WP-204/WP-205 overruns move G0, G1 or G2 by plan revision, and the G4.5 fallback is a waiver — each with a named approver, an owner and a date, recorded as section 14 requires: the gate pack for all but the G4.5 waiver, which sits in the WP-414 qualification report. A gate that passed on quietly reduced scope would be worse than the overrun it avoided.
+One rule applies to every contingency here: reduced scope is never claimed as a pass. G1.2 changes by change control, G2.10 records a limitation, WP-307's deferral, WP-101's scan-flop branch and WP-208's corpus cut are sequencing changes, P0's architect, WP-107/WP-111 and WP-204/WP-205 overruns move G0, G1 or G2 by plan revision, and the G4.5 fallback is a waiver — each with a named approver, an owner and a date, recorded as section 15 requires: the gate pack for all but the G4.5 waiver, which sits in the WP-414 qualification report. A gate that passed on quietly reduced scope would be worse than the overrun it avoided.
 
 **Not revised, and why.** The design database, parsers and pattern IR are well-understood infrastructure with precedent from P0 and P1; the block-level parity work is anchored to WP-205; and the AI packages are bounded by the shadow-mode protocol rather than by implementation size. The revisions above are the only places where the original numbers depended on an assumption about how fast unfamiliar EDA work goes.
 
