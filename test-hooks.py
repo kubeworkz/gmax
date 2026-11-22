@@ -11,6 +11,7 @@ Exits 0 when every case behaves, 1 otherwise, naming the case that broke.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -86,6 +87,15 @@ def remote_head(repo):
     return out.strip() if rc == 0 else ""
 
 
+SUMMARY = re.compile(r"\b(\d+) of \1 cases passed\b")
+
+
+def summary_ok(out):
+    """The self-test reported a non-empty pass tally and no failures."""
+    m = SUMMARY.search(out)
+    return bool(m) and int(m.group(1)) > 0 and "cases failed" not in out
+
+
 results = []
 
 
@@ -97,10 +107,12 @@ def record(name, good, out=""):
     results.append((name, good))
 
 
-def case(name, repo, expect_ok, needles, action, env=None):
-    """Run action, then require the exit status and output it should produce."""
+def case(name, expect_ok, action, needles=(), check=None):
+    """Require the exit status, any fixed needles, and any predicate on output."""
     rc, out = action()
-    good = (rc == 0) == expect_ok and all(n in out for n in needles)
+    good = ((rc == 0) == expect_ok
+            and all(n in out for n in needles)
+            and (check is None or check(out)))
     record(name, good, "" if good else out)
 
 
@@ -109,8 +121,8 @@ repo = make_repo()
 try:
     before = head(repo)
     drift_the_architecture(repo)
-    case("pre-commit refuses architecture drift", repo, False,
-         ("FAIL baseline-blob",), lambda: git(repo, "commit", "-m", "drift"))
+    case("pre-commit refuses architecture drift", False,
+         lambda: git(repo, "commit", "-m", "drift"), ("FAIL baseline-blob",))
     record("...and the refused commit did not happen", head(repo) == before)
 finally:
     shutil.rmtree(repo, ignore_errors=True)
@@ -119,8 +131,8 @@ repo = make_repo()
 try:
     drift_the_architecture(repo)
     env = dict(os.environ, SKIP_DRIFT_CHECK="1")
-    case("SKIP_DRIFT_CHECK=1 bypasses the commit guard", repo, True,
-         ("skipped",), lambda: git(repo, "commit", "-m", "drift", env=env), env)
+    case("SKIP_DRIFT_CHECK=1 bypasses the commit guard", True,
+         lambda: git(repo, "commit", "-m", "drift", env=env), ("skipped",))
     record("...and the bypassed commit did happen",
            head(repo) != must(repo, "rev-parse", "HEAD~1").strip())
 finally:
@@ -130,8 +142,8 @@ finally:
 repo = make_repo()
 remote = with_remote(repo)
 try:
-    case("pre-push allows a healthy push", repo, True,
-         ("6 of 6 cases passed",), lambda: git(repo, "push", "origin", "HEAD:main"))
+    case("pre-push allows a healthy push", True,
+         lambda: git(repo, "push", "origin", "HEAD:main"), check=summary_ok)
     record("...and the remote received the branch", remote_head(remote) == head(repo))
 finally:
     shutil.rmtree(repo, ignore_errors=True)
@@ -145,8 +157,8 @@ try:
     with open(os.path.join(repo, "test-doc-drift.py"), "w", encoding="utf-8") as fh:
         fh.write("import sys\nsys.exit(1)\n")
     must(repo, "commit", "-qam", "break the self-test")
-    case("pre-push refuses a failing self-test", repo, False,
-         ("failed to push",), lambda: git(repo, "push", "origin", "HEAD:main"))
+    case("pre-push refuses a failing self-test", False,
+         lambda: git(repo, "push", "origin", "HEAD:main"), ("failed to push",))
     record("...and the remote did not move", remote_head(remote) == before)
 finally:
     shutil.rmtree(repo, ignore_errors=True)
@@ -159,8 +171,8 @@ try:
         fh.write("import sys\nsys.exit(1)\n")
     must(repo, "commit", "-qam", "break the self-test")
     env = dict(os.environ, SKIP_SELFTEST="1")
-    case("SKIP_SELFTEST=1 bypasses the push guard", repo, True,
-         ("skipped",), lambda: git(repo, "push", "origin", "HEAD:main", env=env), env)
+    case("SKIP_SELFTEST=1 bypasses the push guard", True,
+         lambda: git(repo, "push", "origin", "HEAD:main", env=env), ("skipped",))
     record("...and the remote received the branch", remote_head(remote) == head(repo))
 finally:
     shutil.rmtree(repo, ignore_errors=True)
