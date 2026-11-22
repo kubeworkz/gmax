@@ -1,10 +1,10 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.2 for review; not committed — supersedes v0.1, which carried Phase 5 as a candidate appendix.
+**Status:** Draft v0.3 for review; not committed — supersedes v0.2, which scheduled Phase 5 ahead of the architecture revision.
 **Date:** 2026-11-22
-**Revision:** v0.2, 2026-11-22 — Phase 5 promoted to a scheduled phase; what moved and the plan hash are recorded in section 15.1.
+**Revision:** v0.3, 2026-11-22 — re-pinned to architecture `993a84d`; section 8 records that revision as landed and the plan hash is recomputed in section 15.1.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
-**Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at commit `cbaae93`, blob `9e87feffad9341f4f152c9ee2264a8af9af9ba87`.
+**Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at commit `993a84d`, blob `61c9e75ec1757259dc70ccacbcee0c198b25d838`.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
 
 ---
@@ -306,13 +306,13 @@ These are not engineering work and cannot be recovered by working harder: **G100
 
 **Standing.** Phase 5 is scheduled and resourced in this plan: it has its own capacity line in section 1.2, a milestone at M33, packages WP-501–WP-516 and a gate family in section 10. It is not part of the 24-month baseline. The baseline stays at 817 ew against 1066 ew and no P0–P4 package, gate or date moves because of it — the phase is funded from a separate 234 ew line that begins after M24.
 
-Its scope is not yet in the architecture. Section 2.2 still lists memory BIST and boundary scan as non-goals, and section 21 has no rows for either. Section 0 forbids this plan from adding scope ahead of the architecture, so the phase is scheduled but **not startable**: no WP-501–WP-516 work begins until the architecture revision lands. It appears here so the work is costed, sequenced and gated rather than rediscovered in month 25. If the revision is refused, this section is withdrawn without touching the baseline and both capabilities return to Appendix A.
+Its scope is now in the architecture. The revision landed at `993a84d`: 2.2 no longer lists memory BIST or boundary scan as non-goals, 21 carries boundary-scan, memory-BIST and memory-coverage rows, 9.1 defines `MEMORY_ARRAY` as an exclusion reason, and 14.3 splits its coverage row so the logic claim stays comparable to TMAX. Section 0's rule is satisfied, so the phase is startable on the conditions in 8.1 — which are design and board deliverables, not a paper change. It was sequenced here before that revision existed so the work was costed and gated rather than rediscovered in month 25.
 
-**Architecture revision required before start.** Section 2.2 removes memory BIST and boundary scan from the non-goals; section 21 gains boundary-scan, memory-BIST and memory-coverage rows; 9.1 gains `MEMORY_ARRAY` as a named exclusion reason; 17.1 splits its coverage row into a logic row and a memory row with no cross-comparison, for the reason set out in 8.5. The revision is ARCH 6 ew, carried in this phase's total and not in P0–P4.
+**Architecture revision, as landed.** Section 2.2 removed memory BIST and boundary scan from the non-goals; section 21 gained boundary-scan, memory-BIST and memory-coverage rows; 9.1 defines `MEMORY_ARRAY` as the exclusion reason for SRAM internals; 14.3 and 17.1 split coverage into a logic row and a memory row with no cross-comparison, for the reason set out in 8.5. The revision cost ARCH 6 ew, carried in this phase's total rather than P0–P4.
 
 ### 8.1 Entry conditions
 
-- Architecture revision complete as above, and this revision recorded under section 15.1.
+- Architecture revision landed (architecture `993a84d`, blob `61c9e75`); the remaining conditions are intake, not paper.
 - TBD-13 package/bond map (die pad → package pin). Without it BSR ordering is guesswork and EXTEST has no pin reference.
 - TBD-14 SRAM behavioural models with defect injection, replacing `BLACKBOX` for memory instances.
 - TBD-15 SRAM redundancy and eFuse specification. Without it WP-514 analyses repair but emits nothing programmable.
@@ -398,7 +398,7 @@ The collar count is the one figure the plan does not have yet: 1–1.5 k gates p
 
 **The netlist-identity problem is the sharper one.** 17.1 accepts a coverage comparison only when both tools ran the same netlist, fault list, constraints, chain count and options. The three P2 parity blocks are graded pre-insertion. Inserting collars changes the netlist hash and adds 2–3% to the denominator, so a post-insertion GMAX run compared with a pre-insertion TMAX run is not a 0.5 pt comparison — it is two unrelated numbers that happen to sit near each other. The phase takes the first reading: both tools re-run on the post-insertion netlist for one block, reusing the WP-205 harness, which is why WP-516 carries that re-run in its VER share. If it overruns, WP-516 and the phase total move by the overrun; the requirement is not dropped.
 
-**Gate wording this phase inherits.** G2.1 and G2.4 are restated as follows when the architecture revision lands. The rows below are what section 10 will carry; they are not in force until then, and the P2 gate is measured against the current wording in the meantime.
+**Gate wording this phase inherits.** G2.1 and G2.4 are restated below for any run whose netlist contains BIST collars. That cannot happen before WP-512, so the M9 P2 gate keeps the current wording in section 10 and the restated rows bind the post-insertion parity re-run in WP-516. The architecture revision makes the split explicit in 14.3, which is why the restatement is now a consequence rather than a proposal.
 
 *G2.1, as written:* `Testable coverage | ≥ 99.5% and within 0.5 pt of TMAX | coverage + ledger | VER`
 
@@ -424,7 +424,7 @@ G4.1 is unchanged, because this phase follows M24. G3.1's transition pool gains 
 
 If TestMAX SMS and BSD Compiler are licensed rather than built, most of this phase disappears: WP-501–WP-506 are cancelled because the vendor supplies BSR insertion, TAP, BSDL and vectors, and WP-511–WP-514 reduce to SRAM model intake and collar-instantiation checks. What remains is approximately 14 ew of integration — test-mode pin and DB model (4), BIST bypass and mode DRC (4), collar checks and BIST access vectors (6) — planned inside P2/P3 where WP-110 already models test mode. That is a work package inside the 1066 ew, not a phase, and it consumes baseline reserve rather than this phase's line.
 
-TBD-09 therefore decides between a 142 ew phase and a 14 ew package. The phase is written as the build branch because the baseline cannot start either one until the architecture revision lands; if TBD-09 resolves to licence, 8.2 and 8.3 are deleted, the G5 family reduces to G5.3/G5.4 on vendor collars, and section 1.2 loses its Phase 5 row.
+TBD-09 therefore decides between a 142 ew phase and a 14 ew package. The phase is written as the build branch, and the architecture revision has landed, so TBD-09 is now a scope decision rather than a precondition: if it resolves to licence, 8.2 and 8.3 are deleted, the G5 family reduces to G5.3/G5.4 on vendor collars, and section 1.2 loses its Phase 5 row.
 
 ## 9. Cross-cutting workstreams
 
@@ -674,12 +674,13 @@ The plan's baseline is the architecture blob recorded at the top of this documen
 
 | Rev | Date | What moved | Plan hash |
 |---|---|---|---|
+| v0.3 | 2026-11-22 | Re-pinned to architecture `993a84d` (blob `61c9e75`), the revision Phase 5 was waiting on: 2.2 dropped both capabilities from the non-goals, 21 gained the boundary-scan, memory-BIST and memory-coverage rows, 9.1 defined `MEMORY_ARRAY`, and 14.3/17.1 split coverage into logic and memory. Section 8 records the revision as landed and 8.1 as satisfied on that condition; the Baseline line, and every reference to a pending revision, were updated. No scope, package, gate, effort or capacity figure changed. | `sha256:cfe56c78822d22dae30397d67b56fe0e1da0a06ea7d8b0d27962ca57b90bd191` |
 | v0.2 | 2026-11-22 | Phase 5 promoted from a candidate appendix to a scheduled phase. Appendix D dissolved into section 8 (WP-501–WP-516, 132 ew; 142 ew with ARCH 6 and PM 4); G5.1–G5.6 moved into section 10; a 234 ew capacity line and a 959/1300 programme total added to 1.2; milestone M6 at M33 in section 11; a 6.0 FTE row and an audit row in section 12; TBD-13–TBD-16 in section 13; Appendix A's memory-BIST row replaced by a pointer to section 8. Sections 8–16 renumbered to 9–17 and every internal reference updated. P0–P4 are unchanged: 817 ew against 1066 ew. | `sha256:12348591f24eb76b6b65fd99319d34f102d3d7327a89e88f1d27d38cd2f8f52d` |
 | v0.1 | — | First issue for review. Phase 5 carried as Appendix D, outside the baseline and outside any capacity line. | not recorded |
 
-The digest is SHA-256 over this file, UTF-8 with LF line endings, with the 64-hex-digit string in the v0.2 row replaced by `HASH` — a record cannot hash itself, so that substitution is the convention rather than a loophole. `sed -E 's/[0-9a-f]{64}/HASH/g' dft-atpg-implementation-plan.md | sha256sum` reproduces it, and the file contains no other 64-hex string for the substitution to catch.
+The digest is SHA-256 over this file, UTF-8 with LF line endings, with the digest in the newest row replaced by `HASH` — a record cannot hash itself, so that substitution is the convention rather than a loophole. `sed -E '0,/sha256:[0-9a-f]{64}/ s/sha256:[0-9a-f]{64}/sha256:HASH/' dft-atpg-implementation-plan.md | sha256sum` reproduces the newest row. Earlier rows keep the hash of the text they describe and are not re-derivable from this file, which carries one live digest at a time.
 
-This is the revision section 8.1 requires before Phase 5 work starts. It records the document, not the authority to begin: Phase 5 still waits on the architecture revision in 8.1, which is recorded against the architecture's own hash at the top of this file. A v0.3 that changes any Phase 5 scope, total or gate adds a row here rather than editing this one.
+The two documents move together: v0.2 scheduled the phase ahead of the architecture, and v0.3 re-pins the plan once the architecture revision landed at `993a84d`. Neither row is authority to begin work — Phase 5 starts on the input conditions in 8.1, which are deliverables rather than papers. A later change to Phase 5 scope, total or gate adds a row here rather than editing an existing one.
 
 Scope additions are not accepted inside a phase. A new fault model, a new format, or a new chip goes through the architecture first.
 
