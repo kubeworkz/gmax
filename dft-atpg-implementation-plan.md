@@ -521,7 +521,7 @@ Cuts are changes too. A reduction that alters what a gate proves — fewer rules
 |---|---|---|
 | A gate criterion narrows, or an architecture capability lands a phase late (G1.2, G2.10) | Architecture owner (ARCH), because the plan is subordinate to the architecture | That phase's gate pack |
 | A limitation ships with the release (G4.5 waiver) | Program manager (PM), who signs the production release | WP-414 qualification report, known limitations; cited from the G4 pack |
-| A package moves between phases without changing a gate or a role's load (WP-307) | The role lead that owns the package | Gate pack of the phase that loses the work |
+| A package or part of one moves between phases without changing a gate, and the receiving phase's role stays within the 110% rule (WP-307; WP-211's simulator-loop fallback) | The role lead that owns the package in both phases | Gate pack of the phase that loses the work |
 | A gate moves later because a gate-critical package overruns and no scope can be cut (WP-107/WP-111, WP-204/WP-205) | Program manager (PM), who owns the schedule | That phase's gate pack, with the plan hash revised |
 
 Engineering waivers inside a run are not plan changes: the DRC waivers under G1.2 and G2.9 carry an owner and an expiry, expiry is checked at load from P1 by WP-103, the workflow around it (creation, extension, audit trail) lands with WP-208 in P2, and the full accumulated set is audited at G4 by WP-415 — without a separate approval. The four events below are program decisions, not routine gate waivers; each is recorded as a plan revision with a new hash, and any waiver it creates follows the table above.
