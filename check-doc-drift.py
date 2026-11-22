@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """Fail when the implementation plan and the architecture drift apart.
 
-Every check reads committed blobs (HEAD), not the working tree, because the
-failure this guards against is a record that was true when it was written and
-is not true now. Run it before a commit that touches either document.
+Checks four things and exits 1 on any failure, so it can gate a commit:
 
-    1. baseline-blob  the plan's `**Baseline:** … blob` equals HEAD's architecture blob
-    2. plan-hash      section 15.1's digest verifies against HEAD's plan
+    1. baseline-blob  the plan's `**Baseline:** … blob` equals the architecture blob
+    2. plan-hash      section 15.1's digest verifies against the plan text
     3. ids-defined    every WP-nnn / Gx.y cited in either document is defined in the plan
     4. ids-unique     no work-package or gate id is defined twice
+
+Two sources of truth, picked by flag:
+
+    (default)   HEAD, for a standalone run: "is the repository consistent now?"
+    --staged    the index, for a pre-commit hook: "is the commit I am about to
+                make consistent?" Only this mode can block the commit that
+                introduces drift, because HEAD still holds the old, consistent
+                pair while the bad change sits in the index.
 
 Two rules keep 3 and 4 from crying wolf:
 
@@ -19,8 +25,6 @@ Two rules keep 3 and 4 from crying wolf:
   * An id introduced by "no" is a statement that it does not exist, not a
     citation — "there is no G5.7 equivalent" is the document being careful,
     not the document dangling.
-
-Exit status is 1 on any failure, so it can gate a commit or a CI job.
 """
 
 import hashlib
@@ -32,16 +36,23 @@ import sys
 PLAN = "dft-atpg-implementation-plan.md"
 ARCH = "dft-atpg-platform-architecture-grx930-g100.md"
 
+MODE = "staged" if "--staged" in sys.argv[1:] else "head"
+SPEC = ":" if MODE == "staged" else "HEAD:"
 
-def git(*args):
-    r = subprocess.run(("git",) + args, capture_output=True, text=True, encoding="utf-8")
+
+def git(*args, text=True):
+    r = subprocess.run(("git",) + args, capture_output=True)
     if r.returncode != 0:
-        sys.exit("git %s failed: %s" % (" ".join(args), r.stderr.strip()))
-    return r.stdout
+        sys.exit("git %s failed: %s" % (" ".join(args), r.stderr.decode("utf-8", "replace").strip()))
+    return r.stdout.decode("utf-8") if text else r.stdout
 
 
-def blob(path):
-    return git("show", "HEAD:" + path).replace("\r\n", "\n")
+def content(path):
+    return git("show", SPEC + path).replace("\r\n", "\n")
+
+
+def rev(path):
+    return git("rev-parse", SPEC + path).strip()
 
 
 def cells(line):
@@ -83,18 +94,19 @@ if not root:
     sys.exit("not inside a git repository")
 os.chdir(root)
 
-plan = blob(PLAN)
-arch = blob(ARCH)
+plan = content(PLAN)
+arch = content(ARCH)
+where = "the staged commit" if MODE == "staged" else "HEAD"
 
 # 1. the plan pins the architecture it was reconciled against
 m = re.search(r"\*\*Baseline:\*\*.*?blob `([0-9a-f]{40})`", plan)
-head_blob = git("rev-parse", "HEAD:" + ARCH).strip()
+arch_blob = rev(ARCH)
 if not m:
     report("baseline-blob", False, "no `blob <sha1>` on the Baseline line")
 else:
-    same = m.group(1) == head_blob
+    same = m.group(1) == arch_blob
     report("baseline-blob", same, "" if same else
-           "plan pins %s, HEAD architecture is %s" % (m.group(1)[:12], head_blob[:12]))
+           "plan pins %s, %s architecture is %s" % (m.group(1)[:12], where, arch_blob[:12]))
 
 # 2. section 15.1's newest digest, under the rule section 15.1 states:
 #    SHA-256 of the file with the digest in the newest row replaced by HASH
@@ -106,7 +118,7 @@ else:
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     same = digest == record.group(1)
     report("plan-hash", same, "" if same else
-           "recorded %s, recomputed %s" % (record.group(1)[:12], digest[:12]))
+           "recorded %s, %s text hashes to %s" % (record.group(1)[:12], where, digest[:12]))
 
 # 3. no citation of an id that does not exist
 wp_defs = package_defs(plan)
@@ -127,7 +139,7 @@ all_ids = wp_defs + g_defs
 dupes = sorted({i for i in all_ids if all_ids.count(i) > 1})
 report("ids-unique", not dupes, "" if not dupes else ", ".join(dupes))
 
-if subprocess.run(["git", "diff", "--quiet", "HEAD", "--", PLAN, ARCH]).returncode != 0:
+if MODE == "head" and subprocess.run(["git", "diff", "--quiet", "HEAD", "--", PLAN, ARCH]).returncode != 0:
     print("\nnote: the working tree differs from HEAD; everything above describes HEAD.")
 
 if failures:
