@@ -241,7 +241,14 @@ Resolution metrics are descriptive at M9. They do not replace the 90/70 target, 
 
 ## 6. TMAX confirmation at M9
 
-The architecture requires the target to be confirmed against TMAX diagnosis at M9. Use the same M9 P2 corpus and failing responses:
+The architecture requires the target to be confirmed against TMAX diagnosis at M9. Use the same M9 P2 corpus and failing responses.
+
+Two capabilities are prerequisites, confirmed at M8 with the rest of the diagnosis setup and recorded in `D-DIAG-01`. The corpus is not purely TMAX-generated — it mixes the frozen P2 stuck-at patterns, the M9 TMAX transition patterns, and the chain shift patterns (section 3.1) — so neither can be assumed:
+
+- **Failing-pattern input in STIL or WGL.** TMAX diagnosis must accept failing-pattern logs supplied to it, not only patterns the tool generated itself. If it cannot, the baseline covers only the TMAX-generated strata; every other stratum is marked unavailable in Appendix A.4, and the corpus is not re-cut to make the comparison work.
+- **Machine-readable suspect export.** The export must carry, for every case, the full ranked suspect list with its type and group information, because step 2's canonicalization, equivalence, rank, and top-k rules cannot be applied to a headline accuracy figure.
+
+A missing prerequisite is escalated at M8, not discovered at M9: without either, the confirmation cannot produce a baseline that is scoreable under step 2.
 
 1. Run TMAX diagnosis on the frozen netlist, scan map, and failing pattern logs. Record the TMAX version, options, and license.
 2. Score TMAX with the same canonicalization, equivalence, rank, and top-k rules. Do not use TMAX's headline accuracy if its suspect granularity differs.
@@ -311,7 +318,7 @@ Under `PER_STRATUM` or `DEFAULT`, a cell-only pass does not satisfy the chain st
 
 | When | Owner | Action | Output |
 |---|---|---|---|
-| M8 | DFT lead | Freeze P2 parity netlists, P2 stuck-at patterns, scan map, and eligible-site lists; confirm TMAX transition and diagnosis setup | Corpus inputs |
+| M8 | DFT lead | Freeze P2 parity netlists, P2 stuck-at patterns, scan map, and eligible-site lists; confirm TMAX transition and diagnosis setup, including failing-pattern input in STIL/WGL and machine-readable suspect export | Corpus inputs |
 | M8 | DFT lead | Generate stratified injection manifest and seed | Injection manifest |
 | M9 | DFT lead | Run TMAX transition ATPG on the P2 parity blocks and freeze the transition patterns | M9 transition pattern package |
 | M9 | Verification | Build the full corpus and reproduce a sample of injected failures | Injection sanity check |
@@ -348,6 +355,8 @@ Under `PER_STRATUM` or `DEFAULT`, a cell-only pass does not satisfy the chain st
 | Architecture owner | |
 | Verification owner | |
 | TMAX version / license | |
+| TMAX failing-pattern input (STIL/WGL) | Confirmed / Not available, with reason in A.4 |
+| TMAX suspect export (machine-readable) | Confirmed / Not available, with reason in A.4 |
 | Corpus SHA-256 | |
 | Injection seed | |
 | Pattern-set hashes | |
