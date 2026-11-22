@@ -75,14 +75,16 @@ def re_pin(repo):
     """
     blob = git(repo, "rev-parse", ":" + ARCH).strip()
     path = os.path.join(repo, PLAN)
-    with open(path, encoding="utf-8", newline="") as fh:
+    # universal newlines and an LF write: the checker hashes LF text, and a
+    # fresh clone with core.autocrlf=true has CRLF in the working tree
+    with open(path, encoding="utf-8") as fh:
         text = fh.read()
     text = re.sub(r"(blob `)[0-9a-f]{40}(`)",
                   lambda m: m.group(1) + blob + m.group(2), text, count=1)
     text = re.sub(r"`sha256:[0-9a-f]{64}`", "`sha256:HASH`", text, count=1)
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     text = text.replace("`sha256:HASH`", "`sha256:" + digest + "`", 1)
-    with open(path, "w", encoding="utf-8", newline="") as fh:
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
     git(repo, "add", "--", PLAN)
 
