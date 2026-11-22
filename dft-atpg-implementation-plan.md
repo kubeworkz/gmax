@@ -1,10 +1,10 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.3 for review; not committed — supersedes v0.2, which scheduled Phase 5 ahead of the architecture revision.
+**Status:** Draft v0.4 for review; not committed — supersedes v0.3, whose baseline predates the architecture's component codes.
 **Date:** 2026-11-22
-**Revision:** v0.3, 2026-11-22 — re-pinned to architecture `993a84d`; section 8 records that revision as landed and the plan hash is recomputed in section 15.1.
+**Revision:** v0.4, 2026-11-22 — re-pinned to the component-code revision of the architecture, whose 4.1 now defines the ten codes `FE` through `VER`; no scope, package, gate, effort or capacity figure changed, and the plan hash is recomputed in section 15.1.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
-**Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at commit `993a84d`, blob `61c9e75ec1757259dc70ccacbcee0c198b25d838`.
+**Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at blob `7bd833d00ca935a82ef37217755a34564af9e154`, the component-code revision, landed in the same commit as plan v0.4.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
 
 ---
@@ -674,6 +674,7 @@ The plan's baseline is the architecture blob recorded at the top of this documen
 
 | Rev | Date | What moved | Plan hash |
 |---|---|---|---|
+| v0.4 | 2026-11-22 | Re-pinned to the component-code revision of the architecture: 4.1 gained the ten codes (`FE`, `DB`, `DFT`, `ATPG`, `FSIM`, `CMP`, `PAT`, `DIAG`, `AI`, `VER`), the citation rule `C-` plus code, and a table the checker reads. `ids-defined` now treats a cited code with no row there as dangling, like any other id. No scope, package, gate, effort or capacity figure changed. | `sha256:ae269b8a490b656929d14051d9e6f58b6fa2485e6974589ca5beac048cd71d0b` |
 | v0.3 | 2026-11-22 | Re-pinned to architecture `993a84d` (blob `61c9e75`), the revision Phase 5 was waiting on: 2.2 dropped both capabilities from the non-goals, 21 gained the boundary-scan, memory-BIST and memory-coverage rows, 9.1 defined `MEMORY_ARRAY`, and 14.3/17.1 split coverage into logic and memory. Section 8 records the revision as landed and 8.1 as satisfied on that condition; the Baseline line, and every reference to a pending revision, were updated. No scope, package, gate, effort or capacity figure changed. | `sha256:cfe56c78822d22dae30397d67b56fe0e1da0a06ea7d8b0d27962ca57b90bd191` |
 | v0.2 | 2026-11-22 | Phase 5 promoted from a candidate appendix to a scheduled phase. Appendix D dissolved into section 8 (WP-501–WP-516, 132 ew; 142 ew with ARCH 6 and PM 4); G5.1–G5.6 moved into section 10; a 234 ew capacity line and a 959/1300 programme total added to 1.2; milestone M6 at M33 in section 11; a 6.0 FTE row and an audit row in section 12; TBD-13–TBD-16 in section 13; Appendix A's memory-BIST row replaced by a pointer to section 8. Sections 8–16 renumbered to 9–17 and every internal reference updated. P0–P4 are unchanged: 817 ew against 1066 ew. | `sha256:12348591f24eb76b6b65fd99319d34f102d3d7327a89e88f1d27d38cd2f8f52d` |
 | v0.1 | — | First issue for review. Phase 5 carried as Appendix D, outside the baseline and outside any capacity line. | not recorded |

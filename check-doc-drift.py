@@ -6,8 +6,9 @@ Checks four things and exits 1 on any failure, so it can gate a commit:
     1. baseline-blob  the plan's `**Baseline:** … blob` equals the architecture blob
     2. plan-hash      section 15.1's digest verifies against the plan text
     3. ids-defined    every WP-nnn / Gx.y cited in any of the three documents is
-                      defined in the plan, and every D-DIAG-* id cited anywhere is
-                      defined in the diagnosis protocol
+                      defined in the plan, every D-DIAG-* id cited anywhere is
+                      defined in the diagnosis protocol, and every C-CODE
+                      citation is defined in architecture 4.1's component table
     4. ids-unique     no work-package, gate or D-DIAG id is defined twice
 
 Two sources of truth, picked by flag:
@@ -30,6 +31,9 @@ Three rules keep 3 and 4 from crying wolf:
   * A D-DIAG id is defined only by its appendix heading, backticked:
     "## Appendix A — `D-DIAG-01` …". A section heading that mentions the id
     in passing is a citation, not a second definition.
+  * A component code is cited as `C-` plus the code — `C-ATPG` — so the scan can
+    tell it from the acronym it abbreviates. Only the table under 4.1 defines
+    one; a sentence that happens to name a component does not.
 """
 
 import hashlib
@@ -98,6 +102,28 @@ def diag_defs(text):
     return out
 
 
+def component_defs(text):
+    """Codes are defined only by the component table in architecture 4.1.
+
+    The code sits in the first cell of a row. The table is found by its `4.1`
+    heading, so a code mentioned in another table is a citation, not a
+    second definition.
+    """
+    out, inside = [], False
+    for line in text.splitlines():
+        if re.match(r"^#{1,6}\s+4\.1\b", line):
+            inside = True
+            continue
+        if inside and re.match(r"^#{1,6}\s", line):
+            break
+        if inside and line.startswith("|"):
+            c = cells(line)
+            code = c[1].strip("`") if len(c) > 2 else ""
+            if re.fullmatch("[A-Z]{2,5}", code):
+                out.append(code)
+    return out
+
+
 failures = []
 
 
@@ -144,13 +170,17 @@ else:
 wp_defs = package_defs(plan)
 g_defs = gate_defs(plan)
 d_defs = diag_defs(diag)
-defined = set(wp_defs) | set(g_defs) | set(d_defs)
+c_defs = component_defs(arch)
+defined = set(wp_defs) | set(g_defs) | set(d_defs) | set(c_defs)
 cited = {}
 for path, text in ((PLAN, plan), (ARCH, arch), (DIAG, diag)):
-    for hit in re.finditer(r"WP-\d{3}\b|G\d+\.\d+\b|D-DIAG(?:-[A-Z]+)*-\d+\b", text):
+    for hit in re.finditer(r"WP-\d{3}\b|G\d+\.\d+\b|D-DIAG(?:-[A-Z]+)*-\d+\b|C-[A-Z]{2,5}\b", text):
+        token = hit.group(0)
+        if token.startswith("C-"):
+            token = token[2:]                   # the table holds the code alone
         if re.search(r"\bno\s+$", text[max(0, hit.start() - 6):hit.start()], re.I):
             continue                            # "there is no G5.7 equivalent"
-        cited.setdefault(hit.group(0), set()).add(path)
+        cited.setdefault(token, set()).add(path)
 dangling = sorted(t for t in cited if t not in defined)
 report("ids-defined", not dangling, "" if not dangling else
        ", ".join("%s (%s)" % (t, "+".join(sorted(cited[t]))) for t in dangling))

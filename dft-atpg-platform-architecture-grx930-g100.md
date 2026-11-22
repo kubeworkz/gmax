@@ -187,6 +187,25 @@ Acceptance is defined by the criteria in section 16.5. A chip is not considered 
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+Components carry a stable code. Notes, issues and commit subjects use the code on
+its own; these documents cite one as `C-` plus the code — `C-ATPG` — so an id scan
+can tell the citation from the acronym it abbreviates. The codes mark ownership
+boundaries and point at sections, not products: the command surface stays the
+single tool of 19.1, and none of these codes appears in it.
+
+| Code | Component | Specified in |
+|---|---|---|
+| `FE` | Front end: elaboration, Liberty, SDC, DEF/LEF, STIL/SPF import | 7 |
+| `DB` | Design database: hierarchy, flattened graph, four-state values, `.dfdb` | 6 |
+| `DFT` | Scan replacement, chain stitching, DRC engine | 8 |
+| `ATPG` | ATPG core: PODEM, FAN, SAT, hybrid scheduling, compaction | 9 |
+| `FSIM` | Fault simulation: parallel-fault, PPSFP | 10 |
+| `CMP` | Test compression: XOR network, compression-aware constraints | 11 |
+| `PAT` | Pattern IR and the STIL/WGL/vendor writers | 12 |
+| `DIAG` | Chain diagnosis and the P3 benchmark | `diagnosis-benchmark-p3.md` |
+| `AI` | AI heuristic service, out of process (ADR-008) | 13 |
+| `VER` | Verification and validation | 14 |
+
 ### 4.2 Control flow
 
 ```

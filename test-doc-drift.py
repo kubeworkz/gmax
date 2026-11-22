@@ -81,6 +81,8 @@ DRIFT = (
      "plan edited without a matching digest in section 15.1"),
     ("ids-defined", DIAG, "A dangling reference to WP-999 lives here.",
      "protocol cites a work package that does not exist"),
+    ("ids-defined", DIAG, "The `C-GLS` sign-off run is out of scope for this protocol.",
+     "protocol cites a component code that 4.1 does not define"),
     ("ids-unique", DIAG, "## Appendix Z — `D-DIAG-01` duplicate record",
      "a second appendix heading declares an existing record"),
 )
