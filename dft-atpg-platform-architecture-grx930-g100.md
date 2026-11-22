@@ -1,6 +1,6 @@
 # DFT/ATPG Platform Architecture — grx930 & G100
 
-**Status:** Draft v0.1 for review · **Date:** 22 Nov 2026 · **Owner:** DFT Tools / Silicon Engineering
+**Status:** Draft v0.2 for review — 2.2, 9.1, 14.3, 17.1 and 21 revised for Phase 5 (boundary scan, memory BIST) · **Date:** 22 Nov 2026 · **Owner:** DFT Tools / Silicon Engineering
 
 ---
 
@@ -77,10 +77,12 @@ Not a synthesis tool, not a silicon tester, not a memory-BIST or analog-test too
 ### 2.2 Non-goals for v1
 
 - Transition-delay, path-delay, IDDQ, cell-aware, or bridge fault models.
-- Memory BIST, boundary scan insertion, analog test, and multi-die test.
+- Analog test and multi-die test.
 - Automatic test-program generation for a specific ATE (we generate vectors and cycle data; the test program remains an ATE-team responsibility).
 - Full UPF/power-domain-aware ATPG.
 - Bit-exact TetraMAX command compatibility. We target a **TMAX-like command surface** and a script-migration layer, not undocumented behavior.
+
+Memory BIST and boundary scan insertion sit outside v1 but are no longer open-ended exclusions. They are planned as Phase 5 (M25–M33) after the 24-month program, with capability rows in 21, an insertion and verification path costed in the implementation plan, and a separate memory coverage measure in 14.3. Everything else in this list stays a non-goal.
 
 ### 2.3 Success metrics
 
@@ -522,7 +524,7 @@ Reports are emitted as JSON for tooling and as a human-readable table. Waivers c
 
 ### 9.1 Fault model and fault list
 
-V1 targets the **single stuck-at** fault model. A fault is a pair `(net, stuck_value)` where the net is forced to 0 or 1. Fault sites are gate inputs, gate outputs, primary inputs, primary outputs, scan-cell data inputs, scan-cell outputs, and scan-chain segments. Tie cells, black-box internals, and unobservable test logic are excluded with a reason code.
+V1 targets the **single stuck-at** fault model. A fault is a pair `(net, stuck_value)` where the net is forced to 0 or 1. Fault sites are gate inputs, gate outputs, primary inputs, primary outputs, scan-cell data inputs, scan-cell outputs, and scan-chain segments. Tie cells, black-box internals, unobservable test logic, and SRAM array internals are excluded with a reason code. The memory case has its own code, `MEMORY_ARRAY`: bit cells, word lines, decoders, and sense amps are not stuck-at sites in the logic denominator. They are graded by March through the BIST collar and reported in their own column (14.3, 21), and the excluded count is published beside the denominator so the exclusion cannot hide a coverage gap.
 
 **Checkpoint faults.** Generating a fault at every gate input and output is wasteful; many are equivalent. We generate faults at gate outputs, fanout branches, primary inputs/outputs, and scan-cell boundaries, then collapse.
 
@@ -541,7 +543,7 @@ Typical collapse is 3–5× on structured logic. The collapsed list is determini
 | `UNTESTABLE` | Proven undetectable | SAT UNSAT proof or structural rule |
 | `ABORTED` | Budget exhausted | Backtrack/time budget recorded |
 | `NOT_DETECTED` | Search completed without success, not proven | Run stats |
-| `EXCLUDED` | Tied, masked, black-box, or out of scope | Reason code |
+| `EXCLUDED` | Tied, masked, black-box, memory array, or out of scope | Reason code |
 
 Never label a fault untestable because ATPG gave up. That distinction is the difference between a coverage report and a work of fiction.
 
@@ -889,13 +891,14 @@ Run both tools. Compare:
 | Dimension | Comparison | Acceptance |
 |---|---|---|
 | Fault states | Per-fault detected/untestable/aborted | Every difference explained; no false untestable |
-| Coverage | Testable coverage | Within 0.5 pt |
+| Logic coverage | Testable coverage over 9.1's fault sites, SRAM arrays excluded under `MEMORY_ARRAY`, on the identical netlist and fault list | Within 0.5 pt |
+| Memory coverage | Detected ÷ injected memory faults per macro class, by March signature through the BIST collar | Not compared to TMAX; target fixed with the BIST phase |
 | Pattern count | Same fault list, same constraints | ≤ 1.10× TMAX |
 | Runtime | Same hardware, warm cache | ≤ 1.5× initially, ≤ 1.0× target |
 | Pattern replay | Our STIL in gate-level sim | 100% detection match |
 | DRC | Rule-by-rule on golden netlists | No false negatives; false positives triaged |
 
-The first parity run will expose differences in fault counting, X handling, and default constraints. Document each difference in a parity ledger with an owner and a resolution. A raw coverage number without the ledger is not evidence.
+The first parity run will expose differences in fault counting, X handling, and default constraints. Document each difference in a parity ledger with an owner and a resolution. A raw coverage number without the ledger is not evidence. The two coverage pools are never summed: TMAX carries no sites for SRAM internals, so a pooled figure has a denominator on only one side and makes the 0.5 pt claim unverifiable rather than harder to meet.
 
 ### 14.4 Formal and structural checks
 
@@ -1081,6 +1084,8 @@ Do not start with the top level. Select blocks by risk:
 | **P4 — Scale and AI** | Months 16–24 | Full-chip runs, second chip, learned heuristics in shadow mode, ATE correlation | Program production sign-off (v1 plus P3–P4) on grx930 and G100 |
 
 Phase gates are hard. A phase does not start because the calendar says so; it starts when the previous exit gate is met or explicitly waived by the DFT lead with a written risk acceptance.
+
+Phase 5 — boundary scan and memory BIST (M25–M33) — is outside this 24-month table. It is costed and scheduled in the implementation plan (section 8), its capability rows are in 21, and it changes neither the roster in 17.2 nor the exit gates above; the P2 gate measures logic coverage only, under the split in 14.3.
 
 ### 17.2 Staffing
 
@@ -1317,6 +1322,9 @@ Commercial capability descriptions vary by TetraMAX version and license; treat t
 | WGL | Yes | No | Yes | — | Same IR |
 | Tcl command surface | Yes | Yes | TMAX aliases | — | Migration layer |
 | Multi-clock capture | Yes | Limited | Yes | — | Grouped capture |
+| Boundary scan (IEEE 1149.1) | Yes (BSD Compiler) | No | No | Post-v1: Phase 5 | TAP, BSR, BSDL, EXTEST/SAMPLE/PRELOAD; 1149.6 not included |
+| Memory BIST | Yes (TestMAX SMS) | No | No | Post-v1: Phase 5 | SRAM collar, March engine, repair analysis; needs SRAM models (TBD-14) |
+| Memory coverage | Yes | No | No | Post-v1: Phase 5 | Own column and denominator; never pooled with logic coverage (14.3) |
 | UPF/power-aware | Yes | No | No | Not planned (24 mo) | Out of scope for the 24-month program; revisit after P4 |
 | Formal/equivalence | Partial | Yosys/ABC | Yosys/ABC | — | Not a differentiator |
 | Tester interfaces | Yes | STIL | Vendor format | — | ATE team owns program |
