@@ -5,7 +5,9 @@ Checks four things and exits 1 on any failure, so it can gate a commit:
 
     1. baseline-blob  the plan's `**Baseline:** … blob` equals the architecture blob
     2. plan-hash      section 15.1's digest verifies against the plan text
-    3. ids-defined    every WP-nnn / Gx.y cited in either document is defined in the plan
+    3. ids-defined    every WP-nnn / Gx.y cited in any of the three documents is
+                      defined in the plan, and every D-DIAG-* id cited anywhere is
+                      defined in the diagnosis protocol
     4. ids-unique     no work-package or gate id is defined twice
 
 Two sources of truth, picked by flag:
@@ -16,7 +18,7 @@ Two sources of truth, picked by flag:
                 introduces drift, because HEAD still holds the old, consistent
                 pair while the bad change sits in the index.
 
-Two rules keep 3 and 4 from crying wolf:
+Three rules keep 3 and 4 from crying wolf:
 
   * A definition is a table row with the shape of a definition — six columns
     with an effort figure in the fourth for a package, five or more for a gate.
@@ -25,6 +27,10 @@ Two rules keep 3 and 4 from crying wolf:
   * An id introduced by "no" is a statement that it does not exist, not a
     citation — "there is no G5.7 equivalent" is the document being careful,
     not the document dangling.
+  * A D-DIAG id is defined by the heading that names its record, backticked:
+    "## Appendix A — `D-DIAG-01` …". The plan cites both records and the
+    protocol uses them throughout, so one cannot quietly go missing from the
+    appendix that is supposed to hold it.
 """
 
 import hashlib
@@ -35,6 +41,7 @@ import sys
 
 PLAN = "dft-atpg-implementation-plan.md"
 ARCH = "dft-atpg-platform-architecture-grx930-g100.md"
+DIAG = "diagnosis-benchmark-p3.md"
 
 MODE = "staged" if "--staged" in sys.argv[1:] else "head"
 SPEC = ":" if MODE == "staged" else "HEAD:"
@@ -79,6 +86,15 @@ def gate_defs(text):
     return out
 
 
+def diag_defs(text):
+    """A `D-DIAG-…` record is defined by the heading that names it."""
+    out = []
+    for line in text.splitlines():
+        if re.match(r"^#{1,6}\s", line):
+            out.extend(re.findall(r"`(D-DIAG(?:-[A-Z]+)*-\d+)`", line))
+    return out
+
+
 failures = []
 
 
@@ -96,6 +112,7 @@ os.chdir(root)
 
 plan = content(PLAN)
 arch = content(ARCH)
+diag = content(DIAG)
 where = "the staged commit" if MODE == "staged" else "HEAD"
 
 # 1. the plan pins the architecture it was reconciled against
@@ -123,10 +140,10 @@ else:
 # 3. no citation of an id that does not exist
 wp_defs = package_defs(plan)
 g_defs = gate_defs(plan)
-defined = set(wp_defs) | set(g_defs)
+defined = set(wp_defs) | set(g_defs) | set(diag_defs(diag))
 cited = {}
-for path, text in ((PLAN, plan), (ARCH, arch)):
-    for hit in re.finditer(r"WP-\d{3}\b|G\d+\.\d+\b", text):
+for path, text in ((PLAN, plan), (ARCH, arch), (DIAG, diag)):
+    for hit in re.finditer(r"WP-\d{3}\b|G\d+\.\d+\b|D-DIAG(?:-[A-Z]+)*-\d+\b", text):
         if re.search(r"\bno\s+$", text[max(0, hit.start() - 6):hit.start()], re.I):
             continue                            # "there is no G5.7 equivalent"
         cited.setdefault(hit.group(0), set()).add(path)
@@ -139,7 +156,7 @@ all_ids = wp_defs + g_defs
 dupes = sorted({i for i in all_ids if all_ids.count(i) > 1})
 report("ids-unique", not dupes, "" if not dupes else ", ".join(dupes))
 
-if MODE == "head" and subprocess.run(["git", "diff", "--quiet", "HEAD", "--", PLAN, ARCH]).returncode != 0:
+if MODE == "head" and subprocess.run(["git", "diff", "--quiet", "HEAD", "--", PLAN, ARCH, DIAG]).returncode != 0:
     print("\nnote: the working tree differs from HEAD; everything above describes HEAD.")
 
 if failures:
