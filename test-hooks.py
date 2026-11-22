@@ -22,14 +22,19 @@ PLAN = "dft-atpg-implementation-plan.md"
 ARCH = "dft-atpg-platform-architecture-grx930-g100.md"
 DIAG = "diagnosis-benchmark-p3.md"
 FILES = (PLAN, ARCH, DIAG, "check-doc-drift.py", "test-doc-drift.py",
-         "hooks/pre-commit", "hooks/pre-push")
+         "test-hooks.py", "hooks/pre-commit", "hooks/pre-push")
 NO_HOOKS = ("-c", "core.hooksPath=.git/no-such-hooks")
+# set for the git commands this suite runs: their pre-push is a copy of the
+# hook under test, and it must not start another copy of this suite
+NESTED = "GMAX_IN_HOOK_SELFTEST"
 
 
 def git(repo, *args, env=None):
     """Run git, raising on failure; returns (returncode, output)."""
+    child = dict(os.environ if env is None else env)
+    child[NESTED] = "1"
     r = subprocess.run(("git",) + args, cwd=repo, capture_output=True,
-                       encoding="utf-8", errors="replace", env=env)
+                       encoding="utf-8", errors="replace", env=child)
     return r.returncode, r.stdout + r.stderr
 
 

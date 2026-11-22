@@ -1,5 +1,6 @@
 #!/bin/sh
-# Run the drift checker's self-test before anything leaves the machine.
+# Run both self-tests before anything leaves the machine: the drift checker's,
+# then the hooks' own, so a broken hook script cannot be pushed either.
 #
 # Enable once per clone, the same setting that turns on the pre-commit guard:
 #     git config core.hooksPath hooks
@@ -22,6 +23,12 @@ if [ ! -f test-doc-drift.py ]; then
     exit 1
 fi
 
+if [ ! -f test-hooks.py ]; then
+    echo "test-hooks: test-hooks.py is missing from the repository root." >&2
+    echo "  Restore it, or bypass with: SKIP_SELFTEST=1 git push" >&2
+    exit 1
+fi
+
 if command -v python >/dev/null 2>&1; then PY=python
 elif command -v python3 >/dev/null 2>&1; then PY=python3
 else
@@ -30,4 +37,16 @@ else
     exit 1
 fi
 
-exec "$PY" test-doc-drift.py
+"$PY" test-doc-drift.py || exit 1
+
+# test-hooks.py pushes inside throwaway repositories whose pre-push is a copy of
+# this hook, so a third self-test would start from there. The marker stops that:
+# the copy still runs test-doc-drift.py, which is what its cases test, and then
+# returns instead of recursing.
+if [ -n "${GMAX_IN_HOOK_SELFTEST:-}" ]; then
+    exit 0
+fi
+GMAX_IN_HOOK_SELFTEST=1
+export GMAX_IN_HOOK_SELFTEST
+
+exec "$PY" test-hooks.py
