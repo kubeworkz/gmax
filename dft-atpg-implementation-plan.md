@@ -47,8 +47,8 @@ Capacity is FTE × working weeks for the phase, from the architecture's staffing
 
 | Phase | Months | Weeks | FTE | Capacity (ew) | Planned effort (ew) | Load |
 |---|---|---|---|---|---|---|
-| P0 — Foundation | 0–2 | 10 | 6 | 60 | 60 | 100% |
-| P1 — Vertical slice | 3–5 | 13 | 8 | 104 | 91 | 88% |
+| P0 — Foundation | 0–2 | 10 | 6 | 60 | 58 | 97% |
+| P1 — Vertical slice | 3–5 | 13 | 8 | 104 | 93 | 89% |
 | P2 — Production stuck-at | 6–9 | 17 | 11 | 187 | 166 | 89% |
 | P3 — Transition and diagnosis | 10–15 | 26 | 11 | 286 | 186 | 65% |
 | P4 — Scale and AI | 16–24 | 39 | 11 | 429 | 314 | 73% |
@@ -131,20 +131,20 @@ These are not engineering work and cannot be recovered by working harder: **G100
 |---|---|---|---|---|---|
 | WP-001 | Build, dependencies, CI skeleton | CMake presets, pinned `third_party` refs by commit, `-Wall -Wextra -Werror`, ASan/UBSan job, clang-format, ctest wiring, offline clean-build check | 4 | — | FE |
 | WP-002 | Design DB v0 and `.dfdb` | Hierarchical + flat SoA graph (architecture 6.3), stable 32-bit IDs, string table, section table with CRC32, minor-version policy, sorted-key serialization | 6 | WP-001 | ARCH |
-| WP-003 | Liberty subset import | `cell`/`pin`/`function`/`ff`/`latch`/`statetable`/`test_cell`, primitive decomposition, exhaustive function check for ≤ 6-input cells, scan-cell detection with an acknowledgement warning when `test_cell` is absent | 6 | WP-002 | DFT |
+| WP-003 | Liberty subset import | `cell`/`pin`/`function`/`ff`/`latch`/`statetable`/`test_cell` parsing and primitive decomposition; the exhaustive function check for ≤ 6-input cells and scan-cell detection with an acknowledgement warning move to WP-101 | 4 | WP-002 | DFT |
 | WP-004 | Verilog front end via Yosys | Pinned recipe, JSON ingest, structured diagnostics (unresolved module, multiple drivers, undriven input, combinational loop, width mismatch), cell-count reconciliation against the reference report | 6 | WP-002 | FE |
 | WP-005 | Four-state evaluation | Scalar reference evaluator, 64-lane `known`/`value` planes, X-correct gate formulas, exhaustive differential unit tests against the scalar evaluator | 4 | WP-002 | VER |
 | WP-006 | Fault list and collapsing | Checkpoint generation (outputs, fanout branches, PIs/POs, scan boundaries), deterministic ordering (net ID, SA0 before SA1), structural equivalence collapse, `.faults` writer with netlist and fault-list header hashes | 5 | WP-002, WP-004 | DFT |
 | WP-007 | PODEM | Five-valued algebra, implication with occurrence counts, X-path check over controlled gates and X sources, multi-objective backtrace, chronological backtracking, per-fault budgets (`max_backtracks`, `max_time_ms`) | 10 | WP-005, WP-006 | ATPG |
 | WP-008 | SAT smoke test | `ISatSolver` boundary, CaDiCaL, two-copy miter with Tseitin clauses, detection clause over observables, UNSAT metadata, MiniSat cross-check on ≤ 1 k-gate instances | 4 | WP-006 | ATPG |
 | WP-009 | Fault simulation core | Scalar reference simulator, 64-fault/word parallel-fault with event queue and fault dropping, agreement test against the scalar simulator | 6 | WP-005 | ATPG |
-| WP-010 | CLI and Tcl v0 | Command schema with generated `-help`, exit codes 0–5, run manifest (tool version, profile/lib/netlist/seed/stage hashes), `--version` | 3 | WP-001 | ARCH |
-| WP-011 | ISCAS'85 bring-up | c432/c499 ingest, unattended end-to-end run, coverage report with denominators and fault-list hash, 1-thread vs N-thread hash equality | 4 | WP-007–WP-010 | VER |
+| WP-010 | CLI and Tcl v0 | Command schema with generated `-help`, exit codes 0–5, `--version`; the run manifest moves to WP-011 | 2 | WP-001 | ARCH |
+| WP-011 | ISCAS'85 bring-up | c432/c499 ingest, unattended end-to-end run, coverage report with denominators and fault-list hash, 1-thread vs N-thread hash equality, run manifest (tool version, profile/lib/netlist/seed/stage hashes) moved from WP-010 | 5 | WP-007–WP-010 | VER |
 | WP-012 | ADRs 009–011 | SAT integration, pattern IR, deterministic threading; reviewed and accepted | 2 | — | ARCH |
 
-**Phase total: 60 ew.**
+**Phase total: 58 ew.**
 
-**Deliberately out of P0:** PPSFP, FAN, dynamic compaction, STIL, full equivalence/dominance collapsing with SAT proofs, ISCAS'89. Each moves to P1 or P2 and is listed there. P0 is already at 100% load; anything added must displace something.
+**Deliberately out of P0:** PPSFP, FAN, dynamic compaction, STIL, full equivalence/dominance collapsing with SAT proofs, ISCAS'89. Each moves to P1 or P2 and is listed there. P0 runs at 58/60 (97%); anything added must still displace something.
 
 **Ownership follows competency, not headcount.** Liberty/`test_cell` handling and fault-list generation are DFT intake work; the scalar four-state model is verification's independent oracle for the vectorized engine; the command schema is an architectural contract. Section 11.1 is what forced those assignments to be explicit.
 
@@ -162,7 +162,7 @@ These are not engineering work and cannot be recovered by working harder: **G100
 
 | ID | Work package | Deliverables | ew | Depends on | Owner |
 |---|---|---|---|---|---|
-| WP-101 | Scan replacement | mux-D insertion from `test_cell`, dedicated scan-flop path when the library provides one, preservation of data/clock/enable/async behavior, functional-mode equivalence proof (ABC `cec` or Yosys `equiv_make` + `equiv_simple`) | 10 | G0 | DFT |
+| WP-101 | Scan replacement | mux-D insertion from `test_cell`, dedicated scan-flop path when the library provides one, preservation of data/clock/enable/async behavior, functional-mode equivalence proof (ABC `cec` or Yosys `equiv_make` + `equiv_simple`), plus Liberty scan-cell detection with an acknowledgement warning when `test_cell` is absent and the exhaustive function check for ≤ 6-input cells, both moved from WP-003 | 12 | G0 | DFT |
 | WP-102 | Chain stitching | Clock/power-domain partition, target-count allocation, first-fit-decreasing packing, lockup insertion at crossings, scan map plus a report recording the cost function and every tie-break | 9 | WP-101 | DFT |
 | WP-103 | DRC engine and rule set | DFT001–DFT020, union-find domains, Tarjan SCC, X-reachability, severity and auto-fix, JSON + table report, waivers with owner/reason/expiry checked at load so an expired waiver fails the report, one mutation test per rule | 19 | WP-101 | DFT |
 | WP-104 | Full-scan ATPG semantics | PPI/PPO mapping, scan-frame model, load/capture/unload/compare, capture-frame observation set for detection | 8 | WP-102, WP-007 | ATPG |
@@ -173,7 +173,7 @@ These are not engineering work and cannot be recovered by working harder: **G100
 | WP-110 | SDC subset and test mode | Restricted Tcl SDC commands, clock domains and generated clocks, case analysis, false paths for capture, precise warnings for unsupported commands | 6 | WP-002 | ARCH |
 | WP-111 | G100 50 k bring-up | Frozen profile, unattended full flow, coverage/DRC/pattern reports, debug log; falls back to any qualified public block if intake slips | 7 | WP-101–WP-110 | VER |
 
-**Phase total: 91 ew.**
+**Phase total: 93 ew.**
 
 **Notes**
 
@@ -182,7 +182,7 @@ These are not engineering work and cannot be recovered by working harder: **G100
 - WP-111 is VER-led: end-to-end bring-up is integration verification; DFT owns the profile, the scan map and the DRC waivers.
 - **G1.7's TMAX run is a DFT activity, not a tool package.** TBD-08 provides the frozen TMAX version and scripts at M4; DFT executes the 50 k-block run and the results are recorded in the ledger that WP-204 opens. WP-205 industrialises the same flow across three blocks in P2.
 - **G1.5's vendor-simulator run needs the ATE liaison before the roster has one.** ATE joins at 0.5 FTE in P2; for the P1 STIL acceptance the liaison is engaged on call-off for the simulator session, which is days rather than engineer-weeks and is not costed as a package.
-- **G1.2 blocks on expired waivers at P1.** WP-103 checks expiry when a waiver is loaded, so an expired waiver fails the report instead of waiting for a reviewer to notice it. WP-208 industrialises the workflow in P2 and WP-415 audits the accumulated set at G4. The check costs 1 ew; to keep P1 from running at 100% DFT, the local swap pass moves from WP-102 to WP-311, where wirelength data exists and the optimisation belongs. DFT lands at 38/39 (97%), and the six-rule contingency in Appendix C remains the release valve if the phase runs over.
+- **G1.2 blocks on expired waivers at P1.** WP-103 checks expiry when a waiver is loaded, so an expired waiver fails the report instead of waiting for a reviewer to notice it. WP-208 industrialises the workflow in P2 and WP-415 audits the accumulated set at G4. The check costs 1 ew; the local swap pass moves from WP-102 to WP-311, where wirelength data exists and the optimisation belongs. DFT lands at 40/39 (103%), and the six-rule contingency in Appendix C remains the release valve if the phase runs over.
 
 ---
 
@@ -343,7 +343,7 @@ ADRs 009–011 (SAT, pattern IR, threading) are P0 deliverables. Every later pac
 | G0.2 | SAT smoke | ≥ 1 SAT and ≥ 1 UNSAT on c432; MiniSat agrees on ≤ 1 k-gate instances | 17.1 P0 gate, 14.4 | `reports/sat_smoke.json` | ATPG |
 | G0.3 | Determinism | 1-thread and N-thread pattern/coverage hashes identical | 14.6 determinism test | hash test log | FE |
 | G0.4 | Commit gate | Debug and release build, unit tests, sanitizer smoke and format/lint all block a merge | 14.6 commit gate | CI config + one red and one green run | FE |
-| G0.5 | Reproducibility | Every run emits a complete manifest | 4.2, 6.6 | sample manifests | ARCH |
+| G0.5 | Reproducibility | Every run emits a complete manifest | 4.2, 6.6 | sample manifests | VER |
 | G0.6 | ADRs | 009–011 accepted | 20.2 item 6 | `docs/adr/` | ARCH |
 | G0.7 | Simulation agreement | Parallel-fault simulation matches the scalar reference on every net of c432 | 10.4, 17.1 P0 (bit-parallel simulation) | differential test log | ATPG |
 
@@ -446,20 +446,20 @@ An owner is an accountable lead, not a sole implementer. But a lead assignment a
 
 | Phase | ARCH | ATPG | DFT | VER | FE | ML | ATE | PM |
 |---|---|---|---|---|---|---|---|---|
-| P0 | 11/10 | 20/20 | 11/10 | 8/10 | 10/10 | — | — | — |
-| P1 | 6/13 | 24/26 | 38/39 | 12/13 | 11/13 | — | — | — |
+| P0 | 10/10 | 20/20 | 9/10 | 9/10 | 10/10 | — | — | — |
+| P1 | 6/13 | 24/26 | 40/39 | 12/13 | 11/13 | — | — | — |
 | P2 | 15/17 | 44/51 | 48/51 | 33/34 | 17/17 | — | 9/11 | 0/8.5 |
 | P3 | 6/26 | 84/78 | 35/52 | 41/52 | 0/26 | 8/26 | 2/13 | 10/13 |
 | P4 | 0/39 | 114/117 | 54/78 | 80/78 | 10/39 | 36/39 | 20/19.5 | 0/19.5 |
 
 Demand / capacity in engineer-weeks. ATE is carried at 0.65 FTE in P2 (11 ew) and 0.5 FTE elsewhere; PM at 0.5 FTE. `0` means the role is on the phase roster with no costed package; `—` means it is not on the roster.
 
-No cell exceeds 110%. The tightest are P0's ARCH and DFT at exactly 110%, P3's ATPG at 108%, and P4's VER and ATE at 103%.
+No cell exceeds 110%. The tightest are P3's ATPG at 108%, and P1's DFT, P4's VER and P4's ATE at 103%.
 
 | Phase | Before the audit | Finding | Fix |
 |---|---|---|---|
-| P0 | FE 19/10 (190%), ATPG 29/20 (145%), DFT 0/10 | Two roles over capacity while a third had nothing to own | Liberty and the fault list to DFT, the four-state reference to VER, the command schema to ARCH; every role now ≤ 110% |
-| P1 | DFT 47/26 (181%) | A 21 ew gap hidden by an 87 ≤ 91 aggregate test | Third DFT engineer, WP-111 to VER; 38/39 after the Appendix C revisions |
+| P0 | FE 19/10 (190%), ATPG 29/20 (145%), DFT 0/10 | Two roles over capacity while a third had nothing to own | Liberty and the fault list to DFT, the four-state reference to VER, the command schema to ARCH; every role now ≤ 100% |
+| P1 | DFT 47/26 (181%) | A 21 ew gap hidden by an 87 ≤ 91 aggregate test | Third DFT engineer, WP-111 to VER; 40/39 after the P0/P1 rebalance |
 | P2 | DFT 50/34 (147%), ATPG 55/51 (108%), ATE 11/8.5 (129%) | Three roles over; architect and ML seats unallocated | Third DFT, WP-203 to ARCH, WP-208 to VER, ATE at 0.65 FTE |
 | P3 | ATPG 104/78 (133%) | Sustaining was charged entirely to ATPG | WP-313 split 6/12/13/2 across ATPG, DFT, VER and ATE |
 | P4 | ML 44/39 (113%), ATPG 126/117 (108%), VER 0/78; 202 ew against 429 (47%) | Role mix and scope both wrong: features scheduled a phase after the data exists, sustaining charged entirely to ATPG, verification uncosted, and three 16.5 items without a package | WP-314 takes the feature schema and dataset, WP-404 keeps training; WP-412 split 30/20/10; WP-413–WP-415 added and WP-401/402/403/409 re-estimated — 314 ew (73%) |
@@ -522,7 +522,7 @@ Cuts are changes too. A reduction that alters what a gate proves — fewer rules
 | A gate criterion narrows, or an architecture capability lands a phase late (G1.2, G2.10) | Architecture owner (ARCH), because the plan is subordinate to the architecture | That phase's gate pack |
 | A limitation ships with the release (G4.5 waiver) | Program manager (PM), who signs the production release | WP-414 qualification report, known limitations; cited from the G4 pack |
 | A package or part of one moves between phases without changing a gate, and the receiving phase's role stays within the 110% rule (WP-307; WP-211's simulator-loop fallback) | The role lead that owns the package in both phases | Gate pack of the phase that loses the work |
-| A gate moves later because a gate-critical package overruns and no scope can be cut (WP-107/WP-111, WP-204/WP-205) | Program manager (PM), who owns the schedule | That phase's gate pack, with the plan hash revised |
+| A gate moves later because a gate-critical package overruns and no scope can be cut (WP-107/WP-111, WP-204/WP-205, P0's architect) | Program manager (PM), who owns the schedule | That phase's gate pack, with the plan hash revised |
 
 Engineering waivers inside a run are not plan changes: the DRC waivers under G1.2 and G2.9 carry an owner and an expiry, expiry is checked at load from P1 by WP-103, the workflow around it (creation, extension, audit trail) lands with WP-208 in P2, and the full accumulated set is audited at G4 by WP-415 — without a separate approval. The four events below are program decisions, not routine gate waivers; each is recorded as a plan revision with a new hash, and any waiver it creates follows the table above.
 
@@ -631,7 +631,8 @@ Four estimates carry most of the remaining risk: they are the largest packages w
 
 What the revisions changed:
 
-- **P1 → 91 ew (88%).** The DRC rule set absorbs 5 ew — 4 from the estimate, 1 for expiry checking at load — and one week moves out of WP-102 to WP-311, which is what keeps DFT at 38/39 (97%) instead of 100%. A further week goes to WP-106 for fuzz targets over the three readers, which G1.8 required and nothing produced. Replay localization leaves WP-107 for WP-313, which is where VER's week of reserve comes from. WP-110 (SDC) moves to ARCH, which already owns the command surface and the constraint schema.
+- **P0 → 58 ew (97%).** Liberty scan-cell detection and the exhaustive function check (2 ew) move to WP-101, and the run manifest (1 ew) moves to WP-011. P0 keeps two weeks of phase reserve; the architect lands at 10/10 (100%), one permitted week inside the 110% line.
+- **P1 → 93 ew (89%).** WP-101 takes the 2 ew of Liberty scan-cell work from WP-003. The DRC rule set absorbs 5 ew — 4 from the estimate, 1 for expiry checking at load — and one week moves out of WP-102 to WP-311, which holds DFT at 40/39 (103%) instead of 105%. A further week goes to WP-106 for fuzz targets over the three readers, which G1.8 required and nothing produced. Replay localization leaves WP-107 for WP-313, which is where VER's week of reserve comes from. WP-110 (SDC) moves to ARCH, which already owns the command surface and the constraint schema.
 - **P2 → 166 ew (89%).** The compression baseline absorbs 6 ew; DFT lands at 48/51 (94%), not 141%. WP-205 gains one week for G2.8's untestable audit report and G2.4's compared-block list, evidence the criteria named but no package produced. WP-204's tooling moves to ATPG (4 ew), which takes VER from 109% to 33/34 (97%), and WP-211's warning closure moves to WP-313, which takes ATE from 11/11 to 9/11 (82%).
 - **P3 → 186 ew (65%).** Chain diagnosis absorbs 4 ew, the WP-102 swap pass adds 1 ew, replay localization adds 1 ew, and ATE writer warning closure adds 2 ew; the WP-313 sustaining split shifts to 6 ATPG / 12 DFT / 13 VER / 2 ATE — also where sustaining defects and late format polish actually land. ATPG lands at 84/78 (108%).
 - **P4 → 314 ew (73%).** Full-chip parity absorbs 8 ew; VER reaches 80/78 (103%).
@@ -658,29 +659,30 @@ A range is only useful if its top has a decided response. Each package reports e
 
 | Package | Upper bound | Load if it lands | Action | After |
 |---|---|---|---|---|
-| WP-103 DRC rule set | 24 ew | P1 DFT 43/39 (110%) | Cut six rules and defer them to WP-313 in P3 (≈ 5 ew): the two multi-clock rules (DFT003, DFT019) and the rules that need compression-network or DEF inputs. Those inputs do not exist in P1, so their mutation tests would be synthetic. Six rules leave the P1 set. G1.2 is narrowed by change control to whatever remains after every cut — 14 only if no other cut has landed — and because the plan is subordinate to the architecture, the narrowing is approved by the architecture owner (ARCH) and recorded in the P1 gate pack under section 1.3 item 6, which names the six rules and their P3 date. | P1 DFT 38/39 (97%), P1 91 ew; P3 DFT 40/52 (77%), P3 191 ew |
+| WP-103 DRC rule set | 24 ew | P1 DFT 45/39 (115%) | Cut six rules and defer them to WP-313 in P3 (≈ 5 ew): the two multi-clock rules (DFT003, DFT019) and the rules that need compression-network or DEF inputs. Those inputs do not exist in P1, so their mutation tests would be synthetic. Six rules leave the P1 set. G1.2 is narrowed by change control to whatever remains after every cut — 14 only if no other cut has landed — and because the plan is subordinate to the architecture, the narrowing is approved by the architecture owner (ARCH) and recorded in the P1 gate pack under section 1.3 item 6, which names the six rules and their P3 date. | P1 DFT 40/39 (103%), P1 93 ew; P3 DFT 40/52 (77%), P3 191 ew |
 | WP-202 compression baseline | 36 ew | P2 DFT 58/51 (114%) | Cut the licensed-network configuration ingestion and the chain-balancing targets (≈ 10 ew) and move both to WP-311 in P3, where DEF and wirelength data exist. G2.10 is still met on the in-house Illinois + XOR network; the compression report states that a vendor network cannot yet be described, and WP-311 closes it. Because that limits the 11.3 comparison to in-house networks, the limitation is approved by the architecture owner (ARCH) and recorded in the P2 gate pack beside the compression report. | P2 DFT 48/51 (94%), P2 166 ew; P3 DFT 45/52 (87%), P3 196 ew |
 | WP-308 chain diagnosis | 30 ew | P3 ATPG 94/78 (121%) | Defer WP-307 (transition at scale, 10 ew) to P4 and fold it into WP-401. No G3 criterion depends on the 1 M-gate transition run — G3.1 is measured on the three P2 parity blocks — and scale is proven at full chip before G4. The deferral is approved by the ATPG lead and recorded in the P3 gate pack. | P3 ATPG 84/78 (108%), P3 186 ew; P4 ATPG 124/117 (106%), P4 324 ew |
 | WP-413 full-chip parity | 40 ew | P4 VER 88/78 (113%) | First, move 10 ew of run execution to DFT, which holds 24 ew of P4 slack; the ledger and per-chip analysis stay with VER, so no scope is lost. If WP-415 consumes that slack, the fallback drops the second chip's third block and takes a G4.5 waiver naming the missing block, approved by the program manager (PM) as the signatory of the M5 production release and recorded in the WP-414 qualification report's known limitations, with the audit in the first sustaining cycle. | P4 VER 78/78 (100%), DFT 64/78 (82%); fallback VER 83/78 (106%) |
 | WP-208 DRC golden set | 9 ew | P2 VER 35/34 (103%) | Drop the two adversarial netlists from the P2 corpus and move them to WP-313's VER share in P3. A sequencing change inside one role, approved by the verification lead and recorded in the P2 gate pack. | P2 VER 33/34 (97%), P2 166 ew; P3 VER 43/52 (83%), P3 188 ew |
 
-They compose. If every row lands: P1 91 ew, P2 166 ew, P3 203 ew (DFT 50/52, VER 43/52, ATPG 84/78, ATE 2/13), P4 332 ew (ATPG 124/117, DFT 64/78, VER 78/78) — 852 ew against 1066 (80%), every role still at or below 110%.
+They compose. If every row lands: P1 93 ew, P2 166 ew, P3 203 ew (DFT 50/52, VER 43/52, ATPG 84/78, ATE 2/13), P4 332 ew (ATPG 124/117, DFT 64/78, VER 78/78) — 852 ew against 1066 (80%), every role still at or below 110%.
 
 ### Point estimates with no range
 
-WP-101, WP-102, the WP-107/WP-111 and WP-204/WP-205 pairs, and WP-211 are single-point estimates, so there is no range top to trigger a row. The P1 DFT pair's buffer is the week restored when the swap pass moved to P3; P1 VER's is the week restored when replay localization moved to WP-313; P2 VER's is the four weeks of WP-204 tooling moved to ATPG, which leaves it at 33/34 (97%) with four weeks of overrun before the 110% line; P2 ATE's is the two weeks of warning closure moved to WP-313, leaving 9/11 (82%) and three weeks. Each is spent before any scope moves. If effort-to-complete at the midpoint shows more than that:
+WP-101, WP-102, the WP-107/WP-111 and WP-204/WP-205 pairs, WP-211 and P0's architect are single-point estimates, so there is no range top to trigger a row. The P1 DFT pair's buffer is the week restored when the swap pass moved to P3; P1 VER's is the week restored when replay localization moved to WP-313; P2 VER's is the four weeks of WP-204 tooling moved to ATPG, which leaves it at 33/34 (97%) with four weeks of overrun before the 110% line; P2 ATE's is the two weeks of warning closure moved to WP-313, leaving 9/11 (82%) and three weeks; P0 ARCH's is the week of run-manifest work moved to WP-011, leaving 10/10 (100%) and one permitted week. Each is spent before any scope moves. If effort-to-complete at the midpoint shows more than that:
 
 | Package | Overrun | Action | After |
 |---|---|---|---|
-| WP-101 scan replacement | > 1 ew | Defer the dedicated scan-flop path and its library-specific equivalence check (≈ 2 ew) to WP-313, and ship mux-D insertion. G1.1 and G1.3 do not distinguish them, and the branch belongs with library variants in sustaining. Approved by the DFT lead and recorded in the P1 gate pack. | P1 91 ew, DFT 38/39 |
-| WP-102 chain stitching | > 1 ew | No deferrable scope remains after the swap pass moved to WP-311, so the overrun is paid for out of DRC breadth: one rule per engineer-week leaves WP-103 for WP-313. That is a change-control narrowing of G1.2, not a local decision — architecture owner, P1 gate pack. | P1 91 ew, DFT 38/39 |
+| P0 ARCH | > 1 ew | The remaining 10 ew are the DB, the CLI and the architecture-mandated ADRs (20.2 item 6); the only verification-shaped slice, the run manifest, already moved to WP-011. Nothing further can leave P0 without an architecture change, so G0 moves by the overrun, approved by the program manager (PM) and recorded in the P0 gate pack as a plan revision under section 14. | P0 ARCH 10/10 (100%); G0 moves by the overrun |
+| WP-101 scan replacement | > 1 ew | Defer the dedicated scan-flop path and its library-specific equivalence check (≈ 2 ew) to WP-313, and ship mux-D insertion. G1.1 and G1.3 do not distinguish them, and the branch belongs with library variants in sustaining. Approved by the DFT lead and recorded in the P1 gate pack. | P1 93 ew, DFT 40/39 |
+| WP-102 chain stitching | > 1 ew | No deferrable scope remains after the swap pass moved to WP-311, so the overrun is paid for out of DRC breadth: one rule per engineer-week leaves WP-103 for WP-313. That is a change-control narrowing of G1.2, not a local decision — architecture owner, P1 gate pack. | P1 93 ew, DFT 40/39 |
 | WP-107 / WP-111 | > 2 ew combined | Localization already moved to WP-313, so nothing left here can be cut without weakening G1.1 or G1.4. First the WP-111 debug log goes (≈ 0.5 ew); beyond that the phase takes a schedule decision — G1 moves by the overrun, approved by the program manager (PM) and recorded in the P1 gate pack as a plan revision under section 14, not as a gate waiver. | P1 ≤ 93 ew, VER ≤ 14/13 (108%) |
 | WP-204 / WP-205 | > 4 ew combined | Tooling already moved to ATPG; what remains is comparison logic and the three-block runs G2.4 counts, so nothing can be cut without a G2.4 narrowing. The phase takes a schedule decision — G2 moves by the overrun, approved by the program manager (PM) and recorded in the P2 gate pack as a plan revision under section 14. | P2 ≤ 170 ew, VER ≤ 37/34 (109%) |
 | WP-211 vendor writer | > 3 ew | Warning closure already moved to WP-313; the vendor simulator loop (4 ew) is the next separable piece and already waits on TBD-04's format details, so it follows to WP-313's ATE share. G4.6 is the only criterion that consumes either and it is measured at M5, after P3. Approved by the ATE lead and recorded in the P2 gate pack. | P2 ATE 9/11 (82%), P2 166 ew; P3 ATE 6/13 (46%), P3 190 ew |
 
 Rule cuts here and in WP-103's own row draw on the same 20-rule set, are cumulative, and apply in the order the overruns are found; G1.2 records the remainder, never a fixed count. The floor is the error-severity class — the rules whose violation would invalidate G1.1's coverage or G1.4's replay. Its size is fixed at M1, when the 20 rule issues are opened (section 15, week 1), so the plan does not pre-empt it; no cut may take a rule from that class, and if the arithmetic would reach it, the phase takes a gate decision under section 1.3 with a named risk acceptance, approved by the architecture owner, rather than a smaller DRC set. Neither remedy touches insertion correctness, the scan map, or G1.3 — the trade is a library optimisation first and DRC breadth second, in that order.
 
-One rule applies to every contingency here: reduced scope is never claimed as a pass. G1.2 changes by change control, G2.10 records a limitation, WP-307's deferral, WP-101's scan-flop branch and WP-208's corpus cut are sequencing changes, WP-107/WP-111 and WP-204/WP-205 overruns move G1 or G2 by plan revision, and the G4.5 fallback is a waiver — each with a named approver, an owner and a date, recorded as section 14 requires: the gate pack for all but the G4.5 waiver, which sits in the WP-414 qualification report. A gate that passed on quietly reduced scope would be worse than the overrun it avoided.
+One rule applies to every contingency here: reduced scope is never claimed as a pass. G1.2 changes by change control, G2.10 records a limitation, WP-307's deferral, WP-101's scan-flop branch and WP-208's corpus cut are sequencing changes, P0's architect, WP-107/WP-111 and WP-204/WP-205 overruns move G0, G1 or G2 by plan revision, and the G4.5 fallback is a waiver — each with a named approver, an owner and a date, recorded as section 14 requires: the gate pack for all but the G4.5 waiver, which sits in the WP-414 qualification report. A gate that passed on quietly reduced scope would be worse than the overrun it avoided.
 
 **Not revised, and why.** The design database, parsers and pattern IR are well-understood infrastructure with precedent from P0 and P1; the block-level parity work is anchored to WP-205; and the AI packages are bounded by the shadow-mode protocol rather than by implementation size. The revisions above are the only places where the original numbers depended on an assumption about how fast unfamiliar EDA work goes.
 
