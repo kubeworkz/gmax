@@ -9,7 +9,8 @@ Checks four things and exits 1 on any failure, so it can gate a commit:
                       defined in the plan, every D-DIAG-* id cited anywhere is
                       defined in the diagnosis protocol, and every C-CODE
                       citation is defined in architecture 4.1's component table
-    4. ids-unique     no work-package, gate or D-DIAG id is defined twice
+    4. ids-unique     no work-package, gate, D-DIAG or component code is defined
+                      twice
 
 Two sources of truth, picked by flag:
 
@@ -186,7 +187,7 @@ report("ids-defined", not dangling, "" if not dangling else
        ", ".join("%s (%s)" % (t, "+".join(sorted(cited[t]))) for t in dangling))
 
 # 4. no id defined twice, which would let 3 pass against the wrong row
-all_ids = wp_defs + g_defs + d_defs
+all_ids = wp_defs + g_defs + d_defs + c_defs
 dupes = sorted({i for i in all_ids if all_ids.count(i) > 1})
 report("ids-unique", not dupes, "" if not dupes else ", ".join(dupes))
 

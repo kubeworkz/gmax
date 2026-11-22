@@ -11,7 +11,9 @@ previous case. Run it after touching the checker or the documents:
 Exits 0 when every case behaves, 1 otherwise, naming the case that broke.
 """
 
+import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -63,6 +65,26 @@ def ok_lines(out):
 
 def fail_lines(out):
     return {c for c in CHECKS if ("FAIL " + c) in out}
+
+
+def re_pin(repo):
+    """Point the plan at the staged architecture and recompute its digest.
+
+    An architecture edit that carries a correct re-pin is not drift in the pin,
+    so a case can inject something else there and see only its own check fail.
+    """
+    blob = git(repo, "rev-parse", ":" + ARCH).strip()
+    path = os.path.join(repo, PLAN)
+    with open(path, encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    text = re.sub(r"(blob `)[0-9a-f]{40}(`)",
+                  lambda m: m.group(1) + blob + m.group(2), text, count=1)
+    text = re.sub(r"`sha256:[0-9a-f]{64}`", "`sha256:HASH`", text, count=1)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    text = text.replace("`sha256:HASH`", "`sha256:" + digest + "`", 1)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+    git(repo, "add", "--", PLAN)
 
 
 def drift(repo, name, text):
@@ -117,6 +139,27 @@ for name, filename, text, why in DRIFT:
                rc == 1 and targeted and others_held, out)
     finally:
         shutil.rmtree(repo, ignore_errors=True)
+
+# a duplicate code row inside 4.1 needs the plan re-pinned to get past the pin
+repo = make_repo()
+try:
+    path = os.path.join(repo, ARCH)
+    with open(path, encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    anchor = "| `FE` | Front end: elaboration, Liberty, SDC, DEF/LEF, STIL/SPF import | 7 |"
+    assert text.count(anchor) == 1
+    duplicate = anchor.replace("Front end: elaboration, Liberty, SDC, DEF/LEF, STIL/SPF import",
+                               "Front end, declared a second time")
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text.replace(anchor, anchor + chr(10) + duplicate))
+    git(repo, "add", "--", ARCH)
+    re_pin(repo)
+    rc, out = check(repo, "--staged")
+    record("ids-unique catches a component code defined twice",
+           rc == 1 and fail_lines(out) == {"ids-unique"}
+           and ok_lines(out) == set(CHECKS) - {"ids-unique"}, out)
+finally:
+    shutil.rmtree(repo, ignore_errors=True)
 
 broken = [n for n, good in results if not good]
 if broken:
