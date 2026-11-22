@@ -27,10 +27,9 @@ Three rules keep 3 and 4 from crying wolf:
   * An id introduced by "no" is a statement that it does not exist, not a
     citation — "there is no G5.7 equivalent" is the document being careful,
     not the document dangling.
-  * A D-DIAG id is defined by the heading that names its record, backticked:
-    "## Appendix A — `D-DIAG-01` …". The plan cites both records and the
-    protocol uses them throughout, so one cannot quietly go missing from the
-    appendix that is supposed to hold it.
+  * A D-DIAG id is defined only by its appendix heading, backticked:
+    "## Appendix A — `D-DIAG-01` …". A section heading that mentions the id
+    in passing is a citation, not a second definition.
 """
 
 import hashlib
@@ -87,10 +86,14 @@ def gate_defs(text):
 
 
 def diag_defs(text):
-    """A `D-DIAG-…` record is defined by the heading that names it."""
+    """A `D-DIAG-…` record is defined only by its appendix heading.
+
+    `## Appendix A — `D-DIAG-01` …` defines the record. A section heading that
+    merely mentions it — "### What `D-DIAG-01` records" — does not.
+    """
     out = []
     for line in text.splitlines():
-        if re.match(r"^#{1,6}\s", line):
+        if re.match(r"^#{1,6}\s+Appendix\b", line, re.I):
             out.extend(re.findall(r"`(D-DIAG(?:-[A-Z]+)*-\d+)`", line))
     return out
 
