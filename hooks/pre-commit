@@ -1,0 +1,40 @@
+#!/bin/sh
+# Refuse a commit that leaves the plan and the architecture out of step.
+#
+# Enable once per clone, after which every commit is guarded:
+#     git config core.hooksPath hooks
+#
+# Checks the STAGED content, not HEAD: at pre-commit time HEAD still holds the
+# old, consistent pair, so a HEAD-based check would wave through the very
+# commit that introduces the drift.
+#
+# Opt out for one commit:   SKIP_DRIFT_CHECK=1 git commit ...
+if [ -n "${SKIP_DRIFT_CHECK:-}" ]; then
+    echo "check-doc-drift: skipped (SKIP_DRIFT_CHECK set)" >&2
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+if [ ! -f check-doc-drift.py ]; then
+    echo "check-doc-drift: check-doc-drift.py is missing from the repository root." >&2
+    echo "  Restore it, or bypass with: SKIP_DRIFT_CHECK=1 git commit ..." >&2
+    exit 1
+fi
+
+if ! grep -q -- "--staged" check-doc-drift.py 2>/dev/null; then
+    echo "check-doc-drift: the script at the repository root ignores --staged," >&2
+    echo "  so the hook would check HEAD and wave this commit through." >&2
+    echo "  Restore the staged-aware version, or bypass with: SKIP_DRIFT_CHECK=1 git commit ..." >&2
+    exit 1
+fi
+
+if command -v python >/dev/null 2>&1; then PY=python
+elif command -v python3 >/dev/null 2>&1; then PY=python3
+else
+    echo "check-doc-drift: no python on PATH." >&2
+    echo "  Install python, or bypass with: SKIP_DRIFT_CHECK=1 git commit ..." >&2
+    exit 1
+fi
+
+exec "$PY" check-doc-drift.py --staged
