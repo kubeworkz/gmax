@@ -23,13 +23,15 @@ The workspace contains no chip data, so the following are working assumptions. I
 
 **Chip-specific inputs still required [INTAKE]:** netlists, Liberty libraries (including scan cells), SDC, scan insertion spec (chain count, length targets, clocking), test-mode pin list, memory/analog black-box list, compression IP decision, ATE platform and pattern format, and any existing TetraMAX scripts and golden patterns.
 
+**Release terminology.** **v1** is the P2 full-scan stuck-at release. P3–P4 are post-v1 extensions; the **program** is the full 24-month roadmap.
+
 > **Guiding principle:** the ATPG engine is deterministic Boolean reasoning. AI is an offline coding accelerator and heuristic advisor. No LLM and no learned model sits in the fault-propagation decision path in v1.
 
 ---
 
 ## 1. Executive summary
 
-We will build a **deterministic C++20 core** with Tcl and Python front ends, reusing proven open-source infrastructure where it reduces risk: **Yosys** for Verilog elaboration and equivalence checks, **ABC** for combinational representation and optimization, and **CaDiCaL** (with MiniSat as a second solver) for SAT-based ATPG. We will not reimplement a Verilog parser, a SAT solver, or a synthesis engine.
+This document specifies the build option: a **deterministic C++20 core** with Tcl and Python front ends, reusing proven open-source infrastructure where it reduces risk: **Yosys** for Verilog elaboration and equivalence checks, **ABC** for combinational representation and optimization, and **CaDiCaL** (with MiniSat as a second solver) for SAT-based ATPG. We will not reimplement a Verilog parser, a SAT solver, or a synthesis engine. The build-vs-buy comparison is in section 17.3; section 20.1 tracks the decision.
 
 The system is organized around one **versioned design database** with two views: a hierarchical view used for scan insertion and DRC, and a flattened, word-parallel view used for ATPG and fault simulation. All tools — DRC, stitching, ATPG, simulation, pattern writing — operate on the same IDs, names, and constraints, which is the main defense against the classic DFT-tool failure mode of "the netlist the tool checked is not the netlist the tool tested."
 
@@ -40,7 +42,7 @@ Delivery is deliberately narrow and vertical:
 3. **Phase 2:** production hardening on real blocks, multi-clock support, compression baseline, and measured parity against TetraMAX on the same netlist and fault list.
 4. **Phase 3+:** transition delay, diagnosis, full-chip scale, then learned heuristics in shadow mode.
 
-The first production-quality milestone is **full-scan stuck-at ATPG with zero DRC escapes and pattern counts within 10–15% of TMAX**. Everything else is sequenced behind that.
+The first production-quality milestone is **full-scan stuck-at ATPG with zero DRC escapes and pattern counts within 10% of TMAX**. Everything else is sequenced behind that.
 
 ### Key architectural decisions
 
@@ -113,7 +115,7 @@ scan:
   max_chains: 64
   target_chain_length: 2500
   lockup: auto
-  scan_enable: shared_per_clock_domain
+  scan_enable: shared_per_compatible_group
   test_clocks: [tck_a, tck_b]
   async_controls: [rst_n, por_n]
 constraints:
@@ -139,7 +141,7 @@ Before a chip can be brought up, the DFT team supplies:
 
 ### 3.2 What "done" means per chip
 
-A chip is considered supported when: the full flow runs unattended on its top-level netlist; DRC is clean or every waiver is documented; stuck-at coverage meets the block-level target; patterns replay in gate-level simulation; the ATE team accepts the STIL; and a TMAX-vs-in-house comparison report exists for at least three representative blocks.
+Acceptance is defined by the criteria in section 16.5. A chip is not considered supported until those criteria are met and signed off by the DFT lead.
 
 ---
 
@@ -450,7 +452,7 @@ Rules:
 - Functional mode (`SE = 0`) must be logically equivalent to the original netlist; this is proven, not assumed.
 - Latches are not scanned in v1; they are either bypassed in test mode or reported as a DRC error. LSSD support is a later extension.
 - Asynchronous set/reset must be controllable or disabled in test mode; uncontrolled async pins are a DRC error.
-- Scan enable is static during capture. Per-clock-domain scan enables are allowed and are the default for multi-clock designs.
+- Scan enable is static during capture. The default is one scan enable per compatible clock group; per-domain scan enables are supported when the profile requests them.
 - Test-mode port, scan enable, and scan clocks are added to the pin interface with explicit directions and default values.
 
 ### 8.2 Chain assignment and ordering
@@ -461,16 +463,16 @@ Chain stitching is a constrained partitioning problem, not a graph walk:
 
 **Constraints:**
 
-- never mix cells from incompatible clock domains in one chain without a lockup latch,
+- never mix cells from incompatible clock groups in one chain; compatible clock domains may share a chain only with a lockup latch at each crossing,
 - chain length skew within the configured limit (default 5%),
 - target chain count from the profile,
-- one scan enable per compatible domain group,
+- one scan enable per compatible clock group (or per domain when the profile requests separate enables),
 - scan input/output pins available on the boundary.
 
 **Algorithm:**
 
-1. Partition cells by clock domain and power domain.
-2. Within each partition, first-fit-decreasing bin packing into the requested number of chains, tie-broken by instance name.
+1. Partition cells by compatible clock group and power domain.
+2. Allocate the target chain count across partitions, then first-fit-decreasing bin packing within each partition, tie-broken by instance name.
 3. Local swap pass to reduce max-length skew and lockup count.
 4. Order cells within a chain by domain, then by physical proximity when DEF is available, then by name.
 5. Insert lockup latches at domain crossings and at segment boundaries where the clock skew budget requires them.
@@ -1051,7 +1053,7 @@ Do not start with the top level. Select blocks by risk:
 - Testable stuck-at coverage meets the block target and is within 0.5 pt of TMAX on the parity blocks.
 - Pattern count is within 1.10× TMAX; runtime is within the agreed budget.
 - Patterns replay in gate-level simulation and are accepted by the ATE simulator.
-- A parity ledger exists for every coverage or pattern-count difference.
+- A TMAX comparison report exists for at least three representative blocks, with a parity ledger for every coverage or pattern-count difference.
 - The run manifest reproduces the exact pattern set from the recorded inputs and seed.
 
 ### 16.6 Responsibilities
@@ -1072,11 +1074,11 @@ Do not start with the top level. Select blocks by risk:
 
 | Phase | Duration | Deliverables | Exit gate |
 |---|---|---|---|
-| **P0 — Foundation** | Months 0–2 | Repo, build, design DB, Liberty/Verilog import, fault list, PODEM, scalar + bit-parallel simulation, CLI, CI | 100% coverage on ISCAS'85 c432/c499; deterministic hashes; no sanitizer failures |
+| **P0 — Foundation** | Months 0–2 | Repo, build, design DB, Liberty/Verilog import, fault list, PODEM, SAT smoke test, scalar + bit-parallel simulation, CLI, CI | 100% coverage on ISCAS'85 c432/c499; SAT smoke test passes; deterministic hashes; no sanitizer failures |
 | **P1 — Vertical slice** | Months 3–5 | Scan replacement, stitching, DRC engine, full-scan stuck-at, STIL writer, G100 50 k-gate block | ≥ 95% testable coverage; DRC clean/waived; patterns replay in gate-level sim |
-| **P2 — Production stuck-at** | Months 6–9 | Multi-clock capture, compression baseline, TMAX parity on two blocks, 1 M-gate subsystem | ≥ 99% testable coverage; pattern count ≤ 1.10× TMAX; runtime ≤ 1.5× |
-| **P3 — Transition and diagnosis** | Months 10–15 | LOC/LOS transition ATPG, two-timeframe model, chain diagnosis, physical-aware stitching | Transition coverage target; diagnosis accuracy on injected failures |
-| **P4 — Scale and AI** | Months 16–24 | Full-chip runs, second chip, learned heuristics in shadow mode, ATE correlation | Production sign-off on grx930 and G100 |
+| **P2 — Production stuck-at** | Months 6–9 | Multi-clock capture, compression baseline, TMAX parity on at least three blocks, 1 M-gate subsystem | ≥ 99.5% testable coverage; pattern count ≤ 1.10× TMAX; runtime ≤ 1.5× |
+| **P3 — Transition and diagnosis** | Months 10–15 | LOC/LOS transition ATPG, two-timeframe model, chain diagnosis, physical-aware stitching | Transition coverage and diagnosis accuracy meet the M9 targets in section 20.1 |
+| **P4 — Scale and AI** | Months 16–24 | Full-chip runs, second chip, learned heuristics in shadow mode, ATE correlation | Program production sign-off (v1 plus P3–P4) on grx930 and G100 |
 
 Phase gates are hard. A phase does not start because the calendar says so; it starts when the previous exit gate is met or explicitly waived by the DFT lead with a written risk acceptance.
 
@@ -1098,7 +1100,7 @@ Ramp-up: start with 6 (architect, 2 ATPG, 1 DFT, 1 verification, 1 front end), a
 
 ### 17.3 Effort and build-vs-buy
 
-A TMAX-class tool is a multi-year, multi-team effort. This plan delivers a **focused full-scan stuck-at subset in ~24 months with 11 FTE (~22 engineer-years)**. Transition delay, diagnosis, and compression maturity add an estimated **8–12 engineer-years**. Full feature parity with TetraMAX — including all fault models, compression IP, diagnosis, and tester integrations — is not a 24-month deliverable and should not be promised as one.
+A TMAX-class tool is a multi-year, multi-team effort. This plan delivers **v1 (the focused full-scan stuck-at release) at P2 (~month 9)**, then extends it with transition, diagnosis, and scale through P3–P4 by month 24; the 24-month program is staffed at 11 FTE (~22 engineer-years). Taking transition, diagnosis, and compression from baseline to full TMAX-class maturity adds an estimated **8–12 engineer-years beyond this plan**. Full feature parity with TetraMAX — including all fault models, compression IP, diagnosis, and tester integrations — is not a 24-month deliverable and should not be promised as one.
 
 | Condition | Recommendation |
 |---|---|
@@ -1115,9 +1117,9 @@ The build case rests on more than license cost: control of the flow, ability to 
 | M0 | Month 0 | Team staffed, repo, decision on build-vs-buy |
 | M1 | Month 2 | ISCAS'85 stuck-at ATPG and simulation from CLI |
 | M2 | Month 5 | G100 50 k-gate block: insert, DRC, ATPG, STIL, replay |
-| M3 | Month 9 | TMAX parity report on two blocks; 1 M-gate subsystem |
+| M3 | Month 9 | TMAX parity report on at least three blocks; 1 M-gate subsystem |
 | M4 | Month 15 | Transition ATPG and diagnosis demo |
-| M5 | Month 24 | Production sign-off package for grx930 and G100 |
+| M5 | Month 24 | Program production sign-off package for grx930 and G100 (v1 plus P3–P4) |
 
 ---
 
@@ -1132,7 +1134,7 @@ The build case rests on more than license cost: control of the flow, ability to 
 | Scan DRC escapes | Medium | High | Mutation tests per rule; golden netlists; independent review of waivers | Silicon failure traced to unscanned cell |
 | Library scan-cell gaps | Medium | Medium | Audit libraries at intake; manual models for exotic cells; flag unsupported cells | Missing `test_cell`; function mismatch |
 | Netlist handoff delays | High | Medium | Freeze dates; mock netlists; import blocks as they land | Profile fields still TBD at M1 |
-| Scope creep into BIST/analog/transition | High | Medium | Written non-goals; phase gates; change control | New feature requests before P2 gate |
+| Scope creep into BIST/analog, or pulling transition into v1 | High | Medium | Written non-goals; phase gates; change control | New feature requests before P2 gate |
 | Determinism bugs | Medium | Medium | Stable IDs; deterministic merge; 1-thread vs N-thread hash tests | Different pattern hashes across runs |
 | ATE format mismatch | Medium | Medium | Early vendor simulator; STIL round-trip; ATE liaison from P1 | Vendor warnings unresolved at P2 |
 | AI overreach | Low | High | Hard boundary; shadow mode; deterministic fallback; no LLM in loop | Model recommendation accepted without simulation |
@@ -1273,6 +1275,9 @@ Semantic versioning for the tool; independent schema versions for `.dfdb`, fault
 | TMAX version and scripts | DFT | M1 | Current production version | Freeze for parity runs |
 | Physical-aware stitching | DFT | M6 | Wirelength-aware ordering | Phase 3, after logical flow is stable |
 | Transition/diagnosis scope | Architecture | M9 | LOC/LOS; path delay; chain diagnosis | LOC/LOS + chain diagnosis first |
+| Transition coverage target | DFT + Architecture | M9 | ≥85% testable; ≥90% testable; TMAX parity | ≥90% testable transition coverage, within 1.0 pt of TMAX; confirm at M9 against a TMAX transition run on the parity blocks |
+| Diagnosis accuracy target | DFT + Architecture | M9 | Top-1 exact ≥70%; top-5 ≥90%; TMAX parity | True site in the top 5 suspects for ≥90% of injected stuck-at/transition failures, with top-1 exact ≥70%; confirm against TMAX diagnosis at M9 |
+| UPF/power-aware ATPG | Architecture | M9 | Out of scope for the 24-month program; evaluate after P4; include | Out of scope for the 24-month program |
 | AI pilot | Tools/ML | M12 | Difficulty classifier; backtrace ranking | Difficulty classifier in shadow mode |
 | Export control / legal | Legal | M0 | Internal use; external distribution | Review before any external sharing |
 
@@ -1307,12 +1312,12 @@ Commercial capability descriptions vary by TetraMAX version and license; treat t
 | Test compression | Yes | No | Illinois/XOR baseline | Compression-aware | Licensed IP optional |
 | Transition delay ATPG | Yes | No | No | LOC/LOS | Phase 3 |
 | Path delay ATPG | Yes | No | No | Later | Not in 24-month scope |
-| Diagnosis | Yes | No | Basic chain diagnosis | Advanced | Phase 3 |
+| Diagnosis | Yes | No | No | Basic chain diagnosis | Phase 3; advanced later |
 | STIL | Yes | Yes | Yes | — | Round-trip validated |
 | WGL | Yes | No | Yes | — | Same IR |
 | Tcl command surface | Yes | Yes | TMAX aliases | — | Migration layer |
 | Multi-clock capture | Yes | Limited | Yes | — | Grouped capture |
-| UPF/power-aware | Yes | No | No | TBD | Out of scope v1 |
+| UPF/power-aware | Yes | No | No | Not planned (24 mo) | Out of scope for the 24-month program; revisit after P4 |
 | Formal/equivalence | Partial | Yosys/ABC | Yosys/ABC | — | Not a differentiator |
 | Tester interfaces | Yes | STIL | Vendor format | — | ATE team owns program |
 | GUI | Yes | CLI | CLI + reports | Optional | Do not build a GUI early |
@@ -1377,22 +1382,24 @@ The strategic gap is not a missing checkbox; it is **pattern quality and runtime
 
 ---
 
-## Appendix C — TBD register
+## Appendix C — Open items register
 
-| ID | Item | Owner | Needed by | Blocks |
-|---|---|---|---|---|
-| TBD-01 | grx930 top netlist and libraries | Design | M1 | grx930 profile |
-| TBD-02 | G100 top netlist and libraries | Design | M1 | G100 profile |
-| TBD-03 | Scan spec (chains, clocks, SE) | DFT | M1 | Insertion |
-| TBD-04 | ATE platform and pin map | ATE | M1 | Pattern writer |
-| TBD-05 | Compression IP decision | DFT/tools | M3 | P2 compression |
-| TBD-06 | Test clock/capture procedure | DFT | M1 | Multi-clock ATPG |
-| TBD-07 | X-source inventory | DFT | M2 | Coverage/masks |
-| TBD-08 | TMAX version and golden runs | DFT | M1 | Parity |
-| TBD-09 | Build-vs-buy decision | Executive | M0 | Staffing |
-| TBD-10 | First G100 bring-up block | DFT | M0 | P1 |
-| TBD-11 | Legal/license review | Legal | M0 | Distribution |
-| TBD-12 | Physical data (DEF/LEF) | Design | M6 | Physical-aware stitching |
+Items marked **Decision** are the same decisions tracked in section 20.1; this register records their schedule impact and is not a second decision log. **Input** items are missing design data. **Review** items are legal or licensing tasks.
+
+| ID | Item | Type | Owner | Needed by | Blocks |
+|---|---|---|---|---|---|
+| TBD-01 | grx930 top netlist and libraries | Input | Design | M1 | grx930 profile |
+| TBD-02 | G100 top netlist and libraries | Input | Design | M1 | G100 profile |
+| TBD-03 | Scan spec (chains, clocks, SE) | Input | DFT | M1 | Insertion |
+| TBD-04 | ATE platform and pin map | Decision/Input | ATE | M1 | Pattern writer |
+| TBD-05 | Compression IP decision | Decision | DFT/tools | M3 | P2 compression |
+| TBD-06 | Test clock/capture procedure | Decision | DFT | M1 | Multi-clock ATPG |
+| TBD-07 | X-source inventory and policy | Decision/Input | DFT | M2 | Coverage/masks |
+| TBD-08 | TMAX version and golden runs | Decision/Input | DFT | M1 | Parity |
+| TBD-09 | Build-vs-buy decision | Decision | Executive | M0 | Staffing |
+| TBD-10 | First G100 bring-up block | Decision | DFT | M0 | P1 |
+| TBD-11 | Legal/license review | Review | Legal | M0 | Distribution |
+| TBD-12 | Physical data (DEF/LEF) | Input | Design | M6 | Physical-aware stitching |
 
 ---
 
