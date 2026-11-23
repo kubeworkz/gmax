@@ -158,13 +158,16 @@ class ConeEmitter {
         }
     }
 
-    db::Status add(db::GateType type, std::vector<std::string> fanins, const std::string& target) {
+    db::Status add(db::GateType type, std::vector<std::string> fanins, const std::string& target,
+                   std::string async_clear = {}, std::string async_preset = {}) {
         db::Gate gate;
         gate.type = type;
         gate.name = "g" + std::to_string(next_gate_++);
         gate.fanins = std::move(fanins);
         gate.out = target;
         gate.lib_cell = lib_cell_;
+        gate.async_clear = std::move(async_clear);
+        gate.async_preset = std::move(async_preset);
         module_.gates.push_back(std::move(gate));
         return {};
     }
@@ -306,6 +309,47 @@ db::Status with_context(const Cell& cell, const Pin& pin, const db::Status& stat
                                                    "': " + status.message());
 }
 
+// A Liberty async control is an expression over one pin. v0 accepts the pin or
+// its complement and normalizes to active high by inserting a Not, so neither
+// the gate model nor ATPG has to carry control polarity.
+db::Status async_control_net(const Cell& cell, const Pin& pin, std::string_view what,
+                             const std::string& text, ConeEmitter& emitter, std::string& out) {
+    const std::string where =
+        "cell '" + cell.name + "' pin '" + pin.name + "' " + std::string(what);
+    Expr expr;
+    db::Status status = parse_expression(text, expr);
+    if (!status.ok()) {
+        return with_context(cell, pin, status);
+    }
+    bool invert = false;
+    const Expr* operand = &expr;
+    if (expr.kind == ExprKind::Not) {
+        if (expr.args.size() != 1) {
+            return db::Status::failure(db::Error::BadPayload,
+                                       where + " must name one pin or its complement, got '" +
+                                           text + "'");
+        }
+        invert = true;
+        operand = &expr.args[0];
+    }
+    if (operand->kind != ExprKind::Variable) {
+        return db::Status::failure(db::Error::BadPayload,
+                                   where + " must name one pin or its complement, got '" + text +
+                                       "'");
+    }
+    std::string net;
+    status = emitter.resolve(operand->name, {}, net);
+    if (!status.ok()) {
+        return status;
+    }
+    if (!invert) {
+        out = net;
+        return {};
+    }
+    out = emitter.fresh_net();
+    return emitter.add(db::GateType::Not, {net}, out);
+}
+
 db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& emitter) {
     std::map<std::string, std::string> aliases;
     if (!pin.ff.state.empty()) {
@@ -336,18 +380,25 @@ db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& e
                                    "cell '" + cell.name + "' pin '" + pin.name +
                                        "' has no next_state and the cell has no statetable");
     }
-    if (!pin.ff.clear.empty() || !pin.ff.preset.empty()) {
-        return db::Status::failure(
-            db::Error::BadPayload,
-            "cell '" + cell.name + "' pin '" + pin.name +
-                "' declares asynchronous clear/preset, which the v0 primitive set cannot "
-                "represent; model the cell as a blackbox or wait for the primitive extension");
-    }
-
     const std::string next_net = emitter.fresh_net();
     status = emitter.emit(next, next_net, aliases);
     if (!status.ok()) {
         return status;
+    }
+
+    std::string async_clear;
+    if (!pin.ff.clear.empty()) {
+        status = async_control_net(cell, pin, "clear", pin.ff.clear, emitter, async_clear);
+        if (!status.ok()) {
+            return status;
+        }
+    }
+    std::string async_preset;
+    if (!pin.ff.preset.empty()) {
+        status = async_control_net(cell, pin, "preset", pin.ff.preset, emitter, async_preset);
+        if (!status.ok()) {
+            return status;
+        }
     }
 
     if (pin.ff.kind == Ff::Kind::FlipFlop) {
@@ -362,7 +413,15 @@ db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& e
         if (!status.ok()) {
             return status;
         }
-        return emitter.add(db::GateType::Dff, {next_net, clock}, pin.name);
+        std::vector<std::string> fanins = {next_net, clock};
+        if (!async_clear.empty()) {
+            fanins.push_back(async_clear);
+        }
+        if (!async_preset.empty()) {
+            fanins.push_back(async_preset);
+        }
+        return emitter.add(db::GateType::Dff, std::move(fanins), pin.name, async_clear,
+                           async_preset);
     }
 
     if (pin.ff.enable.empty()) {
@@ -375,7 +434,14 @@ db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& e
     if (!status.ok()) {
         return status;
     }
-    return emitter.add(db::GateType::Dlat, {next_net, enable}, pin.name);
+    std::vector<std::string> fanins = {next_net, enable};
+    if (!async_clear.empty()) {
+        fanins.push_back(async_clear);
+    }
+    if (!async_preset.empty()) {
+        fanins.push_back(async_preset);
+    }
+    return emitter.add(db::GateType::Dlat, std::move(fanins), pin.name, async_clear, async_preset);
 }
 
 }  // namespace

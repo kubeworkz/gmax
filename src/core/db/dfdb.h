@@ -12,9 +12,11 @@
 namespace gmax::db::dfdb {
 
 // Schema versions of the container (ADR-004, architecture 19.6). A tool release
-// declares the versions it reads and writes; this one writes 1.0.
+// declares the versions it reads and writes; this one writes 1.1. The 1.1
+// addition is the optional async section (DFF/DLAT clear and preset), so a 1.0
+// file still loads: its absent section means "no asynchronous controls".
 inline constexpr std::uint16_t kSchemaMajor = 1;
-inline constexpr std::uint16_t kSchemaMinor = 0;
+inline constexpr std::uint16_t kSchemaMinor = 1;
 
 // Container layout (architecture 6.6): header (magic, major/minor version,
 // endianness marker, section count), a section table of offset/size/CRC32, then

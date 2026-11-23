@@ -144,6 +144,22 @@ Status DesignDb::flatten() {
             }
 
             for (const Gate& gate : module.gates) {
+                const bool has_async = !gate.async_clear.empty() || !gate.async_preset.empty();
+                if (has_async && gate.type != GateType::Dff && gate.type != GateType::Dlat) {
+                    return Status::failure(
+                        Error::BadPayload,
+                        "gate '" + gate.name +
+                            "' carries an asynchronous control but is not a DFF or DLAT");
+                }
+                for (const std::string* control : {&gate.async_clear, &gate.async_preset}) {
+                    if (!control->empty() && std::find(gate.fanins.begin(), gate.fanins.end(),
+                                                       *control) == gate.fanins.end()) {
+                        return Status::failure(Error::BadPayload,
+                                               "gate '" + gate.name +
+                                                   "' names async control net '" + *control +
+                                                   "', which is not one of its fanins");
+                    }
+                }
                 const auto id = static_cast<GateId>(next_gate++);
                 flat.type.push_back(gate.type);
                 flat.fanin_begin.push_back(static_cast<std::uint32_t>(flat.fanins.size()));
@@ -168,6 +184,12 @@ Status DesignDb::flatten() {
                 flat.flags.push_back(0);
                 flat.level.push_back(0);
                 flat.lib_cell.push_back(gate.lib_cell);
+                flat.async_clear.push_back(gate.async_clear.empty()
+                                               ? kInvalidId
+                                               : net_for(prefix, ports, gate.async_clear));
+                flat.async_preset.push_back(gate.async_preset.empty()
+                                                ? kInvalidId
+                                                : net_for(prefix, ports, gate.async_preset));
             }
 
             if (const auto it = children.find(prefix); it != children.end()) {

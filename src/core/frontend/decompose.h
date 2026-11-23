@@ -14,10 +14,13 @@ namespace gmax::frontend {
 // no function becomes a Blackbox. Every gate carries the cell's index in
 // lib_cell, so reporting can still name the original library cell.
 //
+// An ff or latch clear/preset becomes the gate's async_clear/async_preset net
+// and is also appended to its fanins, so reachability and levelization see the
+// control. Control polarity is normalized to active high with a Not.
+//
 // v0 limits, all reported as errors rather than silently dropped: pins are
-// scalar, clocked_on/enable must name one pin, and an ff clear or preset is
-// rejected because the flat graph has no per-fanin roles to say which input is
-// an asynchronous control.
+// scalar, clocked_on/enable must name one pin, and a clear or preset must name
+// one pin or its complement.
 db::Status decompose_cell(const Cell& cell, db::Module& module);
 
 // Decomposes every cell and appends the modules to `design`.

@@ -32,6 +32,13 @@ struct FlatNetlist {
     std::vector<std::uint32_t> level;
     std::vector<std::uint32_t> lib_cell;
 
+    // Per gate: the net that asynchronously clears (forces 0) or presets (forces
+    // 1) the output, or kInvalidId when the gate has no such control. The net is
+    // also present in the gate's fanin slice; this array is what tells ATPG the
+    // control's role. Both controls are active high by the time they reach here.
+    std::vector<NetId> async_clear;
+    std::vector<NetId> async_preset;
+
     // Per net.
     std::vector<std::uint32_t> driver;  // gate id, kPrimaryInput or kInvalidId
     std::vector<std::uint32_t> name_id;

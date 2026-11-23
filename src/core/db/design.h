@@ -19,6 +19,18 @@ struct Gate {
     std::string out;
     std::uint32_t lib_cell = kInvalidId;
 
+    // Asynchronous controls of a DFF or DLAT (architecture 6.2). These nets
+    // force the output to 0 (async_clear) or 1 (async_preset) without a clock
+    // edge. They are normalized to active high during liberty import, so the
+    // polarity of the library pin never reaches ATPG. Empty means the gate has
+    // no such control. Both also appear in fanins, which keeps reachability and
+    // levelization from missing the control; these fields say which role it has.
+    // A DFF/DLAT's fanins are data, clock/enable, clear, preset, each control
+    // only when present; consumers should read these fields rather than infer
+    // roles from fanin positions.
+    std::string async_clear;
+    std::string async_preset;
+
     friend bool operator==(const Gate&, const Gate&) = default;
 };
 

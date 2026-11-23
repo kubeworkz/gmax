@@ -25,6 +25,7 @@ enum class Section : std::uint32_t {
     Nets = 4,
     Sources = 5,
     Meta = 6,
+    Async = 7,
 };
 
 Status fail(Error error, std::string message) { return Status::failure(error, std::move(message)); }
@@ -252,6 +253,32 @@ std::vector<std::uint8_t> build_sources(const FlatNetlist& flat) {
     return writer.take();
 }
 
+// Asynchronous controls live in their own section so the 1.1 addition stays
+// additive: a 1.0 file has no such section and loads with every control absent.
+// A string id or net id of kInvalidId means "no control", so no empty string is
+// interned. Design gates and flat gates are listed in their canonical order.
+std::vector<std::uint8_t> build_async(const Design& design, const FlatNetlist& flat,
+                                      StringTable& strings) {
+    Writer writer;
+    std::uint32_t design_gates = 0;
+    for (const Module& module : design.modules) {
+        design_gates += static_cast<std::uint32_t>(module.gates.size());
+    }
+    writer.u32(design_gates);
+    for (const Module& module : design.modules) {
+        for (const Gate& gate : module.gates) {
+            writer.u32(gate.async_clear.empty() ? kInvalidId : strings.intern(gate.async_clear));
+            writer.u32(gate.async_preset.empty() ? kInvalidId : strings.intern(gate.async_preset));
+        }
+    }
+    writer.u32(flat.gate_count());
+    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
+        writer.u32(gate < flat.async_clear.size() ? flat.async_clear[gate] : kInvalidId);
+        writer.u32(gate < flat.async_preset.size() ? flat.async_preset[gate] : kInvalidId);
+    }
+    return writer.take();
+}
+
 // Counts are repeated here on purpose: they are cheap, and a section that parses
 // but disagrees with the rest of the file is a bug worth catching at load.
 std::vector<std::uint8_t> build_meta(const FlatNetlist& flat, const StringTable& strings) {
@@ -272,6 +299,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     // Hierarchy first: interning its names grows the table the strings section
     // then writes.
     std::vector<std::uint8_t> hierarchy = build_hierarchy(design, table);
+    std::vector<std::uint8_t> async = build_async(design, flat, table);
     std::vector<std::pair<Section, std::vector<std::uint8_t>>> sections;
     sections.emplace_back(Section::Strings, build_strings(table));
     sections.emplace_back(Section::Hierarchy, std::move(hierarchy));
@@ -279,6 +307,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     sections.emplace_back(Section::Nets, build_nets(flat));
     sections.emplace_back(Section::Sources, build_sources(flat));
     sections.emplace_back(Section::Meta, build_meta(flat, table));
+    sections.emplace_back(Section::Async, std::move(async));
 
     Writer writer;
     for (const std::uint8_t byte : kMagic) {
@@ -577,6 +606,65 @@ Status parse_sources(Reader& reader, FlatNetlist& flat) {
     return Status{};
 }
 
+// Restores a section written by build_async. The caller has already sized both
+// flat arrays to kInvalidId, so a 1.0 file's absent section needs no special
+// case here.
+Status parse_async(Reader& reader, const StringTable& strings, Design& design, FlatNetlist& flat) {
+    std::size_t design_gates = 0;
+    for (const Module& module : design.modules) {
+        design_gates += module.gates.size();
+    }
+    const std::uint32_t stored_gates = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "async section ends inside its hierarchy count");
+    }
+    if (stored_gates != design_gates) {
+        return fail(Error::BadPayload, "async section disagrees with the hierarchy gate count");
+    }
+    for (Module& module : design.modules) {
+        for (Gate& gate : module.gates) {
+            const StringId clear = reader.u32();
+            const StringId preset = reader.u32();
+            if (!reader.ok()) {
+                return fail(Error::TruncatedFile, "async section ends inside a gate record");
+            }
+            if (clear != kInvalidId) {
+                if (!strings.contains(clear)) {
+                    return fail(Error::BadPayload,
+                                "async section names a string id the table does not have");
+                }
+                gate.async_clear = std::string(strings.at(clear));
+            }
+            if (preset != kInvalidId) {
+                if (!strings.contains(preset)) {
+                    return fail(Error::BadPayload,
+                                "async section names a string id the table does not have");
+                }
+                gate.async_preset = std::string(strings.at(preset));
+            }
+        }
+    }
+
+    const std::uint32_t flat_gates = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "async section ends inside its flat gate count");
+    }
+    if (flat_gates != flat.gate_count()) {
+        return fail(Error::BadPayload, "async section disagrees with the flat gate count");
+    }
+    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
+        flat.async_clear[gate] = reader.u32();
+        flat.async_preset[gate] = reader.u32();
+    }
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "async section ends inside its control arrays");
+    }
+    if (!reader.at_end()) {
+        return fail(Error::BadPayload, "async section has trailing bytes");
+    }
+    return Status{};
+}
+
 Status parse_meta(Reader& reader, const FlatNetlist& flat, const StringTable& strings) {
     const std::uint32_t gate_count = reader.u32();
     const std::uint32_t net_count = reader.u32();
@@ -611,6 +699,8 @@ const char* section_name(const Section section) {
         return "sources";
     case Section::Meta:
         return "meta";
+    case Section::Async:
+        return "async";
     }
     return "unknown";
 }
@@ -640,7 +730,8 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
         return fail(Error::BadPayload, "gates section slice offsets do not match its arrays");
     }
     if (flat.out_net.size() != gate_count || flat.flags.size() != gate_count ||
-        flat.level.size() != gate_count || flat.lib_cell.size() != gate_count) {
+        flat.level.size() != gate_count || flat.lib_cell.size() != gate_count ||
+        flat.async_clear.size() != gate_count || flat.async_preset.size() != gate_count) {
         return fail(Error::BadPayload, "gates section arrays disagree on the gate count");
     }
     if (flat.name_id.size() != net_count || flat.source_loc.size() != net_count) {
@@ -659,6 +750,27 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
     for (const NetId net : flat.out_net) {
         if (net != kInvalidId && net >= net_count) {
             return fail(Error::BadPayload, "a gate drives a net that does not exist");
+        }
+    }
+    for (std::size_t gate = 0; gate < gate_count; ++gate) {
+        for (const NetId net : {flat.async_clear[gate], flat.async_preset[gate]}) {
+            if (net == kInvalidId) {
+                continue;
+            }
+            if (net >= net_count) {
+                return fail(Error::BadPayload,
+                            "an asynchronous control names a net that does not exist");
+            }
+            if (flat.type[gate] != GateType::Dff && flat.type[gate] != GateType::Dlat) {
+                return fail(Error::BadPayload,
+                            "a gate that is not a DFF or DLAT carries an asynchronous control");
+            }
+            const auto begin = flat.fanins.begin() + flat.fanin_begin[gate];
+            const auto end = flat.fanins.begin() + flat.fanin_begin[gate + 1];
+            if (std::find(begin, end, net) == end) {
+                return fail(Error::BadPayload,
+                            "an asynchronous control is not one of its gate's fanins");
+            }
         }
     }
     for (const std::uint32_t driver : flat.driver) {
@@ -776,11 +888,16 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         }
         return nullptr;
     };
-    for (const Section required : {Section::Strings, Section::Hierarchy, Section::Gates,
-                                   Section::Nets, Section::Sources, Section::Meta}) {
-        if (find(required) == nullptr) {
+    std::vector<Section> required = {Section::Strings, Section::Hierarchy, Section::Gates,
+                                     Section::Nets,    Section::Sources,   Section::Meta};
+    // 1.1 added the async section; a 1.0 file predates it and is still valid.
+    if (minor >= 1) {
+        required.push_back(Section::Async);
+    }
+    for (const Section section : required) {
+        if (find(section) == nullptr) {
             return fail(Error::MissingSection,
-                        std::string("file has no ") + section_name(required) + " section");
+                        std::string("file has no ") + section_name(section) + " section");
         }
     }
     for (const Entry& entry : entries) {
@@ -791,6 +908,7 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         case Section::Nets:
         case Section::Sources:
         case Section::Meta:
+        case Section::Async:
             break;
         default:
             return fail(Error::UnknownSection,
@@ -835,6 +953,17 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
     {
         Reader section = open(*find(Section::Sources));
         const Status status = parse_sources(section, flat);
+        if (!status) {
+            return status;
+        }
+    }
+    // A 1.0 file has no async section, so default every control to absent
+    // before the optional section fills them in.
+    flat.async_clear.assign(flat.gate_count(), kInvalidId);
+    flat.async_preset.assign(flat.gate_count(), kInvalidId);
+    if (const Entry* async = find(Section::Async); async != nullptr) {
+        Reader section = open(*async);
+        const Status status = parse_async(section, strings, design, flat);
         if (!status) {
             return status;
         }

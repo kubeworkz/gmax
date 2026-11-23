@@ -1,6 +1,7 @@
 // WP-003: Liberty subset import and primitive decomposition. Framework-free for
 // the same reason as the other tests: third_party stays empty until TBD-11.
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -77,6 +78,16 @@ library (demo) {
       ff (IQ) { next_state : "D"; clocked_on : "CK"; clear : "CDN"; }
     }
   }
+  cell (DFFSR) {
+    pin (D) { direction : input; }
+    pin (CK) { direction : input; }
+    pin (CDN) { direction : input; }
+    pin (SN) { direction : input; }
+    pin (Q) {
+      direction : output;
+      ff (IQ) { next_state : "D"; clocked_on : "CK"; clear : "!CDN"; preset : "SN"; }
+    }
+  }
   cell (LAT) {
     statetable ("D", "IQ") {
       table : "0 : 0 : 0, 1 : 0 : 1, 0 : 1 : 0, 1 : 1 : 1";
@@ -143,7 +154,7 @@ void test_parse() {
         return;
     }
     expect(library.name == "demo", "the library keeps its name");
-    expect(library.cells.size() == 10, "the demo library has ten cells");
+    expect(library.cells.size() == 11, "the demo library has eleven cells");
 
     const frontend::Cell* and2 = library.find_cell("AND2");
     expect(and2 != nullptr, "AND2 is present");
@@ -172,6 +183,11 @@ void test_parse() {
     expect(dffr != nullptr && dffr->find_pin("Q") != nullptr &&
                dffr->find_pin("Q")->ff.clear == "CDN",
            "an ff clear is parsed");
+
+    const frontend::Cell* dffsr = library.find_cell("DFFSR");
+    expect(dffsr != nullptr && dffsr->find_pin("Q") != nullptr &&
+               dffsr->find_pin("Q")->ff.clear == "!CDN" && dffsr->find_pin("Q")->ff.preset == "SN",
+           "an active-low clear and a preset are parsed");
 
     const frontend::Cell* lat = library.find_cell("LAT");
     expect(lat != nullptr, "LAT is present");
@@ -322,9 +338,34 @@ void test_decomposition(const frontend::Library& library) {
     const frontend::Cell* dffr = library.find_cell("DFFR");
     db::Module dffr_module;
     if (dffr != nullptr) {
-        const db::Status status = frontend::decompose_cell(*dffr, dffr_module);
-        expect(!status.ok(), "an asynchronous clear is rejected");
-        expect(mentions(status, "asynchronous"), "the async error says why");
+        expect(frontend::decompose_cell(*dffr, dffr_module).ok(),
+               "an asynchronous clear decomposes");
+        const db::Gate* q = gate_driving(dffr_module, "Q");
+        expect(q != nullptr && q->type == db::GateType::Dff, "the async-clear flop is a Dff");
+        expect(q != nullptr && q->async_clear == "CDN" && q->async_preset.empty(),
+               "the active-high clear names its pin");
+        expect(q != nullptr && q->fanins.size() == 3 && q->fanins[2] == "CDN",
+               "the clear is also a fanin");
+    }
+
+    const frontend::Cell* dffsr = library.find_cell("DFFSR");
+    db::Module dffsr_module;
+    if (dffsr != nullptr) {
+        expect(frontend::decompose_cell(*dffsr, dffsr_module).ok(),
+               "a flop with set and reset decomposes");
+        const db::Gate* q = gate_driving(dffsr_module, "Q");
+        expect(q != nullptr && q->type == db::GateType::Dff, "the set/reset flop is a Dff");
+        expect(q != nullptr && q->fanins.size() == 4, "the set/reset flop has four inputs");
+        if (q != nullptr && q->fanins.size() == 4) {
+            expect(q->async_preset == "SN", "the preset is the SN pin");
+            expect(q->async_clear != "CDN" && q->async_clear == q->fanins[2],
+                   "the active-low clear is normalized onto a new net");
+            expect(q->fanins[3] == "SN", "the preset follows the clear");
+            const db::Gate* inverter = gate_driving(dffsr_module, q->async_clear);
+            expect(inverter != nullptr && inverter->type == db::GateType::Not &&
+                       inverter->fanins == std::vector<std::string>({"CDN"}),
+                   "the active-low clear inverts CDN");
+        }
     }
 
     const frontend::Cell* lat = library.find_cell("LAT");
@@ -371,6 +412,19 @@ void test_errors(const frontend::Library& library) {
         const db::Status wide_status = frontend::decompose_cell(wide, module);
         expect(!wide_status.ok() && mentions(wide_status, "not scalar"),
                "a multi-bit statetable row is rejected");
+    }
+
+    if (const frontend::Cell* dffr = library.find_cell("DFFR"); dffr != nullptr) {
+        frontend::Cell compound = *dffr;
+        compound.name = "COMPOUND";
+        for (frontend::Pin& pin : compound.pins) {
+            if (pin.name == "Q") {
+                pin.ff.clear = "CDN & D";
+            }
+        }
+        const db::Status compound_status = frontend::decompose_cell(compound, module);
+        expect(!compound_status.ok() && mentions(compound_status, "one pin"),
+               "a compound asynchronous clear is rejected");
     }
 
     frontend::Library scratch;
@@ -477,6 +531,85 @@ void test_integration(const frontend::Library& library) {
     }
 }
 
+void test_async_flatten(const frontend::Library& library) {
+    const frontend::Cell* dffsr = library.find_cell("DFFSR");
+    expect(dffsr != nullptr, "the set/reset cell exists");
+    if (dffsr == nullptr) {
+        return;
+    }
+
+    frontend::Library subset;
+    subset.name = "async";
+    subset.cells.push_back(*dffsr);
+
+    db::Design design;
+    design.top = "top";
+    const db::Status decomposed = frontend::decompose_library(subset, design);
+    expect(decomposed.ok(), "the set/reset flop decomposes into a module");
+    if (!decomposed.ok()) {
+        std::cerr << "  " << decomposed.message() << std::endl;
+        return;
+    }
+
+    db::Module top;
+    top.name = "top";
+    top.inputs = {"d", "ck", "cdn", "sn"};
+    top.outputs = {"q"};
+    design.modules.push_back(top);
+
+    db::Instance instance;
+    instance.path = "u0";
+    instance.module = "DFFSR";
+    instance.connections = {{"D", "d"}, {"CK", "ck"}, {"CDN", "cdn"}, {"SN", "sn"}, {"Q", "q"}};
+    design.instances = {instance};
+
+    db::DesignDb database;
+    database.design() = design;
+    const db::Status flattened = database.flatten();
+    expect(flattened.ok(), "the async design flattens");
+    if (!flattened.ok()) {
+        std::cerr << "  " << flattened.message() << std::endl;
+        return;
+    }
+
+    expect(database.flat().gate_count() == 3,
+           "the flop, its data buffer and its polarity inverter are three gates");
+    expect(database.flat().async_clear.size() == database.flat().gate_count() &&
+               database.flat().async_preset.size() == database.flat().gate_count(),
+           "the flat graph carries a control entry for every gate");
+
+    bool found = false;
+    for (db::GateId gate = 0; gate < database.flat().gate_count(); ++gate) {
+        if (database.flat().type[gate] != db::GateType::Dff) {
+            continue;
+        }
+        found = true;
+        const db::NetId clear = database.flat().async_clear[gate];
+        const db::NetId preset = database.flat().async_preset[gate];
+        expect(clear != db::kInvalidId && preset != db::kInvalidId,
+               "both controls reach the flat graph");
+        if (clear != db::kInvalidId) {
+            const db::GateId inverter = database.flat().driver[clear];
+            const db::NetId cdn = net_named(database, "cdn");
+            expect(inverter != db::kInvalidId &&
+                       database.flat().type[inverter] == db::GateType::Not,
+                   "the flat clear is driven by an inverter");
+            if (inverter != db::kInvalidId) {
+                expect(database.flat().fanins[database.flat().fanin_begin[inverter]] == cdn,
+                       "the inverter reads the active-low clear pin");
+            }
+        }
+        if (preset != db::kInvalidId) {
+            expect(net_named(database, "sn") == preset, "the flat preset is the SN pin net");
+        }
+        const auto begin = database.flat().fanins.begin() + database.flat().fanin_begin[gate];
+        const auto end = database.flat().fanins.begin() + database.flat().fanin_begin[gate + 1];
+        expect(std::find(begin, end, clear) != end && std::find(begin, end, preset) != end,
+               "both controls are also banked into the flop's fanins");
+    }
+    expect(found, "the flat graph has the flop");
+}
+
 }  // namespace
 
 int main() {
@@ -489,6 +622,7 @@ int main() {
         test_decomposition(library);
         test_errors(library);
         test_integration(library);
+        test_async_flatten(library);
     }
 
     if (failures != 0) {
