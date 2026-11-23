@@ -254,36 +254,28 @@ std::vector<std::uint8_t> build_sources(const FlatNetlist& flat) {
     return writer.take();
 }
 
-// Asynchronous controls live in their own section so the 1.1 addition stays
-// additive: a 1.0 file has no such section and loads with every control absent.
-// A string id or net id of kInvalidId means "no control", so no empty string is
-// interned. Design gates and flat gates are listed in their canonical order.
-std::vector<std::uint8_t> build_async(const Design& design, const FlatNetlist& flat,
-                                      StringTable& strings) {
-    Writer writer;
-    std::uint32_t design_gates = 0;
-    for (const Module& module : design.modules) {
-        design_gates += static_cast<std::uint32_t>(module.gates.size());
-    }
-    writer.u32(design_gates);
-    for (const Module& module : design.modules) {
-        for (const Gate& gate : module.gates) {
-            writer.u32(gate.async_clear.empty() ? kInvalidId : strings.intern(gate.async_clear));
-            writer.u32(gate.async_preset.empty() ? kInvalidId : strings.intern(gate.async_preset));
-        }
-    }
-    writer.u32(flat.gate_count());
-    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
-        writer.u32(gate < flat.async_clear.size() ? flat.async_clear[gate] : kInvalidId);
-        writer.u32(gate < flat.async_preset.size() ? flat.async_preset[gate] : kInvalidId);
-    }
-    return writer.take();
-}
+// A control column is one per-gate field carried by a control section: the
+// design keeps the net name, the flat graph keeps the net id.
+struct ControlColumn {
+    std::string Gate::*design;
+    std::vector<NetId> FlatNetlist::*flat;
+};
 
-// enable follows the same additive pattern as async: .dfdb 1.2 stores it in its
-// own optional section, so a 1.0 or 1.1 file loads with every enable absent.
-std::vector<std::uint8_t> build_enable(const Design& design, const FlatNetlist& flat,
-                                       StringTable& strings) {
+const ControlColumn kAsyncColumns[] = {
+    {&Gate::async_clear, &FlatNetlist::async_clear},
+    {&Gate::async_preset, &FlatNetlist::async_preset},
+};
+const ControlColumn kEnableColumns[] = {
+    {&Gate::enable, &FlatNetlist::enable},
+};
+
+// Each group of controls lives in its own optional section so every minor
+// addition stays additive: a file that predates the section loads with those
+// controls absent. A string or net id of kInvalidId means "no control", so no
+// empty string is interned. Design gates and flat gates stay in canonical order.
+std::vector<std::uint8_t> build_control_section(const Design& design, const FlatNetlist& flat,
+                                                StringTable& strings,
+                                                std::span<const ControlColumn> columns) {
     Writer writer;
     std::uint32_t design_gates = 0;
     for (const Module& module : design.modules) {
@@ -292,12 +284,18 @@ std::vector<std::uint8_t> build_enable(const Design& design, const FlatNetlist& 
     writer.u32(design_gates);
     for (const Module& module : design.modules) {
         for (const Gate& gate : module.gates) {
-            writer.u32(gate.enable.empty() ? kInvalidId : strings.intern(gate.enable));
+            for (const ControlColumn& column : columns) {
+                const std::string& name = gate.*column.design;
+                writer.u32(name.empty() ? kInvalidId : strings.intern(name));
+            }
         }
     }
     writer.u32(flat.gate_count());
     for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
-        writer.u32(gate < flat.enable.size() ? flat.enable[gate] : kInvalidId);
+        for (const ControlColumn& column : columns) {
+            const std::vector<NetId>& nets = flat.*column.flat;
+            writer.u32(gate < nets.size() ? nets[gate] : kInvalidId);
+        }
     }
     return writer.take();
 }
@@ -322,8 +320,8 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     // Hierarchy first: interning its names grows the table the strings section
     // then writes.
     std::vector<std::uint8_t> hierarchy = build_hierarchy(design, table);
-    std::vector<std::uint8_t> async = build_async(design, flat, table);
-    std::vector<std::uint8_t> enable = build_enable(design, flat, table);
+    std::vector<std::uint8_t> async = build_control_section(design, flat, table, kAsyncColumns);
+    std::vector<std::uint8_t> enable = build_control_section(design, flat, table, kEnableColumns);
     std::vector<std::pair<Section, std::vector<std::uint8_t>>> sections;
     sections.emplace_back(Section::Strings, build_strings(table));
     sections.emplace_back(Section::Hierarchy, std::move(hierarchy));
@@ -631,108 +629,60 @@ Status parse_sources(Reader& reader, FlatNetlist& flat) {
     return Status{};
 }
 
-// Restores a section written by build_async. The caller has already sized both
-// flat arrays to kInvalidId, so a file older than 1.1 needs no special case.
-Status parse_async(Reader& reader, const StringTable& strings, Design& design, FlatNetlist& flat) {
+// Restores a control section written by build_control_section. The caller has
+// already sized the flat columns to kInvalidId, so a file that predates the
+// section needs no special case.
+Status parse_control_section(Reader& reader, const StringTable& strings, Design& design,
+                             FlatNetlist& flat, std::string_view name,
+                             std::span<const ControlColumn> columns) {
     std::size_t design_gates = 0;
     for (const Module& module : design.modules) {
         design_gates += module.gates.size();
     }
+    const std::string prefix = std::string(name) + " section ";
     const std::uint32_t stored_gates = reader.u32();
     if (!reader.ok()) {
-        return fail(Error::TruncatedFile, "async section ends inside its hierarchy count");
+        return fail(Error::TruncatedFile, prefix + "ends inside its hierarchy count");
     }
     if (stored_gates != design_gates) {
-        return fail(Error::BadPayload, "async section disagrees with the hierarchy gate count");
+        return fail(Error::BadPayload, prefix + "disagrees with the hierarchy gate count");
     }
     for (Module& module : design.modules) {
         for (Gate& gate : module.gates) {
-            const StringId clear = reader.u32();
-            const StringId preset = reader.u32();
-            if (!reader.ok()) {
-                return fail(Error::TruncatedFile, "async section ends inside a gate record");
-            }
-            if (clear != kInvalidId) {
-                if (!strings.contains(clear)) {
-                    return fail(Error::BadPayload,
-                                "async section names a string id the table does not have");
+            for (const ControlColumn& column : columns) {
+                const StringId id = reader.u32();
+                if (!reader.ok()) {
+                    return fail(Error::TruncatedFile, prefix + "ends inside a gate record");
                 }
-                gate.async_clear = std::string(strings.at(clear));
-            }
-            if (preset != kInvalidId) {
-                if (!strings.contains(preset)) {
-                    return fail(Error::BadPayload,
-                                "async section names a string id the table does not have");
+                if (id == kInvalidId) {
+                    continue;
                 }
-                gate.async_preset = std::string(strings.at(preset));
+                if (!strings.contains(id)) {
+                    return fail(Error::BadPayload,
+                                prefix + "names a string id the table does not have");
+                }
+                gate.*column.design = std::string(strings.at(id));
             }
         }
     }
 
     const std::uint32_t flat_gates = reader.u32();
     if (!reader.ok()) {
-        return fail(Error::TruncatedFile, "async section ends inside its flat gate count");
+        return fail(Error::TruncatedFile, prefix + "ends inside its flat gate count");
     }
     if (flat_gates != flat.gate_count()) {
-        return fail(Error::BadPayload, "async section disagrees with the flat gate count");
+        return fail(Error::BadPayload, prefix + "disagrees with the flat gate count");
     }
     for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
-        flat.async_clear[gate] = reader.u32();
-        flat.async_preset[gate] = reader.u32();
-    }
-    if (!reader.ok()) {
-        return fail(Error::TruncatedFile, "async section ends inside its control arrays");
-    }
-    if (!reader.at_end()) {
-        return fail(Error::BadPayload, "async section has trailing bytes");
-    }
-    return Status{};
-}
-
-// Restores a section written by build_enable; absent in 1.0 and 1.1 files.
-Status parse_enable(Reader& reader, const StringTable& strings, Design& design, FlatNetlist& flat) {
-    std::size_t design_gates = 0;
-    for (const Module& module : design.modules) {
-        design_gates += module.gates.size();
-    }
-    const std::uint32_t stored_gates = reader.u32();
-    if (!reader.ok()) {
-        return fail(Error::TruncatedFile, "enable section ends inside its hierarchy count");
-    }
-    if (stored_gates != design_gates) {
-        return fail(Error::BadPayload, "enable section disagrees with the hierarchy gate count");
-    }
-    for (Module& module : design.modules) {
-        for (Gate& gate : module.gates) {
-            const StringId enable = reader.u32();
-            if (!reader.ok()) {
-                return fail(Error::TruncatedFile, "enable section ends inside a gate record");
-            }
-            if (enable != kInvalidId) {
-                if (!strings.contains(enable)) {
-                    return fail(Error::BadPayload,
-                                "enable section names a string id the table does not have");
-                }
-                gate.enable = std::string(strings.at(enable));
-            }
+        for (const ControlColumn& column : columns) {
+            (flat.*column.flat)[gate] = reader.u32();
         }
     }
-
-    const std::uint32_t flat_gates = reader.u32();
     if (!reader.ok()) {
-        return fail(Error::TruncatedFile, "enable section ends inside its flat gate count");
-    }
-    if (flat_gates != flat.gate_count()) {
-        return fail(Error::BadPayload, "enable section disagrees with the flat gate count");
-    }
-    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
-        flat.enable[gate] = reader.u32();
-    }
-    if (!reader.ok()) {
-        return fail(Error::TruncatedFile, "enable section ends inside its control array");
+        return fail(Error::TruncatedFile, prefix + "ends inside its control columns");
     }
     if (!reader.at_end()) {
-        return fail(Error::BadPayload, "enable section has trailing bytes");
+        return fail(Error::BadPayload, prefix + "has trailing bytes");
     }
     return Status{};
 }
@@ -1057,7 +1007,8 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
     flat.async_preset.assign(flat.gate_count(), kInvalidId);
     if (const Entry* async = find(Section::Async); async != nullptr) {
         Reader section = open(*async);
-        const Status status = parse_async(section, strings, design, flat);
+        const Status status =
+            parse_control_section(section, strings, design, flat, "async", kAsyncColumns);
         if (!status) {
             return status;
         }
@@ -1065,7 +1016,8 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
     flat.enable.assign(flat.gate_count(), kInvalidId);
     if (const Entry* enable = find(Section::Enable); enable != nullptr) {
         Reader section = open(*enable);
-        const Status status = parse_enable(section, strings, design, flat);
+        const Status status =
+            parse_control_section(section, strings, design, flat, "enable", kEnableColumns);
         if (!status) {
             return status;
         }

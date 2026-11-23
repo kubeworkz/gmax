@@ -162,7 +162,7 @@ Status DesignDb::flatten() {
                                                        *control) == gate.fanins.end()) {
                         return Status::failure(Error::BadPayload,
                                                "gate '" + gate.name +
-                                                   "' names async control net '" + *control +
+                                                   "' names sequential control net '" + *control +
                                                    "', which is not one of its fanins");
                     }
                 }

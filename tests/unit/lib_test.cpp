@@ -98,6 +98,15 @@ library (demo) {
       ff (IQ) { next_state : "D"; clocked_on : "CK"; enable : "!EN"; clear : "RN"; }
     }
   }
+  cell (DFFCE) {
+    pin (D) { direction : input; }
+    pin (EN) { direction : input; }
+    pin (CK) { direction : input; }
+    pin (Q) {
+      direction : output;
+      ff (IQ) { next_state : "EN ? D : IQ"; clocked_on : "CK"; }
+    }
+  }
   cell (LAT) {
     statetable ("D", "IQ") {
       table : "0 : 0 : 0, 1 : 0 : 1, 0 : 1 : 0, 1 : 1 : 1";
@@ -108,6 +117,14 @@ library (demo) {
       direction : output;
       function : "IQ";
       latch (IQ, IQN) { enable : "G"; }
+    }
+  }
+  cell (LATN) {
+    pin (D) { direction : input; }
+    pin (GN) { direction : input; }
+    pin (Q) {
+      direction : output;
+      latch (IQ, IQN) { enable : "!GN"; data_in : "D"; }
     }
   }
   cell (BLACK) {
@@ -164,7 +181,7 @@ void test_parse() {
         return;
     }
     expect(library.name == "demo", "the library keeps its name");
-    expect(library.cells.size() == 12, "the demo library has twelve cells");
+    expect(library.cells.size() == 14, "the demo library has fourteen cells");
 
     const frontend::Cell* and2 = library.find_cell("AND2");
     expect(and2 != nullptr, "AND2 is present");
@@ -203,6 +220,16 @@ void test_parse() {
     expect(dffe != nullptr && dffe->find_pin("Q") != nullptr &&
                dffe->find_pin("Q")->ff.enable == "!EN" && dffe->find_pin("Q")->ff.clear == "RN",
            "an ff enable and clear are parsed");
+
+    const frontend::Cell* dffce = library.find_cell("DFFCE");
+    expect(dffce != nullptr && dffce->find_pin("Q") != nullptr &&
+               dffce->find_pin("Q")->ff.enable.empty(),
+           "a standard clock-enabled flop has no ff enable");
+
+    const frontend::Cell* latn = library.find_cell("LATN");
+    expect(latn != nullptr && latn->find_pin("Q") != nullptr &&
+               latn->find_pin("Q")->ff.enable == "!GN",
+           "a latch enable is parsed as written");
 
     const frontend::Cell* lat = library.find_cell("LAT");
     expect(lat != nullptr, "LAT is present");
@@ -405,6 +432,24 @@ void test_decomposition(const frontend::Library& library) {
         }
     }
 
+    const frontend::Cell* dffce = library.find_cell("DFFCE");
+    db::Module dffce_module;
+    if (dffce != nullptr) {
+        expect(frontend::decompose_cell(*dffce, dffce_module).ok(),
+               "a standard clock-enabled flop decomposes");
+        const db::Gate* q = gate_driving(dffce_module, "Q");
+        expect(q != nullptr && q->type == db::GateType::Dff, "the clock-enabled flop is a Dff");
+        expect(q != nullptr && q->fanins.size() == 2 && q->enable.empty(),
+               "the standard hold is not a DFF enable control");
+        const db::Gate* cone = q != nullptr && q->fanins.size() == 2
+                                   ? gate_driving(dffce_module, q->fanins[0])
+                                   : nullptr;
+        expect(cone != nullptr && cone->type == db::GateType::Mux2,
+               "the next-state cone selects between data and feedback");
+        expect(cone != nullptr && cone->fanins == std::vector<std::string>({"D", "Q", "EN"}),
+               "the mux feeds back Q when EN is low");
+    }
+
     const frontend::Cell* lat = library.find_cell("LAT");
     db::Module lat_module;
     if (lat != nullptr) {
@@ -423,6 +468,23 @@ void test_decomposition(const frontend::Library& library) {
         expect(count_type(lat_module, db::GateType::Not) == 1,
                "the table's 0 columns become inversions");
         expect(count_type(lat_module, db::GateType::Dlat) == 1, "the latch is one Dlat");
+    }
+
+    const frontend::Cell* latn = library.find_cell("LATN");
+    db::Module latn_module;
+    if (latn != nullptr) {
+        expect(frontend::decompose_cell(*latn, latn_module).ok(),
+               "a latch with an active-low enable decomposes");
+        const db::Gate* q = gate_driving(latn_module, "Q");
+        expect(q != nullptr && q->type == db::GateType::Dlat, "the active-low latch is a Dlat");
+        expect(q != nullptr && q->fanins.size() == 2 && q->enable.empty(),
+               "the latch enable stays a transparency fanin");
+        if (q != nullptr && q->fanins.size() == 2) {
+            const db::Gate* inverter = gate_driving(latn_module, q->fanins[1]);
+            expect(inverter != nullptr && inverter->type == db::GateType::Not &&
+                       inverter->fanins == std::vector<std::string>({"GN"}),
+                   "the active-low latch enable is normalized with a Not");
+        }
     }
 }
 

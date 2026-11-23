@@ -14,10 +14,12 @@ namespace gmax::frontend {
 // no function becomes a Blackbox. Every gate carries the cell's index in
 // lib_cell, so reporting can still name the original library cell.
 //
-// An ff enable becomes the DFF's enable net (a hold while low); an ff or latch
-// clear/preset becomes async_clear/async_preset. Each is also appended to the
-// gate's fanins, so reachability and levelization see it, and its polarity is
-// normalized to active high with a Not.
+// An ff enable (a vendor extension; standard Liberty puts a clock enable in
+// next_state) becomes the DFF's enable net, a hold while low. A latch enable is
+// its transparency control and follows the same polarity normalization. An ff
+// or latch clear/preset becomes async_clear/async_preset. Each control is also
+// appended to the gate's fanins, so reachability and levelization see it, and
+// its polarity is normalized to active high with a Not.
 //
 // v0 limits, all reported as errors rather than silently dropped: pins are
 // scalar, clocked_on must name one pin, and an enable, clear or preset must name

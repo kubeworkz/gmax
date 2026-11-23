@@ -441,8 +441,7 @@ db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& e
                                    "cell '" + cell.name + "' pin '" + pin.name + "' has no enable");
     }
     std::string enable;
-    status = resolve_pin_name(emitter, pin.ff.enable, aliases,
-                              "cell '" + cell.name + "' pin '" + pin.name + "' enable", enable);
+    status = control_net(cell, pin, "enable", pin.ff.enable, emitter, enable);
     if (!status.ok()) {
         return status;
     }

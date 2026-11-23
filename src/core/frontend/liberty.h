@@ -29,9 +29,10 @@ enum class Direction : std::uint8_t { Input, Output, Inout, Internal };
 
 std::string_view direction_name(Direction direction);
 
-// The ff and latch groups have the same shape; kind records which one declared
-// them. state is the current-state variable named in ff (IQ); clock and enable
-// hold clocked_on and enable as written in the library.
+// The ff and latch groups are recorded with one shape; kind says which declared
+// them. Standard Liberty gives enable/data_in to the latch group; an enable in
+// an ff group is a vendor extension. state is the current-state variable (IQ);
+// clock and enable hold clocked_on and enable as written in the library.
 struct Ff {
     enum class Kind : std::uint8_t { None, FlipFlop, Latch };
 
