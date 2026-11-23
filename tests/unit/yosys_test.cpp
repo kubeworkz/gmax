@@ -770,6 +770,25 @@ void test_bus_width_mismatches() {
                                  "cell '$dffsr$1' port 'SET' is 2 bits, expected 4 or 1"),
                "the malformed $dffsr set bus is a width mismatch");
     }
+    {
+        const std::string json =
+            design_json({{"d", port_json("input", {2, 3, 4, 5})},
+                         {"clk", port_json("input", {6})},
+                         {"set", port_json("input", {7, 8, 9, 10})},
+                         {"clr", port_json("input", {11, 12})},
+                         {"q", port_json("output", {13, 14, 15, 16})}},
+                        {{"$dffsr$1", cell_json("$dffsr", dffsr_params(4, 1, 1, 1),
+                                                object({{"D", bits({2, 3, 4, 5})},
+                                                        {"CLK", bits({6})},
+                                                        {"SET", bits({7, 8, 9, 10})},
+                                                        {"CLR", bits({11, 12})},
+                                                        {"Q", bits({13, 14, 15, 16})}}))}});
+        const auto result = gmax::frontend::import_yosys_json(json, "top");
+        expect(!result.ok, "a four-bit $dffsr with a two-bit CLR bus fails");
+        expect(has_width_message(result.diagnostics,
+                                 "cell '$dffsr$1' port 'CLR' is 2 bits, expected 4 or 1"),
+               "the malformed $dffsr clear bus is a width mismatch");
+    }
 }
 
 void test_library_instance() {
