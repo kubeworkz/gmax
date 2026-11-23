@@ -15,7 +15,7 @@ namespace gmax::db {
 // canonical form — modules, instances and gates sorted by name — so that two
 // designs that differ only in insertion order serialize to the same bytes.
 class DesignDb {
-public:
+  public:
     Status flatten();
 
     Status save(const std::string& path) const;
@@ -26,7 +26,7 @@ public:
     const FlatNetlist& flat() const { return flat_; }
     const StringTable& strings() const { return strings_; }
 
-private:
+  private:
     Design design_;
     FlatNetlist flat_;
     StringTable strings_;

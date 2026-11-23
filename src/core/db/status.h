@@ -28,40 +28,40 @@ enum class Error {
 
 inline std::string_view error_name(Error error) {
     switch (error) {
-        case Error::None:
-            return "ok";
-        case Error::IoError:
-            return "io-error";
-        case Error::BadMagic:
-            return "bad-magic";
-        case Error::UnsupportedMajor:
-            return "unsupported-major";
-        case Error::NewerSchema:
-            return "newer-schema";
-        case Error::BadEndianness:
-            return "bad-endianness";
-        case Error::TruncatedFile:
-            return "truncated-file";
-        case Error::SectionTable:
-            return "section-table";
-        case Error::MissingSection:
-            return "missing-section";
-        case Error::UnknownSection:
-            return "unknown-section";
-        case Error::CrcMismatch:
-            return "crc-mismatch";
-        case Error::BadPayload:
-            return "bad-payload";
-        case Error::MultipleDrivers:
-            return "multiple-drivers";
-        case Error::CycleDetected:
-            return "cycle-detected";
+    case Error::None:
+        return "ok";
+    case Error::IoError:
+        return "io-error";
+    case Error::BadMagic:
+        return "bad-magic";
+    case Error::UnsupportedMajor:
+        return "unsupported-major";
+    case Error::NewerSchema:
+        return "newer-schema";
+    case Error::BadEndianness:
+        return "bad-endianness";
+    case Error::TruncatedFile:
+        return "truncated-file";
+    case Error::SectionTable:
+        return "section-table";
+    case Error::MissingSection:
+        return "missing-section";
+    case Error::UnknownSection:
+        return "unknown-section";
+    case Error::CrcMismatch:
+        return "crc-mismatch";
+    case Error::BadPayload:
+        return "bad-payload";
+    case Error::MultipleDrivers:
+        return "multiple-drivers";
+    case Error::CycleDetected:
+        return "cycle-detected";
     }
     return "unknown";
 }
 
 class Status {
-public:
+  public:
     Status() = default;
 
     static Status failure(Error error, std::string message) {
@@ -73,7 +73,7 @@ public:
     Error error() const { return error_; }
     const std::string& message() const { return message_; }
 
-private:
+  private:
     Status(Error error, std::string message) : error_(error), message_(std::move(message)) {}
 
     Error error_ = Error::None;

@@ -21,16 +21,13 @@ inline constexpr std::uint16_t kSchemaMinor = 0;
 // the sections, written in ascending section id. Every integer is little-endian
 // and written byte by byte, so neither host endianness nor struct packing can
 // leak into the file.
-std::vector<std::uint8_t> serialize(const Design& design,
-                                    const FlatNetlist& flat,
+std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& flat,
                                     const StringTable& strings);
 
 // Schema policy (ADR-004): the major version must match exactly; a file written
 // by a newer minor is refused rather than read as if it were this one; an older
 // minor is accepted, because minor changes are additive.
-Status parse(std::span<const std::uint8_t> bytes,
-             Design& design,
-             FlatNetlist& flat,
+Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& flat,
              StringTable& strings);
 
 }  // namespace gmax::db::dfdb

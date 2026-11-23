@@ -30,7 +30,7 @@ enum class Section : std::uint32_t {
 Status fail(Error error, std::string message) { return Status::failure(error, std::move(message)); }
 
 class Writer {
-public:
+  public:
     void u8(std::uint8_t value) { bytes_.push_back(value); }
 
     void u16(std::uint16_t value) {
@@ -65,12 +65,12 @@ public:
 
     std::vector<std::uint8_t> take() { return std::move(bytes_); }
 
-private:
+  private:
     std::vector<std::uint8_t> bytes_;
 };
 
 class Reader {
-public:
+  public:
     Reader(const std::uint8_t* data, std::size_t size) : data_(data), size_(size) {}
 
     std::uint8_t u8() {
@@ -128,7 +128,7 @@ public:
     bool at_end() const { return pos_ == size_; }
     std::size_t remaining() const { return size_ - pos_; }
 
-private:
+  private:
     const std::uint8_t* data_;
     std::size_t size_;
     std::size_t pos_ = 0;
@@ -265,8 +265,7 @@ std::vector<std::uint8_t> build_meta(const FlatNetlist& flat, const StringTable&
 
 }  // namespace
 
-std::vector<std::uint8_t> serialize(const Design& design,
-                                    const FlatNetlist& flat,
+std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& flat,
                                     const StringTable& strings) {
     StringTable table = strings;
 
@@ -360,7 +359,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
 
         const std::uint32_t input_count = reader.u32();
         if (input_count > reader.remaining()) {
-            return fail(Error::BadPayload, "hierarchy section declares more ports than it can hold");
+            return fail(Error::BadPayload,
+                        "hierarchy section declares more ports than it can hold");
         }
         module.inputs.reserve(input_count);
         for (std::uint32_t i = 0; i < input_count; ++i) {
@@ -369,7 +369,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
 
         const std::uint32_t output_count = reader.u32();
         if (output_count > reader.remaining()) {
-            return fail(Error::BadPayload, "hierarchy section declares more ports than it can hold");
+            return fail(Error::BadPayload,
+                        "hierarchy section declares more ports than it can hold");
         }
         module.outputs.reserve(output_count);
         for (std::uint32_t i = 0; i < output_count; ++i) {
@@ -378,7 +379,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
 
         const std::uint32_t gate_count = reader.u32();
         if (gate_count > reader.remaining()) {
-            return fail(Error::BadPayload, "hierarchy section declares more gates than it can hold");
+            return fail(Error::BadPayload,
+                        "hierarchy section declares more gates than it can hold");
         }
         module.gates.reserve(gate_count);
         for (std::uint32_t g = 0; g < gate_count; ++g) {
@@ -392,7 +394,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
 
             const std::uint32_t fanin_count = reader.u32();
             if (fanin_count > reader.remaining()) {
-                return fail(Error::BadPayload, "hierarchy section declares more pins than it can hold");
+                return fail(Error::BadPayload,
+                            "hierarchy section declares more pins than it can hold");
             }
             gate.fanins.reserve(fanin_count);
             for (std::uint32_t i = 0; i < fanin_count; ++i) {
@@ -410,7 +413,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
         return fail(Error::TruncatedFile, "hierarchy section ends inside its instance count");
     }
     if (instance_count > reader.remaining()) {
-        return fail(Error::BadPayload, "hierarchy section declares more instances than it can hold");
+        return fail(Error::BadPayload,
+                    "hierarchy section declares more instances than it can hold");
     }
     design.instances.reserve(instance_count);
     for (std::uint32_t i = 0; i < instance_count; ++i) {
@@ -420,7 +424,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
 
         const std::uint32_t connection_count = reader.u32();
         if (connection_count > reader.remaining()) {
-            return fail(Error::BadPayload, "hierarchy section declares more connections than it can hold");
+            return fail(Error::BadPayload,
+                        "hierarchy section declares more connections than it can hold");
         }
         for (std::uint32_t c = 0; c < connection_count; ++c) {
             const std::string port = name(reader.u32());
@@ -434,7 +439,8 @@ Status parse_hierarchy(Reader& reader, const StringTable& strings, Design& desig
         return fail(Error::TruncatedFile, "hierarchy section ends inside a record");
     }
     if (!strings_ok) {
-        return fail(Error::BadPayload, "hierarchy section names a string id the table does not have");
+        return fail(Error::BadPayload,
+                    "hierarchy section names a string id the table does not have");
     }
     if (!reader.at_end()) {
         return fail(Error::BadPayload, "hierarchy section has trailing bytes");
@@ -583,8 +589,7 @@ Status parse_meta(Reader& reader, const FlatNetlist& flat, const StringTable& st
         return fail(Error::BadPayload, "meta section has trailing bytes");
     }
     if (gate_count != flat.gate_count() || net_count != flat.net_count() ||
-        string_count != strings.size() ||
-        source_count != flat.source_table.size()) {
+        string_count != strings.size() || source_count != flat.source_table.size()) {
         return fail(Error::BadPayload, "meta section disagrees with the sections it describes");
     }
     return Status{};
@@ -594,18 +599,18 @@ namespace {
 
 const char* section_name(const Section section) {
     switch (section) {
-        case Section::Strings:
-            return "strings";
-        case Section::Hierarchy:
-            return "hierarchy";
-        case Section::Gates:
-            return "gates";
-        case Section::Nets:
-            return "nets";
-        case Section::Sources:
-            return "sources";
-        case Section::Meta:
-            return "meta";
+    case Section::Strings:
+        return "strings";
+    case Section::Hierarchy:
+        return "hierarchy";
+    case Section::Gates:
+        return "gates";
+    case Section::Nets:
+        return "nets";
+    case Section::Sources:
+        return "sources";
+    case Section::Meta:
+        return "meta";
     }
     return "unknown";
 }
@@ -673,7 +678,8 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
     }
     for (const FlatNetlist::SourceLocation& source : flat.source_table) {
         if (source.file >= strings.size()) {
-            return fail(Error::BadPayload, "a source location names a file the table does not have");
+            return fail(Error::BadPayload,
+                        "a source location names a file the table does not have");
         }
     }
     return Status{};
@@ -681,9 +687,7 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
 
 }  // namespace
 
-Status parse(std::span<const std::uint8_t> bytes,
-             Design& design,
-             FlatNetlist& flat,
+Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& flat,
              StringTable& strings) {
     if (bytes.size() < kHeaderBytes) {
         return fail(Error::TruncatedFile, "file is shorter than a .dfdb header");
@@ -706,16 +710,15 @@ Status parse(std::span<const std::uint8_t> bytes,
         return fail(Error::BadEndianness, "file was written with a different byte order");
     }
     if (major != kSchemaMajor) {
-        return fail(Error::UnsupportedMajor, "file is .dfdb " + std::to_string(major) +
-                                          ".x; this build reads " + std::to_string(kSchemaMajor) +
-                                          ".x and needs a converter");
+        return fail(Error::UnsupportedMajor,
+                    "file is .dfdb " + std::to_string(major) + ".x; this build reads " +
+                        std::to_string(kSchemaMajor) + ".x and needs a converter");
     }
     if (minor > kSchemaMinor) {
-        return fail(Error::NewerSchema, "file is .dfdb " + std::to_string(major) + "." +
-                                     std::to_string(minor) + "; this build writes " +
-                                     std::to_string(kSchemaMajor) + "." +
-                                     std::to_string(kSchemaMinor) +
-                                     " and will not read a newer minor");
+        return fail(Error::NewerSchema,
+                    "file is .dfdb " + std::to_string(major) + "." + std::to_string(minor) +
+                        "; this build writes " + std::to_string(kSchemaMajor) + "." +
+                        std::to_string(kSchemaMinor) + " and will not read a newer minor");
     }
     if (section_count == 0 || section_count > kMaxSections) {
         return fail(Error::SectionTable,
@@ -758,7 +761,8 @@ Status parse(std::span<const std::uint8_t> bytes,
         const auto id = static_cast<Section>(raw_id);
         for (const Entry& existing : entries) {
             if (existing.id == id) {
-                return fail(Error::SectionTable, "section " + std::to_string(raw_id) + " appears twice");
+                return fail(Error::SectionTable,
+                            "section " + std::to_string(raw_id) + " appears twice");
             }
         }
         entries.push_back({id, offset, size});
@@ -775,23 +779,23 @@ Status parse(std::span<const std::uint8_t> bytes,
     for (const Section required : {Section::Strings, Section::Hierarchy, Section::Gates,
                                    Section::Nets, Section::Sources, Section::Meta}) {
         if (find(required) == nullptr) {
-            return fail(Error::MissingSection, std::string("file has no ") + section_name(required) +
-                                            " section");
+            return fail(Error::MissingSection,
+                        std::string("file has no ") + section_name(required) + " section");
         }
     }
     for (const Entry& entry : entries) {
         switch (entry.id) {
-            case Section::Strings:
-            case Section::Hierarchy:
-            case Section::Gates:
-            case Section::Nets:
-            case Section::Sources:
-            case Section::Meta:
-                break;
-            default:
-                return fail(Error::UnknownSection,
-                            "file has a section this build does not know: " +
-                                std::to_string(static_cast<std::uint32_t>(entry.id)));
+        case Section::Strings:
+        case Section::Hierarchy:
+        case Section::Gates:
+        case Section::Nets:
+        case Section::Sources:
+        case Section::Meta:
+            break;
+        default:
+            return fail(Error::UnknownSection,
+                        "file has a section this build does not know: " +
+                            std::to_string(static_cast<std::uint32_t>(entry.id)));
         }
     }
 
