@@ -4,6 +4,7 @@
 
 #include "core/version.h"
 #include "shell/cli.h"
+#include "shell/commands.h"
 
 int main(int argc, char** argv) {
     std::vector<std::string> args;
@@ -13,5 +14,10 @@ int main(int argc, char** argv) {
     }
 
     gmax::shell::Cli cli(std::string(gmax::version()));
+    std::string error;
+    if (!gmax::shell::register_commands(cli, error)) {
+        std::cerr << "gmax: " << error << '\n';
+        return static_cast<int>(gmax::shell::ExitCode::Internal);
+    }
     return static_cast<int>(cli.run(args, std::cout, std::cerr));
 }

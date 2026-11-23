@@ -1,5 +1,6 @@
 add_library(gmax_shell STATIC
-  cli.cpp)
+  cli.cpp
+  commands.cpp)
 
 target_link_libraries(gmax_shell PUBLIC gmax_core)
 
