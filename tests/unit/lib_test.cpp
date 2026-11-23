@@ -107,6 +107,14 @@ library (demo) {
       ff (IQ) { next_state : "EN ? D : IQ"; clocked_on : "CK"; }
     }
   }
+  cell (DFFNE) {
+    pin (D) { direction : input; }
+    pin (CK) { direction : input; clock : true; }
+    pin (Q) {
+      direction : output;
+      ff (IQ) { next_state : "D"; clocked_on : "!CK"; }
+    }
+  }
   cell (LAT) {
     statetable ("D", "IQ") {
       table : "0 : 0 : 0, 1 : 0 : 1, 0 : 1 : 0, 1 : 1 : 1";
@@ -181,7 +189,7 @@ void test_parse() {
         return;
     }
     expect(library.name == "demo", "the library keeps its name");
-    expect(library.cells.size() == 14, "the demo library has fourteen cells");
+    expect(library.cells.size() == 15, "the demo library has fifteen cells");
 
     const frontend::Cell* and2 = library.find_cell("AND2");
     expect(and2 != nullptr, "AND2 is present");
@@ -225,6 +233,11 @@ void test_parse() {
     expect(dffce != nullptr && dffce->find_pin("Q") != nullptr &&
                dffce->find_pin("Q")->ff.enable.empty(),
            "a standard clock-enabled flop has no ff enable");
+
+    const frontend::Cell* dffne = library.find_cell("DFFNE");
+    expect(dffne != nullptr && dffne->find_pin("Q") != nullptr &&
+               dffne->find_pin("Q")->ff.clock == "!CK",
+           "a complemented clocked_on is parsed as written");
 
     const frontend::Cell* latn = library.find_cell("LATN");
     expect(latn != nullptr && latn->find_pin("Q") != nullptr &&
@@ -370,12 +383,29 @@ void test_decomposition(const frontend::Library& library) {
         expect(q != nullptr && q->fanins.size() == 2 && q->fanins[1] == "CK",
                "the Dff's clock is CK");
         expect(q != nullptr && q->enable.empty(), "a plain flop has no enable");
+        expect(q != nullptr && q->clock_edge == db::ClockEdge::Rising,
+               "a plain flop samples on the rising edge");
         const db::Gate* data = q != nullptr && q->fanins.size() == 2
                                    ? gate_driving(dff_module, q->fanins[0])
                                    : nullptr;
         expect(data != nullptr && data->type == db::GateType::Buf &&
                    data->fanins == std::vector<std::string>({"D"}),
                "the Dff's data cone buffers D");
+    }
+
+    const frontend::Cell* dffne = library.find_cell("DFFNE");
+    db::Module dffne_module;
+    if (dffne != nullptr) {
+        expect(frontend::decompose_cell(*dffne, dffne_module).ok(),
+               "a falling-edge flop decomposes");
+        const db::Gate* q = gate_driving(dffne_module, "Q");
+        expect(q != nullptr && q->type == db::GateType::Dff, "the falling-edge flop is a Dff");
+        expect(q != nullptr && q->clock_edge == db::ClockEdge::Falling,
+               "the complement becomes a falling clock edge");
+        expect(q != nullptr && q->fanins.size() == 2 && q->fanins[1] == "CK",
+               "the falling edge keeps the named clock net");
+        expect(count_type(dffne_module, db::GateType::Not) == 0,
+               "the falling edge adds no clock inverter");
     }
 
     const frontend::Cell* dffr = library.find_cell("DFFR");
@@ -539,6 +569,19 @@ void test_errors(const frontend::Library& library) {
         const db::Status enable_status = frontend::decompose_cell(compound_enable, module);
         expect(!enable_status.ok() && mentions(enable_status, "one pin"),
                "a compound enable is rejected");
+    }
+
+    if (const frontend::Cell* dffne = library.find_cell("DFFNE"); dffne != nullptr) {
+        frontend::Cell compound_clock = *dffne;
+        compound_clock.name = "COMPOUND_CLOCK";
+        for (frontend::Pin& pin : compound_clock.pins) {
+            if (pin.name == "Q") {
+                pin.ff.clock = "!CK & D";
+            }
+        }
+        const db::Status clock_status = frontend::decompose_cell(compound_clock, module);
+        expect(!clock_status.ok() && mentions(clock_status, "one pin"),
+               "a compound clock expression is rejected");
     }
 
     frontend::Library scratch;

@@ -49,11 +49,11 @@ gmax::db::Design make_design(bool reverse) {
     leaf.inputs = {"a", "b"};
     leaf.outputs = {"y"};
     leaf.gates = {
-        {GateType::And2, "g1", {"a", "b"}, "n1", 0, "", "", ""},
-        {GateType::Or2, "g2", {"n1", "a"}, "n2", 0, "", "", ""},
-        {GateType::Not, "g3", {"n2"}, "n3", 0, "", "", ""},
-        {GateType::Buf, "g4", {"n3"}, "n4", 0, "", "", ""},
-        {GateType::Nand2, "g5", {"n4", "b"}, "y", 1, "", "", ""},
+        {GateType::And2, "g1", {"a", "b"}, "n1", 0, "", "", "", ClockEdge::Rising},
+        {GateType::Or2, "g2", {"n1", "a"}, "n2", 0, "", "", "", ClockEdge::Rising},
+        {GateType::Not, "g3", {"n2"}, "n3", 0, "", "", "", ClockEdge::Rising},
+        {GateType::Buf, "g4", {"n3"}, "n4", 0, "", "", "", ClockEdge::Rising},
+        {GateType::Nand2, "g5", {"n4", "b"}, "y", 1, "", "", "", ClockEdge::Rising},
     };
 
     Module top;
@@ -155,7 +155,8 @@ int main() {
         buffer.name = "buf";
         buffer.inputs = {"a"};
         buffer.outputs = {"y"};
-        buffer.gates = {{GateType::Buf, "g1", {"a"}, "y", kInvalidId, "", "", ""}};
+        buffer.gates = {
+            {GateType::Buf, "g1", {"a"}, "y", kInvalidId, "", "", "", ClockEdge::Rising}};
 
         Module top;
         top.name = "top";
@@ -219,9 +220,9 @@ int main() {
     latch.inputs = {"d", "en"};
     latch.outputs = {"q"};
     latch.gates = {
-        {GateType::Not, "g1", {"q"}, "n1", 0, "", "", ""},
-        {GateType::And2, "g2", {"d", "n1"}, "n2", 0, "", "", ""},
-        {GateType::Dlat, "g3", {"n2", "en"}, "q", 0, "", "", ""},
+        {GateType::Not, "g1", {"q"}, "n1", 0, "", "", "", ClockEdge::Rising},
+        {GateType::And2, "g2", {"d", "n1"}, "n2", 0, "", "", "", ClockEdge::Rising},
+        {GateType::Dlat, "g3", {"n2", "en"}, "q", 0, "", "", "", ClockEdge::Rising},
     };
     Design sequential;
     sequential.top = "latch";
@@ -263,9 +264,9 @@ int main() {
     expect(rebuilt.flat() == db.flat(), "re-flattening assigns identical gate and net ids");
     expect(rebuilt.strings() == db.strings(), "re-flattening assigns identical string ids");
 
-    // Sequential controls are part of the gate model and the flat graph. 1.1
-    // added async clear/preset and 1.2 added the DFF enable, each in an optional
-    // section so older files still load.
+    // Sequential controls and the DFF clock edge are part of the gate model and
+    // the flat graph. Each minor added one optional section, so older files still
+    // load with those fields absent.
     {
         DesignDb sequential;
         sequential.design().top = "top";
@@ -281,14 +282,19 @@ int main() {
         flop.enable = "en";
         flop.async_clear = "rn";
         flop.async_preset = "sn";
+        flop.clock_edge = ClockEdge::Falling;
         top.gates = {flop};
         sequential.design().modules = {top};
 
         expect(sequential.flatten().ok(), "a flop with enable, async set and reset flattens");
         expect(sequential.flat().gate_count() == 1, "the controlled flop is one gate");
         expect(sequential.flat().enable.size() == 1 && sequential.flat().async_clear.size() == 1 &&
-                   sequential.flat().async_preset.size() == 1,
+                   sequential.flat().async_preset.size() == 1 &&
+                   sequential.flat().clock_edge.size() == 1,
                "the flat graph carries one control entry per gate");
+        expect(sequential.flat().clock_edge.size() == 1 &&
+                   sequential.flat().clock_edge[0] == ClockEdge::Falling,
+               "the falling clock edge reaches the flat graph");
         if (sequential.flat().gate_count() == 1) {
             const NetId enable = sequential.flat().enable[0];
             const NetId clear = sequential.flat().async_clear[0];
@@ -361,13 +367,30 @@ int main() {
             set_u32_at(data, 12, sections - 1);
         };
 
-        std::vector<std::uint8_t> older = bytes;  // 1.1: no enable section
-        drop_last_section(older);
-        set_minor(older, 1);
+        std::vector<std::uint8_t> older12 = bytes;  // 1.2: no clock-edge section
+        drop_last_section(older12);
+        set_minor(older12, 2);
+        Design design_12;
+        FlatNetlist flat_12;
+        StringTable strings_12;
+        const Status status_12 = dfdb::parse(older12, design_12, flat_12, strings_12);
+        expect(status_12.ok(), "a 1.2 file without the clock-edge section still loads");
+        if (!status_12.ok()) {
+            std::cerr << "  " << status_12.message() << std::endl;
+        }
+        expect(flat_12.clock_edge.size() == 1 && flat_12.clock_edge[0] == ClockEdge::Rising,
+               "a 1.2 file loads with a rising clock edge");
+        expect(flat_12.enable.size() == 1 && flat_12.enable[0] != kInvalidId &&
+                   flat_12.async_clear[0] != kInvalidId && flat_12.async_preset[0] != kInvalidId,
+               "a 1.2 file keeps its enable and async controls");
+
+        std::vector<std::uint8_t> older11 = older12;  // 1.1: no enable section
+        drop_last_section(older11);
+        set_minor(older11, 1);
         Design design_11;
         FlatNetlist flat_11;
         StringTable strings_11;
-        const Status status_11 = dfdb::parse(older, design_11, flat_11, strings_11);
+        const Status status_11 = dfdb::parse(older11, design_11, flat_11, strings_11);
         expect(status_11.ok(), "a 1.1 file without the enable section still loads");
         if (!status_11.ok()) {
             std::cerr << "  " << status_11.message() << std::endl;
@@ -378,7 +401,7 @@ int main() {
                    flat_11.async_preset[0] != kInvalidId,
                "a 1.1 file keeps its async controls");
 
-        std::vector<std::uint8_t> oldest = older;  // 1.0: also no async section
+        std::vector<std::uint8_t> oldest = older11;  // 1.0: also no async section
         drop_last_section(oldest);
         set_minor(oldest, 0);
         Design design_10;
@@ -391,7 +414,8 @@ int main() {
         }
         expect(flat_10.enable.size() == 1 && flat_10.async_clear.size() == 1 &&
                    flat_10.async_preset.size() == 1 && flat_10.enable[0] == kInvalidId &&
-                   flat_10.async_clear[0] == kInvalidId && flat_10.async_preset[0] == kInvalidId,
+                   flat_10.async_clear[0] == kInvalidId && flat_10.async_preset[0] == kInvalidId &&
+                   flat_10.clock_edge[0] == ClockEdge::Rising,
                "a 1.0 file loads with all sequential controls absent");
     }
 
@@ -413,7 +437,7 @@ int main() {
     };
 
     std::vector<std::uint8_t> newer = good;
-    newer[6] = 3;  // minor version, one past what this build writes
+    newer[6] = 4;  // minor version, one past what this build writes
     expect(load_error(newer) == Error::NewerSchema, "a newer minor is refused, not guessed");
 
     std::vector<std::uint8_t> foreign = good;
@@ -439,8 +463,8 @@ int main() {
     loop.name = "top";
     loop.inputs = {"a"};
     loop.gates = {
-        {GateType::And2, "g1", {"n2", "a"}, "n1", kInvalidId, "", "", ""},
-        {GateType::Or2, "g2", {"n1"}, "n2", kInvalidId, "", "", ""},
+        {GateType::And2, "g1", {"n2", "a"}, "n1", kInvalidId, "", "", "", ClockEdge::Rising},
+        {GateType::Or2, "g2", {"n1"}, "n2", kInvalidId, "", "", "", ClockEdge::Rising},
     };
     cyclic.design().modules = {loop};
     expect(cyclic.flatten().error() == Error::CycleDetected,
@@ -451,8 +475,8 @@ int main() {
     Module shared;
     shared.name = "top";
     shared.gates = {
-        {GateType::Buf, "g1", {"n0"}, "n1", kInvalidId, "", "", ""},
-        {GateType::Buf, "g2", {"n0"}, "n1", kInvalidId, "", "", ""},
+        {GateType::Buf, "g1", {"n0"}, "n1", kInvalidId, "", "", "", ClockEdge::Rising},
+        {GateType::Buf, "g2", {"n0"}, "n1", kInvalidId, "", "", "", ClockEdge::Rising},
     };
     doubled.design().modules = {shared};
     expect(doubled.flatten().error() == Error::MultipleDrivers,
@@ -476,6 +500,7 @@ int main() {
         flat.flags = {0};
         flat.level = {0};
         flat.lib_cell = {kInvalidId};
+        flat.clock_edge = {ClockEdge::Rising};
         flat.enable = {kInvalidId};
         flat.async_clear = {kInvalidId};
         flat.async_preset = {kInvalidId};

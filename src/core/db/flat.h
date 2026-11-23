@@ -32,6 +32,9 @@ struct FlatNetlist {
     std::vector<std::uint32_t> level;
     std::vector<std::uint32_t> lib_cell;
 
+    // Per gate: the edge a DFF samples on. Rising for every non-DFF.
+    std::vector<ClockEdge> clock_edge;
+
     // Per gate: the net that enables (holds the output while low), clears
     // (forces 0) or presets (forces 1) the output, or kInvalidId when the gate
     // has no such control. enable is only set on a DFF. Each net is also present

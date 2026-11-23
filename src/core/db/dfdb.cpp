@@ -27,6 +27,7 @@ enum class Section : std::uint32_t {
     Meta = 6,
     Async = 7,
     Enable = 8,
+    ClockEdge = 9,
 };
 
 Status fail(Error error, std::string message) { return Status::failure(error, std::move(message)); }
@@ -300,6 +301,28 @@ std::vector<std::uint8_t> build_control_section(const Design& design, const Flat
     return writer.take();
 }
 
+// The clock edge is one byte per gate: a DFF's capture edge, Rising elsewhere.
+// 1.3's optional section keeps 1.0-1.2 files loadable with the default edge.
+std::vector<std::uint8_t> build_clock_edge(const Design& design, const FlatNetlist& flat) {
+    Writer writer;
+    std::uint32_t design_gates = 0;
+    for (const Module& module : design.modules) {
+        design_gates += static_cast<std::uint32_t>(module.gates.size());
+    }
+    writer.u32(design_gates);
+    for (const Module& module : design.modules) {
+        for (const Gate& gate : module.gates) {
+            writer.u8(static_cast<std::uint8_t>(gate.clock_edge));
+        }
+    }
+    writer.u32(flat.gate_count());
+    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
+        writer.u8(gate < flat.clock_edge.size() ? static_cast<std::uint8_t>(flat.clock_edge[gate])
+                                                : static_cast<std::uint8_t>(ClockEdge::Rising));
+    }
+    return writer.take();
+}
+
 // Counts are repeated here on purpose: they are cheap, and a section that parses
 // but disagrees with the rest of the file is a bug worth catching at load.
 std::vector<std::uint8_t> build_meta(const FlatNetlist& flat, const StringTable& strings) {
@@ -322,6 +345,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     std::vector<std::uint8_t> hierarchy = build_hierarchy(design, table);
     std::vector<std::uint8_t> async = build_control_section(design, flat, table, kAsyncColumns);
     std::vector<std::uint8_t> enable = build_control_section(design, flat, table, kEnableColumns);
+    std::vector<std::uint8_t> clock_edge = build_clock_edge(design, flat);
     std::vector<std::pair<Section, std::vector<std::uint8_t>>> sections;
     sections.emplace_back(Section::Strings, build_strings(table));
     sections.emplace_back(Section::Hierarchy, std::move(hierarchy));
@@ -331,6 +355,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     sections.emplace_back(Section::Meta, build_meta(flat, table));
     sections.emplace_back(Section::Async, std::move(async));
     sections.emplace_back(Section::Enable, std::move(enable));
+    sections.emplace_back(Section::ClockEdge, std::move(clock_edge));
 
     Writer writer;
     for (const std::uint8_t byte : kMagic) {
@@ -687,6 +712,57 @@ Status parse_control_section(Reader& reader, const StringTable& strings, Design&
     return Status{};
 }
 
+// Restores the clock-edge section written by build_clock_edge; absent in 1.0,
+// 1.1 and 1.2 files, which default to rising edges.
+Status parse_clock_edge(Reader& reader, Design& design, FlatNetlist& flat) {
+    std::size_t design_gates = 0;
+    for (const Module& module : design.modules) {
+        design_gates += module.gates.size();
+    }
+    const std::uint32_t stored_gates = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "clock-edge section ends inside its hierarchy count");
+    }
+    if (stored_gates != design_gates) {
+        return fail(Error::BadPayload,
+                    "clock-edge section disagrees with the hierarchy gate count");
+    }
+    for (Module& module : design.modules) {
+        for (Gate& gate : module.gates) {
+            const std::uint8_t raw = reader.u8();
+            if (!reader.ok()) {
+                return fail(Error::TruncatedFile, "clock-edge section ends inside a gate record");
+            }
+            if (raw > static_cast<std::uint8_t>(ClockEdge::Falling)) {
+                return fail(Error::BadPayload, "clock-edge section holds an unknown edge");
+            }
+            gate.clock_edge = static_cast<ClockEdge>(raw);
+        }
+    }
+
+    const std::uint32_t flat_gates = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "clock-edge section ends inside its flat gate count");
+    }
+    if (flat_gates != flat.gate_count()) {
+        return fail(Error::BadPayload, "clock-edge section disagrees with the flat gate count");
+    }
+    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
+        const std::uint8_t raw = reader.u8();
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "clock-edge section ends inside its control array");
+        }
+        if (raw > static_cast<std::uint8_t>(ClockEdge::Falling)) {
+            return fail(Error::BadPayload, "clock-edge section holds an unknown edge");
+        }
+        flat.clock_edge[gate] = static_cast<ClockEdge>(raw);
+    }
+    if (!reader.at_end()) {
+        return fail(Error::BadPayload, "clock-edge section has trailing bytes");
+    }
+    return Status{};
+}
+
 Status parse_meta(Reader& reader, const FlatNetlist& flat, const StringTable& strings) {
     const std::uint32_t gate_count = reader.u32();
     const std::uint32_t net_count = reader.u32();
@@ -725,6 +801,8 @@ const char* section_name(const Section section) {
         return "async";
     case Section::Enable:
         return "enable";
+    case Section::ClockEdge:
+        return "clock-edge";
     }
     return "unknown";
 }
@@ -755,8 +833,8 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
     }
     if (flat.out_net.size() != gate_count || flat.flags.size() != gate_count ||
         flat.level.size() != gate_count || flat.lib_cell.size() != gate_count ||
-        flat.enable.size() != gate_count || flat.async_clear.size() != gate_count ||
-        flat.async_preset.size() != gate_count) {
+        flat.clock_edge.size() != gate_count || flat.enable.size() != gate_count ||
+        flat.async_clear.size() != gate_count || flat.async_preset.size() != gate_count) {
         return fail(Error::BadPayload, "gates section arrays disagree on the gate count");
     }
     if (flat.name_id.size() != net_count || flat.source_loc.size() != net_count) {
@@ -778,6 +856,9 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
         }
     }
     for (std::size_t gate = 0; gate < gate_count; ++gate) {
+        if (flat.clock_edge[gate] == ClockEdge::Falling && flat.type[gate] != GateType::Dff) {
+            return fail(Error::BadPayload, "a gate that is not a DFF has a falling clock edge");
+        }
         const auto enable = flat.enable[gate];
         if (enable != kInvalidId) {
             if (enable >= net_count) {
@@ -937,6 +1018,9 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
     if (minor >= 2) {
         required.push_back(Section::Enable);
     }
+    if (minor >= 3) {
+        required.push_back(Section::ClockEdge);
+    }
     for (const Section section : required) {
         if (find(section) == nullptr) {
             return fail(Error::MissingSection,
@@ -953,6 +1037,7 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         case Section::Meta:
         case Section::Async:
         case Section::Enable:
+        case Section::ClockEdge:
             break;
         default:
             return fail(Error::UnknownSection,
@@ -1018,6 +1103,15 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         Reader section = open(*enable);
         const Status status =
             parse_control_section(section, strings, design, flat, "enable", kEnableColumns);
+        if (!status) {
+            return status;
+        }
+    }
+    // Files older than 1.3 have no clock-edge section; rising is the default.
+    flat.clock_edge.assign(flat.gate_count(), ClockEdge::Rising);
+    if (const Entry* clock_edge = find(Section::ClockEdge); clock_edge != nullptr) {
+        Reader section = open(*clock_edge);
+        const Status status = parse_clock_edge(section, design, flat);
         if (!status) {
             return status;
         }

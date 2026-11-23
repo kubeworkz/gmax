@@ -42,6 +42,20 @@ enum class GateType : std::uint8_t {
     ScanCell,
 };
 
+// A DFF samples on one clock edge. The clock net names the pin; this says which
+// transition captures, so a falling-edge cell needs no inverter gate.
+enum class ClockEdge : std::uint8_t { Rising = 0, Falling = 1 };
+
+inline std::string_view clock_edge_name(ClockEdge edge) {
+    switch (edge) {
+    case ClockEdge::Rising:
+        return "rising";
+    case ClockEdge::Falling:
+        return "falling";
+    }
+    return "unknown";
+}
+
 // Per-gate flags, one bit each, as laid out in architecture 6.3.
 inline constexpr std::uint8_t kFlagScan = 1u << 0;
 inline constexpr std::uint8_t kFlagBlackbox = 1u << 1;

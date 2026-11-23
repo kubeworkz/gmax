@@ -33,6 +33,11 @@ struct Gate {
     std::string async_clear;
     std::string async_preset;
 
+    // A DFF's capturing edge. Falling means clocked_on named the complement of
+    // its clock pin; the net itself is stored unchanged, so no inverter is added
+    // to the clock tree. A DLAT is level-sensitive and leaves this at Rising.
+    ClockEdge clock_edge = ClockEdge::Rising;
+
     friend bool operator==(const Gate&, const Gate&) = default;
 };
 

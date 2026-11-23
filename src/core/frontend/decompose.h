@@ -21,9 +21,13 @@ namespace gmax::frontend {
 // appended to the gate's fanins, so reachability and levelization see it, and
 // its polarity is normalized to active high with a Not.
 //
+// clocked_on is normalized the same way: a pin is a rising edge and its
+// complement is a falling edge on the same net, recorded in the DFF rather than
+// synthesized as a clock inverter.
+//
 // v0 limits, all reported as errors rather than silently dropped: pins are
-// scalar, clocked_on must name one pin, and an enable, clear or preset must name
-// one pin or its complement.
+// scalar, and clocked_on, enable, clear and preset must each name one pin or its
+// complement.
 db::Status decompose_cell(const Cell& cell, db::Module& module);
 
 // Decomposes every cell and appends the modules to `design`.

@@ -160,7 +160,8 @@ class ConeEmitter {
 
     db::Status add(db::GateType type, std::vector<std::string> fanins, const std::string& target,
                    std::string enable = {}, std::string async_clear = {},
-                   std::string async_preset = {}) {
+                   std::string async_preset = {},
+                   db::ClockEdge clock_edge = db::ClockEdge::Rising) {
         db::Gate gate;
         gate.type = type;
         gate.name = "g" + std::to_string(next_gate_++);
@@ -170,6 +171,7 @@ class ConeEmitter {
         gate.enable = std::move(enable);
         gate.async_clear = std::move(async_clear);
         gate.async_preset = std::move(async_preset);
+        gate.clock_edge = clock_edge;
         module_.gates.push_back(std::move(gate));
         return {};
     }
@@ -289,23 +291,6 @@ class ConeEmitter {
     std::uint32_t next_gate_ = 1;
 };
 
-db::Status resolve_pin_name(const ConeEmitter& emitter, const std::string& text,
-                            const std::map<std::string, std::string>& aliases,
-                            const std::string& where, std::string& out) {
-    if (text.empty()) {
-        return db::Status::failure(db::Error::BadPayload, where + " is empty");
-    }
-    for (const char c : text) {
-        const bool allowed = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                             (c >= '0' && c <= '9') || c == '_' || c == '[' || c == ']';
-        if (!allowed) {
-            return db::Status::failure(db::Error::BadPayload,
-                                       where + " must name one pin, got '" + text + "'");
-        }
-    }
-    return emitter.resolve(text, aliases, out);
-}
-
 db::Status with_context(const Cell& cell, const Pin& pin, const db::Status& status) {
     return db::Status::failure(status.error(), "cell '" + cell.name + "' pin '" + pin.name +
                                                    "': " + status.message());
@@ -350,6 +335,40 @@ db::Status control_net(const Cell& cell, const Pin& pin, std::string_view what,
     }
     out = emitter.fresh_net();
     return emitter.add(db::GateType::Not, {net}, out);
+}
+
+// A clock is a pin or its complement. The complement means the same net with a
+// falling sampling edge, so no inverter is inserted into the clock tree.
+db::Status clock_net(const Cell& cell, const Pin& pin, const std::string& text,
+                     ConeEmitter& emitter, std::string& out, db::ClockEdge& edge) {
+    const std::string where = "cell '" + cell.name + "' pin '" + pin.name + "' clocked_on";
+    Expr expr;
+    db::Status status = parse_expression(text, expr);
+    if (!status.ok()) {
+        return with_context(cell, pin, status);
+    }
+    bool falling = false;
+    const Expr* operand = &expr;
+    if (expr.kind == ExprKind::Not) {
+        if (expr.args.size() != 1) {
+            return db::Status::failure(db::Error::BadPayload,
+                                       where + " must name one pin or its complement, got '" +
+                                           text + "'");
+        }
+        falling = true;
+        operand = &expr.args[0];
+    }
+    if (operand->kind != ExprKind::Variable) {
+        return db::Status::failure(db::Error::BadPayload,
+                                   where + " must name one pin or its complement, got '" + text +
+                                       "'");
+    }
+    status = emitter.resolve(operand->name, {}, out);
+    if (!status.ok()) {
+        return status;
+    }
+    edge = falling ? db::ClockEdge::Falling : db::ClockEdge::Rising;
+    return {};
 }
 
 db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& emitter) {
@@ -409,9 +428,8 @@ db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& e
                                                                   pin.name + "' has no clocked_on");
         }
         std::string clock;
-        status =
-            resolve_pin_name(emitter, pin.ff.clock, aliases,
-                             "cell '" + cell.name + "' pin '" + pin.name + "' clocked_on", clock);
+        db::ClockEdge clock_edge = db::ClockEdge::Rising;
+        status = clock_net(cell, pin, pin.ff.clock, emitter, clock, clock_edge);
         if (!status.ok()) {
             return status;
         }
@@ -433,7 +451,7 @@ db::Status decompose_sequential(const Cell& cell, const Pin& pin, ConeEmitter& e
             fanins.push_back(async_preset);
         }
         return emitter.add(db::GateType::Dff, std::move(fanins), pin.name, enable, async_clear,
-                           async_preset);
+                           async_preset, clock_edge);
     }
 
     if (pin.ff.enable.empty()) {
