@@ -1,5 +1,6 @@
 add_library(gmax_core STATIC
   version.cpp
+  atpg/fault_file.cpp
   atpg/fault_list.cpp
   db/crc32.cpp
   db/db.cpp

@@ -1,7 +1,7 @@
 // WP-006: checkpoint fault-site generation, deterministic ordering and
-// structural equivalence collapsing over the flat DB. The .faults writer
-// follows. Framework-free for the same reason as the other tests: third_party
-// stays empty until TBD-11 closes.
+// structural equivalence collapsing over the flat DB. The .faults container is
+// covered by fault_file_test.cpp. Framework-free for the same reason as the
+// other tests: third_party stays empty until TBD-11 closes.
 
 #include <algorithm>
 #include <cstdint>
