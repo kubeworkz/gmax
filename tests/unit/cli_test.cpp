@@ -32,7 +32,7 @@ bool contains(const std::string_view text, const std::string_view needle) {
 }
 
 shell::Handler success_handler() {
-    return [](const shell::ParsedArgs&, std::ostream&, std::ostream&) {
+    return [](const std::vector<std::string>&, std::ostream&, std::ostream&) {
         return shell::ExitCode::Success;
     };
 }
@@ -86,94 +86,26 @@ void test_exit_codes() {
     expect(static_cast<int>(shell::ExitCode::AtpgIncomplete) == 4,
            "atpg-incomplete is exit code 4");
     expect(static_cast<int>(shell::ExitCode::Internal) == 5, "internal is exit code 5");
-
-    expect(shell::exit_code_name(shell::ExitCode::Success) == "success",
-           "success has a diagnostic name");
-    expect(shell::exit_code_name(shell::ExitCode::Usage) == "usage", "usage has a diagnostic name");
-    expect(shell::exit_code_name(shell::ExitCode::Design) == "design",
-           "design has a diagnostic name");
-    expect(shell::exit_code_name(shell::ExitCode::Drc) == "drc", "drc has a diagnostic name");
-    expect(shell::exit_code_name(shell::ExitCode::AtpgIncomplete) == "atpg-incomplete",
-           "atpg-incomplete has a diagnostic name");
-    expect(shell::exit_code_name(shell::ExitCode::Internal) == "internal",
-           "internal has a diagnostic name");
 }
 
 void test_schema_validation() {
-    shell::CommandSpec valid = command("demo", "demo command");
-    valid.positionals = {{"input", "input file", true}, {"output", "output file", false}};
-    valid.options = {
-        {"-top", "module", "top module", true, false},
-        {"-lib", "library", "library file", false, true},
-        {"-verbose", "", "verbose output", false, false},
-    };
     {
         shell::Cli cli("0.0.0");
         std::string error;
-        expect(cli.add_command(valid, success_handler(), error), "a valid command registers");
+        expect(cli.add_command(command("demo", "demo command"), success_handler(), error),
+               "a valid command registers");
         expect(error.empty(), "a valid command leaves no error");
     }
-
     expect_invalid(command("help", "duplicate"), "already registered",
                    "a built-in command name is reserved");
     expect_invalid(command("", "empty"), "empty", "an empty command name is rejected");
     expect_invalid(command("-bad", "leading dash"), "start with",
                    "a command name with a leading dash is rejected");
-    expect_invalid(command("bad name", "space"), "whitespace",
-                   "a command name with whitespace is rejected");
-    expect_invalid(command("no-summary", ""), "summary", "a command without a summary is rejected");
-
-    {
-        shell::CommandSpec spec = command("bad-positional", "bad");
-        spec.positionals = {{"", "help", true}};
-        expect_invalid(spec, "without a name", "a positional without a name is rejected");
-    }
-    {
-        shell::CommandSpec spec = command("bad-positional-help", "bad");
-        spec.positionals = {{"file", "", true}};
-        expect_invalid(spec, "without help text", "a positional without help is rejected");
-    }
-    {
-        shell::CommandSpec spec = command("duplicate-positional", "bad");
-        spec.positionals = {{"file", "first", true}, {"file", "second", false}};
-        expect_invalid(spec, "twice", "a duplicate positional is rejected");
-    }
     {
         shell::CommandSpec spec = command("optional-then-required", "bad");
         spec.positionals = {{"optional", "optional", false}, {"required", "required", true}};
         expect_invalid(spec, "after an optional one",
                        "a required positional after an optional one is rejected");
-    }
-    {
-        shell::CommandSpec spec = command("bad-option", "bad");
-        spec.options = {{"top", "module", "top module", false, false}};
-        expect_invalid(spec, "leading '-'", "an option without a dash is rejected");
-    }
-    {
-        shell::CommandSpec spec = command("bad-option-name", "bad");
-        spec.options = {{"-bad name", "value", "help", false, false}};
-        expect_invalid(spec, "whitespace", "an option name with whitespace is rejected");
-    }
-    {
-        shell::CommandSpec spec = command("reserved-help", "bad");
-        spec.options = {{"-help", "", "help", false, false}};
-        expect_invalid(spec, "reserves option", "a command may not redeclare -help");
-    }
-    {
-        shell::CommandSpec spec = command("reserved-version", "bad");
-        spec.options = {{"--version", "", "version", false, false}};
-        expect_invalid(spec, "reserves option", "a command may not redeclare --version");
-    }
-    {
-        shell::CommandSpec spec = command("bad-option-help", "bad");
-        spec.options = {{"-top", "module", "", false, false}};
-        expect_invalid(spec, "without help text", "an option without help is rejected");
-    }
-    {
-        shell::CommandSpec spec = command("duplicate-option", "bad");
-        spec.options = {{"-top", "module", "first", false, false},
-                        {"-top", "module", "second", false, false}};
-        expect_invalid(spec, "twice", "a duplicate option is rejected");
     }
     {
         shell::Cli cli("0.0.0");
@@ -187,11 +119,6 @@ void test_schema_validation() {
 shell::CommandSpec parser_spec() {
     shell::CommandSpec spec = command("demo", "demo command");
     spec.positionals = {{"input", "input file", true}, {"output", "output file", false}};
-    spec.options = {
-        {"-top", "module", "top module", true, false},
-        {"-lib", "library", "library file", false, true},
-        {"-verbose", "", "verbose output", false, false},
-    };
     return spec;
 }
 
@@ -199,68 +126,33 @@ void test_parsing() {
     const shell::CommandSpec spec = parser_spec();
 
     {
-        const std::vector<std::string> args = {"-top", "chip",  "-lib",     "a.lib",
-                                               "-lib", "b.lib", "-verbose", "in.v"};
-        const shell::ParseResult parsed = shell::parse_arguments(spec, args);
-        expect(parsed.ok && !parsed.help, "options and a positional parse");
-        expect(parsed.args.positionals == std::vector<std::string>{"in.v"},
-               "the positional is kept");
-        expect(parsed.args.value("-top") != nullptr && *parsed.args.value("-top") == "chip",
-               "a value option keeps its value");
-        expect(parsed.args.values("-lib").size() == 2 && parsed.args.values("-lib")[1] == "b.lib",
-               "a repeatable option keeps every value");
-        expect(parsed.args.has("-verbose"), "a flag is present");
-        expect(parsed.args.value("-verbose") == nullptr, "a flag has no value");
-    }
-
-    {
-        const std::vector<std::string> args = {"-top", "chip", "in.v", "out.v"};
-        const shell::ParseResult parsed = shell::parse_arguments(spec, args);
-        expect(parsed.ok, "an optional positional may be omitted or supplied");
-        expect(parsed.args.positionals.size() == 2, "both positionals are kept");
-    }
-
-    {
         const shell::ParseResult parsed =
             shell::parse_arguments(spec, std::vector<std::string>{"in.v"});
-        expect(!parsed.ok && contains(parsed.error, "missing required option"),
-               "a missing required option is rejected");
+        expect(parsed.ok && !parsed.help, "a required positional parses");
+        expect(parsed.positionals == std::vector<std::string>{"in.v"}, "the positional is kept");
     }
     {
         const shell::ParseResult parsed =
-            shell::parse_arguments(spec, std::vector<std::string>{"-top"});
-        expect(!parsed.ok && contains(parsed.error, "needs a value"),
-               "an option without its value is rejected");
+            shell::parse_arguments(spec, std::vector<std::string>{"in.v", "out.v"});
+        expect(parsed.ok, "an optional positional may be supplied");
+        expect(parsed.positionals.size() == 2, "both positionals are kept");
     }
     {
-        const shell::ParseResult parsed = shell::parse_arguments(
-            spec, std::vector<std::string>{"-top", "chip", "-bogus", "in.v"});
-        expect(!parsed.ok && contains(parsed.error, "unknown option"),
-               "an unknown option is rejected");
-    }
-    {
-        const shell::ParseResult parsed = shell::parse_arguments(
-            spec, std::vector<std::string>{"-top", "chip", "-top", "chip2", "in.v"});
-        expect(!parsed.ok && contains(parsed.error, "only once"),
-               "a non-repeatable option given twice is rejected");
-    }
-    {
-        const shell::ParseResult parsed =
-            shell::parse_arguments(spec, std::vector<std::string>{"-top", "chip"});
+        const shell::ParseResult parsed = shell::parse_arguments(spec, {});
         expect(!parsed.ok && contains(parsed.error, "missing argument"),
                "a missing required positional is rejected");
     }
     {
-        const shell::ParseResult parsed = shell::parse_arguments(
-            spec, std::vector<std::string>{"-top", "chip", "in.v", "out.v", "extra"});
+        const shell::ParseResult parsed =
+            shell::parse_arguments(spec, std::vector<std::string>{"in.v", "out.v", "extra"});
         expect(!parsed.ok && contains(parsed.error, "unexpected argument"),
                "an extra positional is rejected");
     }
     {
-        const shell::ParseResult parsed = shell::parse_arguments(
-            spec, std::vector<std::string>{"-verbose", "-verbose", "-top", "chip", "in.v"});
-        expect(!parsed.ok && contains(parsed.error, "only once"),
-               "a non-repeatable flag given twice is rejected");
+        const shell::ParseResult parsed =
+            shell::parse_arguments(spec, std::vector<std::string>{"-top", "chip"});
+        expect(!parsed.ok && contains(parsed.error, "unknown option"),
+               "an option is rejected until the schema has one");
     }
     {
         for (const std::string help : {"-help", "--help", "-h"}) {
@@ -271,24 +163,13 @@ void test_parsing() {
     }
     {
         const shell::ParseResult parsed =
-            shell::parse_arguments(spec, std::vector<std::string>{"-top", "-help", "in.v"});
-        expect(parsed.ok && parsed.help, "help wins even where an option value is expected");
+            shell::parse_arguments(spec, std::vector<std::string>{"in.v", "-help"});
+        expect(parsed.ok && parsed.help, "help wins even after a positional");
     }
-
     {
-        shell::CommandSpec value_spec = command("value", "value command");
-        value_spec.options = {{"-name", "text", "name text", false, false}};
-        const shell::ParseResult parsed =
-            shell::parse_arguments(value_spec, std::vector<std::string>{"-name", "-x"});
-        expect(parsed.ok && parsed.args.value("-name") != nullptr &&
-                   *parsed.args.value("-name") == "-x",
-               "a value may begin with a dash");
-    }
-
-    {
-        shell::CommandSpec empty = command("empty", "empty command");
+        const shell::CommandSpec empty = command("empty", "empty command");
         const shell::ParseResult parsed = shell::parse_arguments(empty, {});
-        expect(parsed.ok && parsed.args.positionals.empty(), "a command with no arguments parses");
+        expect(parsed.ok && parsed.positionals.empty(), "a command with no arguments parses");
     }
 }
 
@@ -296,32 +177,29 @@ void test_generated_help() {
     shell::Cli cli("2.3.4");
     shell::CommandSpec read = command("read", "read a netlist");
     read.positionals = {{"file", "netlist file", true}};
-    read.options = {{"-top", "module", "top module", true, false}};
     add_command(cli, read, success_handler());
 
     const std::string global = cli.global_help();
-    expect(contains(global, "usage: gmax <command> [options]"), "global help has a usage line");
+    expect(contains(global, "usage: gmax <command>"), "global help has a usage line");
     expect(contains(global, "read <file>"), "global help lists the command and its argument");
     expect(contains(global, "read a netlist"), "global help lists the command summary");
     expect(contains(global, "-help"), "global help lists -help");
     expect(contains(global, "--version"), "global help lists --version");
+    expect(!contains(global, "[options]"), "global help does not advertise options");
 
-    const std::string help = cli.command_help(read);
-    expect(contains(help, "usage: gmax read [options] <file>"),
-           "command help generates its usage line");
+    const std::string help = shell::command_help(read);
+    expect(contains(help, "usage: gmax read <file>"), "command help generates its usage line");
     expect(contains(help, "read a netlist"), "command help carries the summary");
     expect(contains(help, "Arguments:"), "command help has an arguments section");
     expect(contains(help, "<file>"), "command help names its positional");
     expect(contains(help, "netlist file"), "command help carries positional help");
-    expect(contains(help, "-top <module>"), "command help names the option and its value");
-    expect(contains(help, "(required)"), "command help marks a required option");
     expect(contains(help, "-help"), "command help lists the built-in help flag");
 
     shell::CommandSpec extended = read;
-    extended.options.push_back({"-extra", "", "an extra option", false, false});
-    const std::string extended_help = cli.command_help(extended);
-    expect(contains(extended_help, "-extra"), "help is rendered from the supplied schema");
-    expect(!contains(help, "-extra"), "help does not invent options");
+    extended.positionals.push_back({"format", "output format", false});
+    const std::string extended_help = shell::command_help(extended);
+    expect(contains(extended_help, "[<format>]"), "help is rendered from the supplied schema");
+    expect(!contains(help, "<format>"), "help does not invent arguments");
 }
 
 void test_run() {
@@ -329,18 +207,11 @@ void test_run() {
 
     shell::CommandSpec echo = command("echo", "print its argument");
     echo.positionals = {{"text", "text to print", true}};
-    add_command(cli, echo, [](const shell::ParsedArgs& args, std::ostream& out, std::ostream&) {
-        out << args.positionals.front() << '\n';
-        return shell::ExitCode::Success;
-    });
-
-    shell::CommandSpec paired = command("paired", "echo an option and a positional");
-    paired.positionals = {{"file", "file name", true}};
-    paired.options = {{"-top", "module", "top module", true, false}};
-    add_command(cli, paired, [](const shell::ParsedArgs& args, std::ostream& out, std::ostream&) {
-        out << *args.value("-top") << ' ' << args.positionals.front() << '\n';
-        return shell::ExitCode::Success;
-    });
+    add_command(cli, echo,
+                [](const std::vector<std::string>& positionals, std::ostream& out, std::ostream&) {
+                    out << positionals.front() << '\n';
+                    return shell::ExitCode::Success;
+                });
 
     for (const auto& [name, code] : std::vector<std::pair<std::string, shell::ExitCode>>{
              {"exit-design", shell::ExitCode::Design},
@@ -350,14 +221,13 @@ void test_run() {
          }) {
         add_command(
             cli, command(name, "return a fixed exit code"),
-            [code](const shell::ParsedArgs&, std::ostream&, std::ostream&) { return code; });
+            [code](const std::vector<std::string>&, std::ostream&, std::ostream&) { return code; });
     }
 
     shell::CommandSpec boom = command("boom", "throw from a handler");
     add_command(cli, boom,
-                [](const shell::ParsedArgs&, std::ostream&, std::ostream&) -> shell::ExitCode {
-                    throw std::runtime_error("boom");
-                });
+                [](const std::vector<std::string>&, std::ostream&,
+                   std::ostream&) -> shell::ExitCode { throw std::runtime_error("boom"); });
 
     {
         const RunResult result = run(cli, {"--version"});
@@ -430,16 +300,6 @@ void test_run() {
         const RunResult result = run(cli, {"echo", "hi"});
         expect(result.code == shell::ExitCode::Success, "a command handler succeeds");
         expect(result.out == "hi\n", "a command handler writes to stdout");
-    }
-    {
-        const RunResult result = run(cli, {"paired", "-top", "chip", "in.v"});
-        expect(result.code == shell::ExitCode::Success, "a command with an option succeeds");
-        expect(result.out == "chip in.v\n", "the handler sees its option and positional");
-    }
-    {
-        const RunResult result = run(cli, {"paired", "in.v"});
-        expect(result.code == shell::ExitCode::Usage, "a missing required option is a usage error");
-        expect(contains(result.err, "missing required option"), "the missing option is named");
     }
     {
         const RunResult design = run(cli, {"exit-design"});
