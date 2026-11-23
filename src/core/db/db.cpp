@@ -108,8 +108,7 @@ Status DesignDb::flatten() {
         const Design& design;
         std::uint32_t& next_gate;
 
-        NetId net_for(const std::string& prefix,
-                      const std::map<std::string, NetId>& ports,
+        NetId net_for(const std::string& prefix, const std::map<std::string, NetId>& ports,
                       const std::string& name) {
             if (const auto it = ports.find(name); it != ports.end()) {
                 return it->second;
@@ -126,14 +125,17 @@ Status DesignDb::flatten() {
             return id;
         }
 
-        Status walk(const Module& module,
-                    const std::string& prefix,
-                    const std::map<std::string, NetId>& ports) {
-            // A port that is not bound by the parent is a primary input, which is
-            // how architecture 6.3's kPrimaryInput driver arises.
+        Status walk(const Module& module, const std::string& prefix,
+                    const std::map<std::string, NetId>& ports, bool is_top) {
+            // Only the top module's unbound inputs are primary inputs. An
+            // instance input bound to a parent net may still be undriven here
+            // because the sibling that drives it sorts later; stamping that net
+            // as a primary input would make the real driver look like a second
+            // one.
             for (const std::string& name : module.inputs) {
                 const NetId net = net_for(prefix, ports, name);
-                if (flat.driver[net] == kInvalidId) {
+                const bool bound = ports.find(name) != ports.end();
+                if (is_top && !bound && flat.driver[net] == kInvalidId) {
                     flat.driver[net] = kPrimaryInput;
                 }
             }
@@ -180,7 +182,7 @@ Status DesignDb::flatten() {
                     for (const auto& [port, net_name] : child->connections) {
                         child_ports[port] = net_for(prefix, ports, net_name);
                     }
-                    const Status status = walk(*child_module, child->path, child_ports);
+                    const Status status = walk(*child_module, child->path, child_ports, false);
                     if (!status) {
                         return status;
                     }
@@ -191,7 +193,7 @@ Status DesignDb::flatten() {
     };
 
     Walker walker{flat_, strings_, net_ids, children, design_, next_gate};
-    const Status walked = walker.walk(*top, std::string(), {});
+    const Status walked = walker.walk(*top, std::string(), {}, true);
     if (!walked) {
         return walked;
     }
@@ -236,10 +238,9 @@ Status DesignDb::flatten() {
         }
     }
     if (processed != gate_count) {
-        return Status::failure(Error::CycleDetected,
-                               "the design has a combinational loop; " +
-                                   std::to_string(gate_count - processed) +
-                                   " gate(s) cannot be ordered");
+        return Status::failure(Error::CycleDetected, "the design has a combinational loop; " +
+                                                         std::to_string(gate_count - processed) +
+                                                         " gate(s) cannot be ordered");
     }
     return Status{};
 }
@@ -272,8 +273,7 @@ Status DesignDb::load(const std::string& path, DesignDb& out) {
     in.seekg(0, std::ios::beg);
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
     if (!bytes.empty()) {
-        in.read(reinterpret_cast<char*>(bytes.data()),
-                static_cast<std::streamsize>(bytes.size()));
+        in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     }
     if (!in) {
         return Status::failure(Error::IoError, "cannot read '" + path + "'");

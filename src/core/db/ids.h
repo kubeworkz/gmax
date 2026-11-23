@@ -16,8 +16,8 @@ using SourceId = std::uint32_t;
 inline constexpr std::uint32_t kInvalidId = 0xFFFFFFFFu;
 
 // Architecture 6.3 gives a net one of two drivers: a gate id, or this sentinel
-// when a primary input feeds the net directly. v0's flattener uses it for module
-// input ports, which is why PIs do not consume gate ids.
+// when a primary input feeds the net directly. v0's flattener uses it for the top
+// module's unbound inputs, which is why PIs do not consume gate ids.
 inline constexpr std::uint32_t kPrimaryInput = 0xFFFFFFFEu;
 
 // The primitive set ATPG reasons over (architecture 6.2). Liberty cells are
@@ -50,40 +50,40 @@ inline constexpr std::uint8_t kFlagInserted = 1u << 3;
 
 inline std::string_view gate_type_name(GateType type) {
     switch (type) {
-        case GateType::And2:
-            return "AND2";
-        case GateType::Or2:
-            return "OR2";
-        case GateType::Nand2:
-            return "NAND2";
-        case GateType::Nor2:
-            return "NOR2";
-        case GateType::Xor2:
-            return "XOR2";
-        case GateType::Xnor2:
-            return "XNOR2";
-        case GateType::Not:
-            return "NOT";
-        case GateType::Buf:
-            return "BUF";
-        case GateType::Mux2:
-            return "MUX2";
-        case GateType::Tie0:
-            return "TIE0";
-        case GateType::Tie1:
-            return "TIE1";
-        case GateType::Dff:
-            return "DFF";
-        case GateType::Dlat:
-            return "DLAT";
-        case GateType::Pi:
-            return "PI";
-        case GateType::Po:
-            return "PO";
-        case GateType::Blackbox:
-            return "BLACKBOX";
-        case GateType::ScanCell:
-            return "SCAN_CELL";
+    case GateType::And2:
+        return "AND2";
+    case GateType::Or2:
+        return "OR2";
+    case GateType::Nand2:
+        return "NAND2";
+    case GateType::Nor2:
+        return "NOR2";
+    case GateType::Xor2:
+        return "XOR2";
+    case GateType::Xnor2:
+        return "XNOR2";
+    case GateType::Not:
+        return "NOT";
+    case GateType::Buf:
+        return "BUF";
+    case GateType::Mux2:
+        return "MUX2";
+    case GateType::Tie0:
+        return "TIE0";
+    case GateType::Tie1:
+        return "TIE1";
+    case GateType::Dff:
+        return "DFF";
+    case GateType::Dlat:
+        return "DLAT";
+    case GateType::Pi:
+        return "PI";
+    case GateType::Po:
+        return "PO";
+    case GateType::Blackbox:
+        return "BLACKBOX";
+    case GateType::ScanCell:
+        return "SCAN_CELL";
     }
     return "UNKNOWN";
 }

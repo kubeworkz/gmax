@@ -48,10 +48,8 @@ gmax::db::Design make_design(bool reverse) {
     leaf.inputs = {"a", "b"};
     leaf.outputs = {"y"};
     leaf.gates = {
-        {GateType::And2, "g1", {"a", "b"}, "n1", 0},
-        {GateType::Or2, "g2", {"n1", "a"}, "n2", 0},
-        {GateType::Not, "g3", {"n2"}, "n3", 0},
-        {GateType::Buf, "g4", {"n3"}, "n4", 0},
+        {GateType::And2, "g1", {"a", "b"}, "n1", 0},  {GateType::Or2, "g2", {"n1", "a"}, "n2", 0},
+        {GateType::Not, "g3", {"n2"}, "n3", 0},       {GateType::Buf, "g4", {"n3"}, "n4", 0},
         {GateType::Nand2, "g5", {"n4", "b"}, "y", 1},
     };
 
@@ -141,6 +139,75 @@ int main() {
         }
     }
     expect(hierarchical, "a leaf net keeps its hierarchical path");
+
+    // Regression: an instance input bound to a net that a later sibling drives.
+    // Walk order is by path, so the consumer is visited while its fanin is still
+    // undriven. That net is not a primary input, and marking it as one made the
+    // real driver look like a second driver.
+    const auto chain = [](const std::string& driver_path, const std::string& consumer_path) {
+        Design design;
+        design.top = "top";
+
+        Module buffer;
+        buffer.name = "buf";
+        buffer.inputs = {"a"};
+        buffer.outputs = {"y"};
+        buffer.gates = {{GateType::Buf, "g1", {"a"}, "y", kInvalidId}};
+
+        Module top;
+        top.name = "top";
+        top.inputs = {"pi"};
+        top.outputs = {"po"};
+        design.modules = {top, buffer};
+
+        Instance source;
+        source.path = driver_path;
+        source.module = "buf";
+        source.connections = {{"a", "pi"}, {"y", "n1"}};
+
+        Instance sink;
+        sink.path = consumer_path;
+        sink.module = "buf";
+        sink.connections = {{"a", "n1"}, {"y", "po"}};
+
+        design.instances = {source, sink};
+        return design;
+    };
+
+    const auto net_named = [](const DesignDb& database, const std::string& name) {
+        for (NetId net = 0; net < database.flat().net_count(); ++net) {
+            if (database.strings().at(database.flat().name_id[net]) == name) {
+                return net;
+            }
+        }
+        return static_cast<NetId>(kInvalidId);
+    };
+
+    DesignDb chained;
+    chained.design() = chain("u01", "u00");  // the consumer sorts first
+    const Status chained_status = chained.flatten();
+    expect(chained_status.ok(), "a net driven by a later-sorted instance is not a primary input");
+    if (!chained_status.ok()) {
+        std::cerr << "  " << chained_status.message() << std::endl;
+    }
+    expect(chained.flat().gate_count() == 2, "the two-instance chain flattens to two gates");
+    expect(chained.flat().net_count() == 3, "the chain has pi, n1 and po");
+    const NetId chain_pi = net_named(chained, "pi");
+    const NetId chain_link = net_named(chained, "n1");
+    expect(chain_pi != kInvalidId, "the chain has a pi net");
+    expect(chain_link != kInvalidId, "the chain has its link net");
+    if (chain_pi != kInvalidId && chain_link != kInvalidId) {
+        expect(chained.flat().driver[chain_pi] == kPrimaryInput,
+               "only the top input is a primary input");
+        expect(chained.flat().driver[chain_link] == 1u,
+               "the link net is driven by the later instance's gate");
+    }
+    expect(chained.flat().level[0] == 1 && chained.flat().level[1] == 0,
+           "the consumer sits one level above its driver");
+
+    DesignDb forward;
+    forward.design() = chain("u00", "u01");  // the driver sorts first
+    expect(forward.flatten().ok(), "the same chain flattens when the driver sorts first");
 
     const Status saved = db.save(path);
     expect(saved.ok(), "save writes a .dfdb");
