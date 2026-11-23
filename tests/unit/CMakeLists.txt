@@ -47,3 +47,13 @@ gmax_set_warnings(fault_test)
 gmax_set_sanitizers(fault_test)
 
 add_test(NAME fault COMMAND fault_test)
+
+add_executable(cli_test
+  cli_test.cpp)
+
+target_link_libraries(cli_test PRIVATE gmax_shell)
+
+gmax_set_warnings(cli_test)
+gmax_set_sanitizers(cli_test)
+
+add_test(NAME cli COMMAND cli_test)
