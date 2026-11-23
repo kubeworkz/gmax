@@ -723,6 +723,70 @@ void test_bus_dffsr_broadcast() {
            "the broadcast DFFSR becomes four DFF primitives and no inverters");
 }
 
+void test_bus_dffsr_shared_clear_low() {
+    const std::string json =
+        design_json({{"d", port_json("input", {2, 3, 4, 5})},
+                     {"clk", port_json("input", {6})},
+                     {"set", port_json("input", {7})},
+                     {"clr", port_json("input", {8})},
+                     {"q", port_json("output", {9, 10, 11, 12})}},
+                    {{"$dffsr$1", cell_json("$dffsr", dffsr_params(4, 1, 1, 0),
+                                            object({{"D", bits({2, 3, 4, 5})},
+                                                    {"CLK", bits({6})},
+                                                    {"SET", bits({7})},
+                                                    {"CLR", bits({8})},
+                                                    {"Q", bits({9, 10, 11, 12})}}))}});
+    const auto result = gmax::frontend::import_yosys_json(json, "top");
+    expect(result.ok, "a four-bit $dffsr accepts a shared active-low CLR");
+    if (!result.ok) {
+        print_diagnostics(result.diagnostics, "bus dffsr shared clear low");
+    }
+    std::string inverted_clear;
+    std::uint32_t inverters = 0;
+    if (result.design.modules.size() == 1) {
+        for (const auto& gate : result.design.modules[0].gates) {
+            if (gate.type != gmax::db::GateType::Not) {
+                continue;
+            }
+            ++inverters;
+            expect(gate.fanins == std::vector<std::string>{"clr"},
+                   "the shared active-low CLR is inverted once from clr");
+            inverted_clear = gate.out;
+        }
+    }
+    expect(inverters == 1, "the shared active-low CLR adds one inverter");
+    expect(result.design.modules.size() == 1 && result.design.modules[0].gates.size() == 5,
+           "the shared active-low $dffsr and its inverter become five gates");
+    if (result.design.modules.size() == 1) {
+        bool saw[4] = {false, false, false, false};
+        for (const auto& gate : result.design.modules[0].gates) {
+            if (gate.type != gmax::db::GateType::Dff) {
+                continue;
+            }
+            expect(!inverted_clear.empty() && gate.async_clear == inverted_clear,
+                   "all four lanes use the one shared inverted clear");
+            expect(gate.async_preset == "set", "each lane keeps the shared SET bit");
+            for (int lane = 0; lane < 4; ++lane) {
+                if (gate.out == "q[" + std::to_string(lane) + "]") {
+                    saw[lane] = true;
+                    expect(gate.fanins ==
+                               std::vector<std::string>{"d[" + std::to_string(lane) + "]", "clk",
+                                                        inverted_clear, "set"},
+                           "each lane reads its D bit, clock, shared clear and set");
+                }
+            }
+        }
+        for (const bool lane : saw) {
+            expect(lane, "the shared active-low $dffsr drives every q lane");
+        }
+    }
+    expect(result.counts.yosys_cells.size() == 1 && result.counts.yosys_cells.at("$dffsr") == 1,
+           "the active-low broadcast DFFSR is one Yosys cell");
+    expect(result.counts.primitives.size() == 2 && result.counts.primitives.at("DFF") == 4 &&
+               result.counts.primitives.at("NOT") == 1,
+           "the broadcast DFFSR becomes four DFFs and one shared NOT");
+}
+
 void test_bus_dlatch() {
     const std::string json =
         design_json({{"d", port_json("input", {2, 3, 4, 5})},
@@ -1245,6 +1309,7 @@ int main() {
     test_bus_adff();
     test_bus_dffsr();
     test_bus_dffsr_broadcast();
+    test_bus_dffsr_shared_clear_low();
     test_bus_dlatch();
     test_bus_width_mismatches();
     test_library_instance();
