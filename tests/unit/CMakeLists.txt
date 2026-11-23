@@ -57,3 +57,15 @@ gmax_set_warnings(cli_test)
 gmax_set_sanitizers(cli_test)
 
 add_test(NAME cli COMMAND cli_test)
+
+add_executable(yosys_test
+  yosys_test.cpp)
+
+target_link_libraries(yosys_test PRIVATE gmax_core)
+
+target_compile_definitions(yosys_test PRIVATE GMAX_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+gmax_set_warnings(yosys_test)
+gmax_set_sanitizers(yosys_test)
+
+add_test(NAME yosys COMMAND yosys_test)

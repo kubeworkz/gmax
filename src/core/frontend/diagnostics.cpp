@@ -1,0 +1,47 @@
+#include "core/frontend/diagnostics.h"
+
+namespace gmax::frontend {
+
+std::string_view diagnostic_code_name(const DiagnosticCode code) {
+    switch (code) {
+    case DiagnosticCode::InvalidJson:
+        return "invalid-json";
+    case DiagnosticCode::InvalidTop:
+        return "invalid-top";
+    case DiagnosticCode::YosysNotFound:
+        return "yosys-not-found";
+    case DiagnosticCode::YosysFailed:
+        return "yosys-failed";
+    case DiagnosticCode::YosysWarning:
+        return "yosys-warning";
+    case DiagnosticCode::YosysError:
+        return "yosys-error";
+    case DiagnosticCode::UnresolvedModule:
+        return "unresolved-module";
+    case DiagnosticCode::MultipleDrivers:
+        return "multiple-drivers";
+    case DiagnosticCode::UndrivenInput:
+        return "undriven-input";
+    case DiagnosticCode::CombinationalLoop:
+        return "combinational-loop";
+    case DiagnosticCode::WidthMismatch:
+        return "width-mismatch";
+    case DiagnosticCode::UnmappedCell:
+        return "unmapped-cell";
+    case DiagnosticCode::UnsupportedPort:
+        return "unsupported-port";
+    case DiagnosticCode::UnsupportedConstant:
+        return "unsupported-constant";
+    case DiagnosticCode::CellCountMismatch:
+        return "cell-count-mismatch";
+    case DiagnosticCode::IoError:
+        return "io-error";
+    }
+    return "unknown";
+}
+
+std::string_view diagnostic_severity_name(const DiagnosticSeverity severity) {
+    return severity == DiagnosticSeverity::Error ? "error" : "warning";
+}
+
+}  // namespace gmax::frontend

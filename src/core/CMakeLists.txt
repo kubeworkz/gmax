@@ -5,8 +5,12 @@ add_library(gmax_core STATIC
   db/dfdb.cpp
   db/string_table.cpp
   frontend/decompose.cpp
+  frontend/diagnostics.cpp
   frontend/expr.cpp
+  frontend/json.cpp
   frontend/liberty.cpp
+  frontend/yosys.cpp
+  frontend/yosys_recipe.cpp
   sim/fault.cpp
   sim/logic.cpp)
 
