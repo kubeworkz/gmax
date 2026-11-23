@@ -1,6 +1,6 @@
 # DFT/ATPG Platform Architecture — grx930 & G100
 
-**Status:** Draft v0.2 for review — 2.2, 9.1, 14.3, 17.1 and 21 revised for Phase 5 (boundary scan, memory BIST) · **Date:** 22 Nov 2026 · **Owner:** DFT Tools / Silicon Engineering
+**Status:** Draft v0.2 for review — 2.2, 9.1, 14.3, 17.1 and 21 revised for Phase 5 (boundary scan, memory BIST); 6.4 clarified for MUX2 select-X · **Date:** 23 Nov 2026 · **Owner:** DFT Tools / Silicon Engineering
 
 ---
 
@@ -377,10 +377,14 @@ AND:  known = a.known & b.known | (a.known & ~a.value) | (b.known & ~b.value)
 OR:   known = a.known & b.known | (a.known & a.value) | (b.known & b.value)
       value = a.value | b.value
 NOT:  known = a.known; value = ~a.value
-MUX:  out = (s & a) | (~s & b) with X propagation on s
+MUX2: s = 0 -> b
+      s = 1 -> a
+      s = X or Z -> X (equal data does not resolve an unknown select)
 ```
 
 The exact formulas are unit-tested exhaustively against scalar 4-state evaluation for all input combinations.
+
+The gate-level expression `out = (s & a) | (~s & b)` is a **non-normative sketch**. It describes a known-select connection, not the primitive's four-state truth table: under `s = X` it resolves `0/0` but not `1/1`, so its result depends on data order. MUX2 uses the select-X rule above.
 
 **Fault simulation mode:** the good machine is scalar (one pattern at a time); the faulty machine packs 64 faults into a word. Each net stores a good bit and 64 faulty bits. Fault insertion masks the fault site for inactive lanes.
 
