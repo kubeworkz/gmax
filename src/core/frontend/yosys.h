@@ -53,6 +53,12 @@ struct YosysOptions {
     bool keep_work_directory = false;
     bool techmap = false;
 
+    // Elaborate behavioral processes before writing JSON: `proc` turns always
+    // blocks into flops and latches, and `opt_dff` folds the enable muxes proc
+    // leaves behind into $dffe cells. Off by default because the pinned phase
+    // 0-1 recipe is structural and write_json rejects modules with processes.
+    bool proc = false;
+
     // Complete reference report keyed by Yosys cell type. Empty disables
     // reconciliation; a non-empty report must match every type exactly.
     std::map<std::string, std::uint64_t> expected_cells;
@@ -86,9 +92,13 @@ ImportResult import_yosys_json(std::string_view json, std::string_view top,
 //   read_verilog -sv <netlist>
 //   hierarchy -check -top <top>
 //   flatten
+//   [proc]
+//   [opt_dff]
 //   opt_clean
 //   [techmap]
 //   write_json <work>/design.json
+//
+// proc and opt_dff run only when YosysOptions::proc is set.
 //
 // The Yosys process is spawned directly (no shell), its log is parsed into
 // diagnostics, and the JSON is imported. A nonzero exit is never imported.

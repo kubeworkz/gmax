@@ -407,6 +407,9 @@ std::string yosys_recipe_script(const YosysOptions& options, const std::string_v
     // part of the name. Netlist and library paths are quoted above.
     script += "hierarchy -check -top " + options.top + "\n";
     script += "flatten\n";
+    if (options.proc) {
+        script += "proc\nopt_dff\n";
+    }
     script += "opt_clean\n";
     if (options.techmap) {
         script += "techmap\n";

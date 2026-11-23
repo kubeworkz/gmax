@@ -860,6 +860,15 @@ void test_recipe() {
     expect(script.find("flatten\nopt_clean\ntechmap\nwrite_json \"/tmp/out dir/design.json\"") !=
                std::string::npos,
            "the recipe runs the pinned phase 0-1 passes in order");
+    expect(script.find("proc") == std::string::npos,
+           "the default recipe leaves behavioral processes to the caller");
+
+    options.proc = true;
+    const std::string process_script =
+        gmax::frontend::yosys_recipe_script(options, "/tmp/out dir/design.json");
+    expect(process_script.find("flatten\nproc\nopt_dff\nopt_clean\ntechmap\nwrite_json "
+                               "\"/tmp/out dir/design.json\"") != std::string::npos,
+           "the process recipe elaborates behavior before cleaning");
 }
 
 std::string find_yosys() {
@@ -956,6 +965,113 @@ void test_live_bus_mux(const std::string& yosys) {
     std::filesystem::remove_all(directory, error);
 }
 
+void test_live_bus_flops(const std::string& yosys) {
+    std::error_code error;
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path(error) / "gmax-yosys-bus-flops-test";
+    std::filesystem::remove_all(directory, error);
+    std::filesystem::create_directories(directory, error);
+    const std::filesystem::path netlist = directory / "bus_flops.v";
+    {
+        std::ofstream out(netlist);
+        out << "module bus_flops(\n"
+               "  input clk, input [3:0] d, input en, input rst, input set, input clr,\n"
+               "  output reg [3:0] q_dff, output reg [3:0] q_dffe, output reg [3:0] q_adff,\n"
+               "  output reg [3:0] q_dffsr, output reg [3:0] q_dlatch\n"
+               ");\n"
+               "  always @(posedge clk) q_dff <= d;\n"
+               "  always @(posedge clk) if (en) q_dffe <= d;\n"
+               "  always @(posedge clk or posedge rst) if (rst) q_adff <= 4'h0; else q_adff <= d;\n"
+               "  always @(posedge clk or posedge set or negedge clr)\n"
+               "    if (set) q_dffsr <= 4'hf; else if (!clr) q_dffsr <= 4'h0; else q_dffsr <= d;\n"
+               "  always @* if (en) q_dlatch = d;\n"
+               "endmodule\n";
+    }
+
+    gmax::frontend::YosysOptions options;
+    options.yosys = yosys;
+    options.netlist = netlist.string();
+    options.top = "bus_flops";
+    options.proc = true;
+    const auto result = gmax::frontend::elaborate_with_yosys(options);
+    expect(result.ok, "the pinned Yosys elaborates a four-bit bus-flop netlist");
+    if (!result.ok) {
+        print_diagnostics(result.diagnostics, "live bus flops");
+        std::cerr << result.log << std::endl;
+    }
+
+    const auto count_of = [](const std::map<std::string, std::uint64_t>& counts,
+                             const std::string& type) {
+        const auto it = counts.find(type);
+        return it == counts.end() ? std::uint64_t{0} : it->second;
+    };
+    for (const char* cell : {"$dff", "$dffe", "$adff", "$dffsr", "$dlatch"}) {
+        expect(count_of(result.counts.yosys_cells, cell) == 1,
+               std::string("the live bus flops use one ") + cell + " cell");
+    }
+    expect(count_of(result.counts.primitives, "DFF") == 16,
+           "the four live bus flops become sixteen DFF primitives");
+    expect(count_of(result.counts.primitives, "DLAT") == 4,
+           "the live bus latch becomes four DLAT primitives");
+
+    expect(result.design.modules.size() == 1, "the live bus-flop design has one module");
+    if (result.design.modules.size() == 1) {
+        const auto& gates = result.design.modules[0].gates;
+        const auto find_gate = [&gates](const std::string& out) -> const gmax::db::Gate* {
+            for (const auto& gate : gates) {
+                if (gate.out == out) {
+                    return &gate;
+                }
+            }
+            return nullptr;
+        };
+        const auto check =
+            [&find_gate](const std::string& output, const gmax::db::GateType type,
+                         const std::vector<std::string>& fanins) -> const gmax::db::Gate* {
+            const gmax::db::Gate* gate = find_gate(output);
+            expect(gate != nullptr && gate->type == type, output + " keeps its primitive type");
+            if (gate != nullptr) {
+                expect(gate->fanins == fanins, output + " reads the expected fanins");
+            }
+            return gate;
+        };
+
+        for (int lane = 0; lane < 4; ++lane) {
+            const std::string index = "[" + std::to_string(lane) + "]";
+            const std::string data = "d" + index;
+            check("q_dff" + index, gmax::db::GateType::Dff, {data, "clk"});
+            if (const gmax::db::Gate* dffe =
+                    check("q_dffe" + index, gmax::db::GateType::Dff, {data, "clk", "en"});
+                dffe != nullptr) {
+                expect(dffe->enable == "en", "each live $dffe lane holds on en");
+            }
+            if (const gmax::db::Gate* adff =
+                    check("q_adff" + index, gmax::db::GateType::Dff, {data, "clk", "rst"});
+                adff != nullptr) {
+                expect(adff->async_clear == "rst" && adff->async_preset.empty(),
+                       "each live $adff lane resets from rst");
+            }
+            const gmax::db::Gate* dffsr = find_gate("q_dffsr" + index);
+            expect(dffsr != nullptr && dffsr->type == gmax::db::GateType::Dff,
+                   "each live $dffsr lane is a DFF");
+            if (dffsr != nullptr) {
+                expect(dffsr->fanins.size() == 4 && dffsr->fanins[0] == data &&
+                           dffsr->fanins[1] == "clk",
+                       "each live $dffsr lane reads the matching D and clock");
+                expect(!dffsr->async_clear.empty() && !dffsr->async_preset.empty(),
+                       "each live $dffsr lane has clear and preset controls");
+                if (dffsr->fanins.size() == 4) {
+                    expect(dffsr->fanins[2] == dffsr->async_clear &&
+                               dffsr->fanins[3] == dffsr->async_preset,
+                           "each live $dffsr lane wires its clear and preset controls");
+                }
+            }
+            check("q_dlatch" + index, gmax::db::GateType::Dlat, {data, "en"});
+        }
+    }
+    std::filesystem::remove_all(directory, error);
+}
+
 void test_live_unresolved(const std::string& yosys) {
     std::error_code error;
     const std::filesystem::path directory =
@@ -1015,6 +1131,7 @@ int main() {
         test_live_smoke(yosys);
         test_live_bus_and(yosys);
         test_live_bus_mux(yosys);
+        test_live_bus_flops(yosys);
         test_live_unresolved(yosys);
     }
 
