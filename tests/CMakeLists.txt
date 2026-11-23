@@ -20,3 +20,13 @@ set_tests_properties(cli.no-args PROPERTIES WILL_FAIL TRUE)
 
 add_test(NAME cli.unknown-command COMMAND gmax no-such-command)
 set_tests_properties(cli.unknown-command PROPERTIES WILL_FAIL TRUE)
+
+# The command registry only matters if the real binary wires it up. The script
+# builds a .dfdb fixture, runs write_faults through the executable, and checks
+# the generated artifact plus the usage and design exit codes.
+add_test(NAME cli.write-faults
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:fault_cli_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-write-faults
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/write_faults.cmake)

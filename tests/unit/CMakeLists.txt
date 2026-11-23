@@ -68,6 +68,14 @@ gmax_set_sanitizers(fault_cli_test)
 
 add_test(NAME fault_cli COMMAND fault_cli_test)
 
+add_executable(fault_cli_fixture
+  fault_cli_fixture.cpp)
+
+target_link_libraries(fault_cli_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(fault_cli_fixture)
+gmax_set_sanitizers(fault_cli_fixture)
+
 add_executable(fault_list_test
   fault_list_test.cpp)
 
