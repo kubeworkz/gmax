@@ -8,8 +8,9 @@
 #
 # Usage: sh tools/check-format.sh [--fix]
 #
-# Only tracked files are checked. An unformatted new file is caught when it is
-# staged, which is the moment the gate should start caring about it.
+# Tracked files are checked, plus untracked files that git does not ignore. CI
+# runs in a clean checkout, where those sets are the same; locally the gate also
+# sees a new source file from the moment it exists, not only once it is staged.
 
 set -eu
 
@@ -22,15 +23,15 @@ if ! command -v "$format" >/dev/null 2>&1; then
     exit 2
 fi
 
-sources=$(git ls-files '*.cpp' '*.h')
+sources=$(git ls-files --cached --others --exclude-standard -- '*.cpp' '*.h')
 if [ -z "$sources" ]; then
-    echo "check-format: no tracked C++ sources"
+    echo "check-format: no C++ sources found"
     exit 0
 fi
 
 if [ "${1:-}" = "--fix" ]; then
     printf '%s\n' "$sources" | tr '\n' '\000' | xargs -0 "$format" -i
-    echo "check-format: rewrote tracked sources"
+    echo "check-format: rewrote sources"
     exit 0
 fi
 
