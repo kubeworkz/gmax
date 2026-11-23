@@ -1,5 +1,9 @@
 add_library(gmax_core STATIC
-  version.cpp)
+  version.cpp
+  db/crc32.cpp
+  db/db.cpp
+  db/dfdb.cpp
+  db/string_table.cpp)
 
 target_include_directories(gmax_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 
