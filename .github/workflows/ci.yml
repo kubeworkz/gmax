@@ -49,3 +49,12 @@ jobs:
         run: pip install clang-format==18.1.8
       - name: check
         run: sh tools/check-format.sh
+
+  # Same command a developer runs locally, so the gate cannot drift from it.
+  offline:
+    name: offline build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check
+        run: sh tools/check-offline-build.sh debug
