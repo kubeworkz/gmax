@@ -37,3 +37,13 @@ gmax_set_warnings(sim_test)
 gmax_set_sanitizers(sim_test)
 
 add_test(NAME sim COMMAND sim_test)
+
+add_executable(fault_test
+  fault_test.cpp)
+
+target_link_libraries(fault_test PRIVATE gmax_core)
+
+gmax_set_warnings(fault_test)
+gmax_set_sanitizers(fault_test)
+
+add_test(NAME fault COMMAND fault_test)
