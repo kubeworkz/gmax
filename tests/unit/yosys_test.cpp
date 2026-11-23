@@ -168,6 +168,17 @@ bool has_code(const std::vector<gmax::frontend::Diagnostic>& diagnostics,
     return false;
 }
 
+bool has_width_message(const std::vector<gmax::frontend::Diagnostic>& diagnostics,
+                       const std::string_view message) {
+    for (const auto& diagnostic : diagnostics) {
+        if (diagnostic.code == gmax::frontend::DiagnosticCode::WidthMismatch &&
+            diagnostic.message == message) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void print_diagnostics(const std::vector<gmax::frontend::Diagnostic>& diagnostics,
                        const std::string_view context) {
     for (const auto& diagnostic : diagnostics) {
@@ -705,6 +716,62 @@ void test_bus_dlatch() {
            "the bus DLATCH becomes four DLAT primitives");
 }
 
+void test_bus_width_mismatches() {
+    {
+        const std::string json =
+            design_json({{"a", port_json("input", {2, 3, 4, 5})},
+                         {"b", port_json("input", {6, 7, 8})},
+                         {"s", port_json("input", {9})},
+                         {"y", port_json("output", {10, 11, 12, 13})}},
+                        {{"$mux$1", cell_json("$mux", mux_params(4),
+                                              object({{"A", bits({2, 3, 4, 5})},
+                                                      {"B", bits({6, 7, 8})},
+                                                      {"S", bits({9})},
+                                                      {"Y", bits({10, 11, 12, 13})}}))}});
+        const auto result = gmax::frontend::import_yosys_json(json, "top");
+        expect(!result.ok, "a four-bit $mux with a short B lane fails");
+        expect(
+            has_width_message(result.diagnostics, "cell '$mux$1' port 'B' is 3 bits, expected 4"),
+            "the short $mux lane is a width mismatch");
+    }
+    {
+        const std::string json =
+            design_json({{"d", port_json("input", {2, 3, 4, 5})},
+                         {"clk", port_json("input", {6})},
+                         {"en", port_json("input", {7, 8})},
+                         {"q", port_json("output", {9, 10, 11, 12})}},
+                        {{"$dffe$1", cell_json("$dffe", dffe_params(4, 1, 1),
+                                               object({{"D", bits({2, 3, 4, 5})},
+                                                       {"CLK", bits({6})},
+                                                       {"EN", bits({7, 8})},
+                                                       {"Q", bits({9, 10, 11, 12})}}))}});
+        const auto result = gmax::frontend::import_yosys_json(json, "top");
+        expect(!result.ok, "a four-bit $dffe with a two-bit enable fails");
+        expect(
+            has_width_message(result.diagnostics, "cell '$dffe$1' port 'EN' is 2 bits, expected 1"),
+            "the malformed $dffe enable is a width mismatch");
+    }
+    {
+        const std::string json =
+            design_json({{"d", port_json("input", {2, 3, 4, 5})},
+                         {"clk", port_json("input", {6})},
+                         {"set", port_json("input", {7, 8})},
+                         {"clr", port_json("input", {9, 10, 11, 12})},
+                         {"q", port_json("output", {13, 14, 15, 16})}},
+                        {{"$dffsr$1", cell_json("$dffsr", dffsr_params(4, 1, 1, 1),
+                                                object({{"D", bits({2, 3, 4, 5})},
+                                                        {"CLK", bits({6})},
+                                                        {"SET", bits({7, 8})},
+                                                        {"CLR", bits({9, 10, 11, 12})},
+                                                        {"Q", bits({13, 14, 15, 16})}}))}});
+        const auto result = gmax::frontend::import_yosys_json(json, "top");
+        expect(!result.ok, "a four-bit $dffsr with a two-bit SET bus fails");
+        expect(has_width_message(result.diagnostics,
+                                 "cell '$dffsr$1' port 'SET' is 2 bits, expected 4 or 1"),
+               "the malformed $dffsr set bus is a width mismatch");
+    }
+}
+
 void test_library_instance() {
     gmax::db::Design library;
     gmax::db::Module and2;
@@ -1113,6 +1180,7 @@ int main() {
     test_bus_adff();
     test_bus_dffsr();
     test_bus_dlatch();
+    test_bus_width_mismatches();
     test_library_instance();
     test_multiple_drivers();
     test_undriven_input();
