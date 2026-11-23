@@ -99,5 +99,18 @@ run_isolated cmake --preset "$preset"
 run_isolated cmake --build "build/$preset" --parallel
 run_isolated ctest --test-dir "build/$preset" --output-on-failure
 run_isolated "./build/$preset/gmax" --version
+# Yosys is not part of the gmax build yet. When its developer cache exists,
+# prove the pinned binary and the WP-004 recipe under the same network barrier;
+# when it does not, say so instead of implying the dependency was checked. Run
+# the check from the exported tree so it uses the ref under test, not the
+# working tree's untracked additions.
+yosys_prefix=${GMAX_YOSYS_PREFIX:-${GMAX_DEP_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/gmax}/yosys/0.71}
+if [ ! -x "$yosys_prefix/bin/yosys" ]; then
+    echo "offline-build: yosys cache not populated; skipping WP-004 dependency check"
+elif [ ! -f "$tmp/src/tools/check-yosys.sh" ]; then
+    echo "offline-build: ref $ref has no Yosys check; skipping WP-004 dependency check"
+else
+    run_isolated sh "$tmp/src/tools/check-yosys.sh" "$yosys_prefix"
+fi
 
 echo "offline-build: ok"

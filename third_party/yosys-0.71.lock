@@ -1,0 +1,20 @@
+# Yosys pin candidate for WP-004. Not frozen: TBD-09 and TBD-11 are still open.
+# tools/bootstrap-yosys.sh sources this file; keep it POSIX shell syntax.
+#
+# The release asset is self-contained (it vendors ABC and libs/), so the build
+# never invokes git or fetches a submodule. The asset is built from merge commit
+# 5628c132..., whose tree equals the v0.71 release commit b4c586f....
+YOSYS_VERSION=0.71
+YOSYS_TAG=v0.71
+YOSYS_TAG_OBJECT=3d96f11b75d8cb521128f55ae9baf6f945837b02
+YOSYS_COMMIT=b4c586fd37d0ec61bb38fc1a85fd6a2fde48fcd1
+YOSYS_EMBEDDED_COMMIT=5628c13240f670b97aaaca3d47940c4afb8ff572
+YOSYS_TREE=dfda54af5d9bb47de818337d24e0f770c9456a29
+YOSYS_SOURCE_URL=https://github.com/YosysHQ/yosys/releases/download/v0.71/yosys.tar.gz
+YOSYS_SOURCE_SHA256=2ec7c2ee63bb9b4065d6d5fff2786a1455e834f90ede8eb1d47791153ebef2a5
+YOSYS_SOURCE_BYTES=18847330
+YOSYS_LICENSE=ISC
+
+# WP-004 elaborates and writes JSON; it does not synthesize. ABC, Tcl,
+# readline, libffi, Slang and zlib are therefore left out of this pin.
+YOSYS_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DYOSYS_WITHOUT_ABC=ON -DYOSYS_WITHOUT_TCL=ON -DYOSYS_WITHOUT_READLINE=ON -DYOSYS_WITHOUT_EDITLINE=ON -DYOSYS_WITHOUT_LIBFFI=ON -DYOSYS_WITHOUT_SLANG=ON -DYOSYS_WITHOUT_ZLIB=ON -DYOSYS_ENABLE_UNIT_TESTS=OFF"

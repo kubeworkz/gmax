@@ -5,3 +5,5 @@ __pycache__/
 .vs/
 .cache/
 compile_commands.json
+# Optional in-tree dependency cache; tools/bootstrap-yosys.sh defaults outside it.
+third_party/cache/

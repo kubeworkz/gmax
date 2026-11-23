@@ -1,2 +1,4 @@
 hooks/* text eol=lf
 tools/*.sh text eol=lf
+third_party/*.lock text eol=lf
+tests/differential/yosys/*.v text eol=lf
