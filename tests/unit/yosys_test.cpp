@@ -677,6 +677,52 @@ void test_bus_dffsr() {
     expect(result.counts.primitives.at("NOT") == 4, "the CLR bits are four NOT primitives");
 }
 
+void test_bus_dffsr_broadcast() {
+    const std::string json =
+        design_json({{"d", port_json("input", {2, 3, 4, 5})},
+                     {"clk", port_json("input", {6})},
+                     {"set", port_json("input", {7})},
+                     {"clr", port_json("input", {8})},
+                     {"q", port_json("output", {9, 10, 11, 12})}},
+                    {{"$dffsr$1", cell_json("$dffsr", dffsr_params(4, 1, 1, 1),
+                                            object({{"D", bits({2, 3, 4, 5})},
+                                                    {"CLK", bits({6})},
+                                                    {"SET", bits({7})},
+                                                    {"CLR", bits({8})},
+                                                    {"Q", bits({9, 10, 11, 12})}}))}});
+    const auto result = gmax::frontend::import_yosys_json(json, "top");
+    expect(result.ok, "a four-bit $dffsr accepts single-bit SET and CLR");
+    if (!result.ok) {
+        print_diagnostics(result.diagnostics, "bus dffsr broadcast");
+    }
+    expect(result.design.modules.size() == 1 && result.design.modules[0].gates.size() == 4,
+           "the broadcast $dffsr becomes four gates");
+    if (result.design.modules.size() == 1) {
+        bool saw[4] = {false, false, false, false};
+        for (const auto& gate : result.design.modules[0].gates) {
+            expect(gate.type == gmax::db::GateType::Dff, "each broadcast $dffsr lane is a DFF");
+            expect(gate.async_clear == "clr", "each lane broadcasts the shared CLR bit");
+            expect(gate.async_preset == "set", "each lane broadcasts the shared SET bit");
+            for (int lane = 0; lane < 4; ++lane) {
+                if (gate.out == "q[" + std::to_string(lane) + "]") {
+                    saw[lane] = true;
+                    expect(gate.fanins ==
+                               std::vector<std::string>{"d[" + std::to_string(lane) + "]", "clk",
+                                                        "clr", "set"},
+                           "each broadcast lane reads its D bit and the shared controls");
+                }
+            }
+        }
+        for (const bool lane : saw) {
+            expect(lane, "the broadcast $dffsr drives every q lane");
+        }
+    }
+    expect(result.counts.yosys_cells.size() == 1 && result.counts.yosys_cells.at("$dffsr") == 1,
+           "the broadcast DFFSR is one Yosys cell");
+    expect(result.counts.primitives.size() == 1 && result.counts.primitives.at("DFF") == 4,
+           "the broadcast DFFSR becomes four DFF primitives and no inverters");
+}
+
 void test_bus_dlatch() {
     const std::string json =
         design_json({{"d", port_json("input", {2, 3, 4, 5})},
@@ -1198,6 +1244,7 @@ int main() {
     test_bus_dffe();
     test_bus_adff();
     test_bus_dffsr();
+    test_bus_dffsr_broadcast();
     test_bus_dlatch();
     test_bus_width_mismatches();
     test_library_instance();
