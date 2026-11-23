@@ -200,18 +200,25 @@ Status DesignDb::flatten() {
     flat_.fanin_begin.push_back(static_cast<std::uint32_t>(flat_.fanins.size()));
     flat_.fanout_begin.push_back(static_cast<std::uint32_t>(flat_.fanouts.size()));
 
-    // Levels fall out of one topological pass. A gate that never reaches
-    // indegree zero is part of a combinational loop, which is reported rather
-    // than silently ordered (architecture 6.3).
+    // Levels fall out of one topological pass over combinational edges. A
+    // sequential gate's output is state, not a combinational dependency, so
+    // edges out of DFF/DLAT/SCAN_CELL are cut: a flop whose next-state cone
+    // reads its own output is a legal register rather than a loop. A gate that
+    // never reaches indegree zero is part of a real combinational loop, which is
+    // reported rather than silently ordered (architecture 6.3).
     const std::size_t gate_count = flat_.gate_count();
+    const auto is_sequential = [](GateType type) {
+        return type == GateType::Dff || type == GateType::Dlat || type == GateType::ScanCell;
+    };
     std::vector<std::uint32_t> indegree(gate_count, 0);
     std::vector<std::vector<GateId>> consumers(flat_.net_count());
     for (std::size_t gate = 0; gate < gate_count; ++gate) {
         for (std::uint32_t i = flat_.fanin_begin[gate]; i < flat_.fanin_begin[gate + 1]; ++i) {
             const NetId net = flat_.fanins[i];
-            consumers[net].push_back(static_cast<GateId>(gate));
             const std::uint32_t driver = flat_.driver[net];
-            if (driver != kPrimaryInput && driver != kInvalidId) {
+            if (driver != kPrimaryInput && driver != kInvalidId &&
+                !is_sequential(flat_.type[driver])) {
+                consumers[net].push_back(static_cast<GateId>(gate));
                 ++indegree[gate];
             }
         }

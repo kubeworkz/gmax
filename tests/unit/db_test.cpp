@@ -209,6 +209,32 @@ int main() {
     forward.design() = chain("u00", "u01");  // the driver sorts first
     expect(forward.flatten().ok(), "the same chain flattens when the driver sorts first");
 
+    // A flop whose next-state cone reads its own output is a register, not a
+    // combinational loop: levelization cuts edges out of sequential gates.
+    Module latch;
+    latch.name = "latch";
+    latch.inputs = {"d", "en"};
+    latch.outputs = {"q"};
+    latch.gates = {
+        {GateType::Not, "g1", {"q"}, "n1", 0},
+        {GateType::And2, "g2", {"d", "n1"}, "n2", 0},
+        {GateType::Dlat, "g3", {"n2", "en"}, "q", 0},
+    };
+    Design sequential;
+    sequential.top = "latch";
+    sequential.modules = {latch};
+    DesignDb feedback;
+    feedback.design() = sequential;
+    const Status feedback_status = feedback.flatten();
+    expect(feedback_status.ok(), "a latch that reads its own output is not a loop");
+    if (!feedback_status.ok()) {
+        std::cerr << "  " << feedback_status.message() << std::endl;
+    }
+    expect(feedback.flat().gate_count() == 3, "the feedback latch keeps its three gates");
+    if (feedback.flat().gate_count() == 3) {
+        expect(feedback.flat().level[2] == 2, "the flop sits above its data cone");
+    }
+
     const Status saved = db.save(path);
     expect(saved.ok(), "save writes a .dfdb");
     if (!saved.ok()) {
