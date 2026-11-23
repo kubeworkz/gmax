@@ -23,17 +23,22 @@ if ! command -v "$format" >/dev/null 2>&1; then
     exit 2
 fi
 
-sources=$(git ls-files --cached --others --exclude-standard -- '*.cpp' '*.h')
-if [ -z "$sources" ]; then
+# NUL-delimited: git quotes names that contain spaces, quotes or non-ASCII
+# bytes, and -z hands over the raw name that clang-format has to open.
+list=$(mktemp) || exit 2
+trap 'rm -f "$list"' 0 1 2 15
+git ls-files -z --cached --others --exclude-standard -- '*.cpp' '*.h' >"$list"
+
+if [ ! -s "$list" ]; then
     echo "check-format: no C++ sources found"
     exit 0
 fi
 
 if [ "${1:-}" = "--fix" ]; then
-    printf '%s\n' "$sources" | tr '\n' '\000' | xargs -0 "$format" -i
+    xargs -0 "$format" -i <"$list"
     echo "check-format: rewrote sources"
     exit 0
 fi
 
-printf '%s\n' "$sources" | tr '\n' '\000' | xargs -0 "$format" --dry-run --Werror
+xargs -0 "$format" --dry-run --Werror <"$list"
 echo "check-format: clean ($("$format" --version))"
