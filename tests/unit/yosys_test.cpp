@@ -94,6 +94,11 @@ std::string mux_params(const std::uint32_t width) {
     return object({{"WIDTH", quote(binary(width))}});
 }
 
+std::string dff_params(const std::uint32_t width, const std::uint32_t clock_polarity = 1) {
+    return object(
+        {{"WIDTH", quote(binary(width))}, {"CLK_POLARITY", quote(binary(clock_polarity))}});
+}
+
 std::string port_json(const std::string_view direction, std::initializer_list<int> values) {
     return object({{"direction", quote(direction)}, {"bits", bits(values)}});
 }
@@ -208,6 +213,46 @@ void test_mux() {
     }
 }
 
+void test_bus_and() {
+    const std::string json =
+        design_json({{"a", port_json("input", {2, 3, 4, 5})},
+                     {"b", port_json("input", {6, 7, 8, 9})},
+                     {"y", port_json("output", {10, 11, 12, 13})}},
+                    {{"$and$1", cell_json("$and", width_params(4, 4, 4),
+                                          object({{"A", bits({2, 3, 4, 5})},
+                                                  {"B", bits({6, 7, 8, 9})},
+                                                  {"Y", bits({10, 11, 12, 13})}}))}});
+    const auto result = gmax::frontend::import_yosys_json(json, "top");
+    expect(result.ok, "a four-bit $and imports");
+    if (!result.ok) {
+        print_diagnostics(result.diagnostics, "bus and");
+    }
+    expect(result.design.modules.size() == 1 && result.design.modules[0].gates.size() == 4,
+           "the four-bit $and becomes four gates");
+    if (result.design.modules.size() == 1) {
+        bool saw[4] = {false, false, false, false};
+        for (const auto& gate : result.design.modules[0].gates) {
+            expect(gate.type == gmax::db::GateType::And2, "each $and lane is AND2");
+            for (int lane = 0; lane < 4; ++lane) {
+                if (gate.out == "y[" + std::to_string(lane) + "]") {
+                    saw[lane] = true;
+                    expect(gate.fanins ==
+                               std::vector<std::string>{"a[" + std::to_string(lane) + "]",
+                                                        "b[" + std::to_string(lane) + "]"},
+                           "each $and lane reads the matching A/B bits");
+                }
+            }
+        }
+        for (const bool lane : saw) {
+            expect(lane, "the four-bit $and drives every y lane");
+        }
+    }
+    expect(result.counts.yosys_cells.size() == 1 && result.counts.yosys_cells.at("$and") == 1,
+           "the bus $and is one Yosys cell");
+    expect(result.counts.primitives.size() == 1 && result.counts.primitives.at("AND2") == 4,
+           "the bus $and becomes four AND2 primitives");
+}
+
 void test_dff() {
     const std::string json = design_json(
         {{"d", port_json("input", {2})},
@@ -229,6 +274,47 @@ void test_dff() {
         expect(gate.fanins == std::vector<std::string>{"d", "ck"}, "the DFF keeps D and C");
         expect(gate.out == "q", "the DFF drives Q");
     }
+}
+
+void test_bus_dff() {
+    const std::string json =
+        design_json({{"d", port_json("input", {2, 3, 4, 5})},
+                     {"clk", port_json("input", {6})},
+                     {"q", port_json("output", {7, 8, 9, 10})}},
+                    {{"$dff$1", cell_json("$dff", dff_params(4),
+                                          object({{"D", bits({2, 3, 4, 5})},
+                                                  {"CLK", bits({6})},
+                                                  {"Q", bits({7, 8, 9, 10})}}))}});
+    const auto result = gmax::frontend::import_yosys_json(json, "top");
+    expect(result.ok, "a four-bit $dff imports");
+    if (!result.ok) {
+        print_diagnostics(result.diagnostics, "bus dff");
+    }
+    expect(result.design.modules.size() == 1 && result.design.modules[0].gates.size() == 4,
+           "the four-bit $dff becomes four gates");
+    if (result.design.modules.size() == 1) {
+        bool saw[4] = {false, false, false, false};
+        for (const auto& gate : result.design.modules[0].gates) {
+            expect(gate.type == gmax::db::GateType::Dff, "each bus-DFF lane is a DFF");
+            expect(gate.clock_edge == gmax::db::ClockEdge::Rising,
+                   "each bus-DFF lane keeps the rising edge");
+            for (int lane = 0; lane < 4; ++lane) {
+                if (gate.out == "q[" + std::to_string(lane) + "]") {
+                    saw[lane] = true;
+                    expect(gate.fanins ==
+                               std::vector<std::string>{"d[" + std::to_string(lane) + "]", "clk"},
+                           "each bus-DFF lane reads the matching D bit");
+                }
+            }
+        }
+        for (const bool lane : saw) {
+            expect(lane, "the four-bit $dff drives every q lane");
+        }
+    }
+    expect(result.counts.yosys_cells.size() == 1 && result.counts.yosys_cells.at("$dff") == 1,
+           "the bus DFF is one Yosys cell");
+    expect(result.counts.primitives.size() == 1 && result.counts.primitives.at("DFF") == 4,
+           "the bus DFF becomes four DFF primitives");
 }
 
 void test_library_instance() {
@@ -302,7 +388,7 @@ void test_width_mismatch() {
           cell_json("$and", width_params(4, 1, 4),
                     object({{"A", bits({2})}, {"B", bits({3})}, {"Y", bits({4})}}), kSource)}});
     const auto result = gmax::frontend::import_yosys_json(json, "top");
-    expect(!result.ok, "a multi-bit primitive is rejected");
+    expect(!result.ok, "an inconsistent-width primitive is rejected");
     bool width = false;
     for (const auto& diagnostic : result.diagnostics) {
         if (diagnostic.code == gmax::frontend::DiagnosticCode::WidthMismatch) {
@@ -420,6 +506,37 @@ void test_live_smoke(const std::string& yosys) {
     expect(!result.counts.primitives.empty(), "the smoke design has primitives");
 }
 
+void test_live_bus_and(const std::string& yosys) {
+    std::error_code error;
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path(error) / "gmax-yosys-bus-test";
+    std::filesystem::remove_all(directory, error);
+    std::filesystem::create_directories(directory, error);
+    const std::filesystem::path netlist = directory / "bus.v";
+    {
+        std::ofstream out(netlist);
+        out << "module bus(input [3:0] a, input [3:0] b, output [3:0] y);\n"
+               "  assign y = a & b;\n"
+               "endmodule\n";
+    }
+
+    gmax::frontend::YosysOptions options;
+    options.yosys = yosys;
+    options.netlist = netlist.string();
+    options.top = "bus";
+    const auto result = gmax::frontend::elaborate_with_yosys(options);
+    expect(result.ok, "the pinned Yosys elaborates a four-bit $and netlist");
+    if (!result.ok) {
+        print_diagnostics(result.diagnostics, "live bus and");
+        std::cerr << result.log << std::endl;
+    }
+    expect(result.counts.yosys_cells.size() == 1 && result.counts.yosys_cells.at("$and") == 1,
+           "the live bus $and is one Yosys cell");
+    expect(result.counts.primitives.size() == 1 && result.counts.primitives.at("AND2") == 4,
+           "the live bus $and becomes four AND2 primitives");
+    std::filesystem::remove_all(directory, error);
+}
+
 void test_live_unresolved(const std::string& yosys) {
     std::error_code error;
     const std::filesystem::path directory =
@@ -451,7 +568,9 @@ void test_live_unresolved(const std::string& yosys) {
 int main() {
     test_smoke();
     test_mux();
+    test_bus_and();
     test_dff();
+    test_bus_dff();
     test_library_instance();
     test_multiple_drivers();
     test_undriven_input();
@@ -468,6 +587,7 @@ int main() {
         std::cout << "skip: pinned Yosys not found" << std::endl;
     } else {
         test_live_smoke(yosys);
+        test_live_bus_and(yosys);
         test_live_unresolved(yosys);
     }
 

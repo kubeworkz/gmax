@@ -130,6 +130,55 @@ bool parameter_u32(const JsonValue& cell, const std::string_view name, std::uint
     return true;
 }
 
+bool parameter_u64(const JsonValue& cell, const std::string_view name, std::uint64_t& out) {
+    const JsonValue* parameters = cell.find("parameters");
+    if (parameters == nullptr || !parameters->is_object()) {
+        return false;
+    }
+    const JsonValue* value = parameters->find(name);
+    if (value == nullptr) {
+        return false;
+    }
+    if (value->is_number()) {
+        constexpr double kMaxU64 = 18446744073709551615.0;
+        if (value->number < 0.0 || value->number > kMaxU64 ||
+            std::trunc(value->number) != value->number) {
+            return false;
+        }
+        out = static_cast<std::uint64_t>(value->number);
+        return true;
+    }
+    if (!value->is_string() || value->text.empty()) {
+        return false;
+    }
+    bool binary = true;
+    for (const char c : value->text) {
+        if (c != '0' && c != '1') {
+            binary = false;
+            break;
+        }
+    }
+    if (binary) {
+        if (value->text.size() > 64) {
+            return false;
+        }
+        std::uint64_t parsed = 0;
+        for (const char c : value->text) {
+            parsed = (parsed << 1) | static_cast<std::uint64_t>(c == '1');
+        }
+        out = parsed;
+        return true;
+    }
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(value->text.c_str(), &end, 10);
+    if (errno == ERANGE || end == value->text.c_str() || *end != '\0') {
+        return false;
+    }
+    out = static_cast<std::uint64_t>(parsed);
+    return true;
+}
+
 struct BitRef {
     enum class Kind : std::uint8_t { Net, Zero, One, X, Z };
     Kind kind = Kind::Net;
@@ -567,6 +616,22 @@ class Importer {
         return true;
     }
 
+    bool width_bits(const JsonValue& cell, const std::string_view port, const std::uint32_t width,
+                    std::vector<BitRef>& out, const std::string& object,
+                    const SourceLocation& source) {
+        if (!read_bits(cell, port, out, object, source)) {
+            return false;
+        }
+        if (out.size() != width) {
+            error(DiagnosticCode::WidthMismatch,
+                  "cell '" + object + "' port '" + std::string(port) + "' is " +
+                      std::to_string(out.size()) + " bits, expected " + std::to_string(width),
+                  object, source);
+            return false;
+        }
+        return true;
+    }
+
     void width_error(const std::string& object, const std::string& what,
                      const SourceLocation& source) {
         error(DiagnosticCode::WidthMismatch, "cell '" + object + "': " + what, object, source);
@@ -610,28 +675,33 @@ class Importer {
             !require_width(cell, "Y_WIDTH", object, source, y_width)) {
             return;
         }
-        if (a_width != 1 || b_width != 1 || y_width != 1) {
+        if (a_width == 0 || b_width == 0 || y_width == 0 || a_width != b_width ||
+            b_width != y_width) {
             width_error(object,
-                        "bitwise cell has widths A=" + std::to_string(a_width) +
-                            " B=" + std::to_string(b_width) + " Y=" + std::to_string(y_width) +
-                            ", expected 1",
+                        "bitwise cell has inconsistent widths A=" + std::to_string(a_width) +
+                            " B=" + std::to_string(b_width) + " Y=" + std::to_string(y_width),
                         source);
             return;
         }
-        BitRef a;
-        BitRef b;
-        BitRef y;
-        if (!one_bit(cell, "A", a, object, source) || !one_bit(cell, "B", b, object, source) ||
-            !one_bit(cell, "Y", y, object, source)) {
+        std::vector<BitRef> a;
+        std::vector<BitRef> b;
+        std::vector<BitRef> y;
+        if (!width_bits(cell, "A", a_width, a, object, source) ||
+            !width_bits(cell, "B", b_width, b, object, source) ||
+            !width_bits(cell, "Y", y_width, y, object, source)) {
             return;
         }
-        const std::string an = fanin(a, object, source);
-        const std::string bn = fanin(b, object, source);
-        std::string out;
-        if (!output(y, object, source, out)) {
-            return;
+        // Each lane is an independent primitive; a bus therefore becomes one
+        // gate per bit with the same source location.
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const std::string an = fanin(a[i], object, source);
+            const std::string bn = fanin(b[i], object, source);
+            std::string out;
+            if (!output(y[i], object, source, out)) {
+                continue;
+            }
+            add_gate(type, {an, bn}, out);
         }
-        add_gate(type, {an, bn}, out);
     }
 
     void map_unary(const JsonValue& cell, const db::GateType type, const std::string& object,
@@ -642,24 +712,27 @@ class Importer {
             !require_width(cell, "Y_WIDTH", object, source, y_width)) {
             return;
         }
-        if (a_width != 1 || y_width != 1) {
+        if (a_width != y_width || a_width == 0) {
             width_error(object,
-                        "unary cell has widths A=" + std::to_string(a_width) +
-                            " Y=" + std::to_string(y_width) + ", expected 1",
+                        "unary cell has inconsistent widths A=" + std::to_string(a_width) +
+                            " Y=" + std::to_string(y_width),
                         source);
             return;
         }
-        BitRef a;
-        BitRef y;
-        if (!one_bit(cell, "A", a, object, source) || !one_bit(cell, "Y", y, object, source)) {
+        std::vector<BitRef> a;
+        std::vector<BitRef> y;
+        if (!width_bits(cell, "A", a_width, a, object, source) ||
+            !width_bits(cell, "Y", y_width, y, object, source)) {
             return;
         }
-        const std::string an = fanin(a, object, source);
-        std::string out;
-        if (!output(y, object, source, out)) {
-            return;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const std::string an = fanin(a[i], object, source);
+            std::string out;
+            if (!output(y[i], object, source, out)) {
+                continue;
+            }
+            add_gate(type, {an}, out);
         }
-        add_gate(type, {an}, out);
     }
 
     void map_mux(const JsonValue& cell, const std::string& object, const SourceLocation& source) {
@@ -667,28 +740,32 @@ class Importer {
         if (!require_width(cell, "WIDTH", object, source, width)) {
             return;
         }
-        if (width != 1) {
-            width_error(object, "mux width " + std::to_string(width) + ", expected 1", source);
+        if (width == 0) {
+            width_error(object, "mux has zero width", source);
             return;
         }
-        BitRef a;
-        BitRef b;
+        std::vector<BitRef> a;
+        std::vector<BitRef> b;
+        std::vector<BitRef> y;
         BitRef s;
-        BitRef y;
-        if (!one_bit(cell, "A", a, object, source) || !one_bit(cell, "B", b, object, source) ||
-            !one_bit(cell, "S", s, object, source) || !one_bit(cell, "Y", y, object, source)) {
+        if (!width_bits(cell, "A", width, a, object, source) ||
+            !width_bits(cell, "B", width, b, object, source) ||
+            !width_bits(cell, "Y", width, y, object, source) ||
+            !one_bit(cell, "S", s, object, source)) {
             return;
         }
-        const std::string an = fanin(a, object, source);
-        const std::string bn = fanin(b, object, source);
         const std::string sn = fanin(s, object, source);
-        std::string out;
-        if (!output(y, object, source, out)) {
-            return;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const std::string an = fanin(a[i], object, source);
+            const std::string bn = fanin(b[i], object, source);
+            std::string out;
+            if (!output(y[i], object, source, out)) {
+                continue;
+            }
+            // Yosys mux semantics: Y = S ? B : A. The db Mux2 convention is
+            // {then, else, select}.
+            add_gate(db::GateType::Mux2, {bn, an, sn}, out);
         }
-        // Yosys mux semantics: Y = S ? B : A. The db Mux2 convention is
-        // {then, else, select}.
-        add_gate(db::GateType::Mux2, {bn, an, sn}, out);
     }
 
     void map_scalar_binary(const JsonValue& cell, const db::GateType type,
@@ -875,26 +952,29 @@ class Importer {
             !require_width(cell, "CLK_POLARITY", object, source, clock_polarity)) {
             return;
         }
-        if (width != 1) {
-            width_error(object, "flip-flop width " + std::to_string(width) + ", expected 1",
-                        source);
+        if (width == 0) {
+            width_error(object, "flip-flop has zero width", source);
             return;
         }
-        BitRef d;
+        std::vector<BitRef> d;
+        std::vector<BitRef> q;
         BitRef c;
-        BitRef q;
-        if (!one_bit(cell, "D", d, object, source) || !one_bit(cell, "CLK", c, object, source) ||
-            !one_bit(cell, "Q", q, object, source)) {
+        if (!width_bits(cell, "D", width, d, object, source) ||
+            !width_bits(cell, "Q", width, q, object, source) ||
+            !one_bit(cell, "CLK", c, object, source)) {
             return;
         }
-        const std::string dn = fanin(d, object, source);
         const std::string cn = fanin(c, object, source);
-        std::string out;
-        if (!output(q, object, source, out)) {
-            return;
+        const db::ClockEdge edge =
+            clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising;
+        for (std::size_t i = 0; i < d.size(); ++i) {
+            const std::string dn = fanin(d[i], object, source);
+            std::string out;
+            if (!output(q[i], object, source, out)) {
+                continue;
+            }
+            add_gate(db::GateType::Dff, {dn, cn}, out, {}, {}, {}, edge);
         }
-        add_gate(db::GateType::Dff, {dn, cn}, out, {}, {}, {},
-                 clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising);
     }
 
     void map_word_dffe(const JsonValue& cell, const std::string& object,
@@ -907,29 +987,32 @@ class Importer {
             !require_width(cell, "EN_POLARITY", object, source, enable_polarity)) {
             return;
         }
-        if (width != 1) {
-            width_error(object, "flip-flop width " + std::to_string(width) + ", expected 1",
-                        source);
+        if (width == 0) {
+            width_error(object, "flip-flop has zero width", source);
             return;
         }
-        BitRef d;
+        std::vector<BitRef> d;
+        std::vector<BitRef> q;
         BitRef c;
         BitRef e;
-        BitRef q;
-        if (!one_bit(cell, "D", d, object, source) || !one_bit(cell, "CLK", c, object, source) ||
-            !one_bit(cell, "EN", e, object, source) || !one_bit(cell, "Q", q, object, source)) {
+        if (!width_bits(cell, "D", width, d, object, source) ||
+            !width_bits(cell, "Q", width, q, object, source) ||
+            !one_bit(cell, "CLK", c, object, source) || !one_bit(cell, "EN", e, object, source)) {
             return;
         }
-        const std::string dn = fanin(d, object, source);
         const std::string cn = fanin(c, object, source);
         const std::string en = fanin(e, object, source);
         const std::string enable = enable_polarity == 0 ? invert_net(en, object, source) : en;
-        std::string out;
-        if (!output(q, object, source, out)) {
-            return;
+        const db::ClockEdge edge =
+            clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising;
+        for (std::size_t i = 0; i < d.size(); ++i) {
+            const std::string dn = fanin(d[i], object, source);
+            std::string out;
+            if (!output(q[i], object, source, out)) {
+                continue;
+            }
+            add_gate(db::GateType::Dff, {dn, cn, enable}, out, enable, {}, {}, edge);
         }
-        add_gate(db::GateType::Dff, {dn, cn, enable}, out, enable, {}, {},
-                 clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising);
     }
 
     void map_word_adff(const JsonValue& cell, const std::string& object,
@@ -937,54 +1020,55 @@ class Importer {
         std::uint32_t width = 0;
         std::uint32_t clock_polarity = 0;
         std::uint32_t reset_polarity = 0;
-        std::uint32_t reset_value = 0;
+        std::uint64_t reset_value = 0;
         if (!require_width(cell, "WIDTH", object, source, width) ||
             !require_width(cell, "CLK_POLARITY", object, source, clock_polarity) ||
-            !require_width(cell, "ARST_POLARITY", object, source, reset_polarity) ||
-            !require_width(cell, "ARST_VALUE", object, source, reset_value)) {
+            !require_width(cell, "ARST_POLARITY", object, source, reset_polarity)) {
             return;
         }
-        if (width != 1) {
-            width_error(object, "flip-flop width " + std::to_string(width) + ", expected 1",
+        if (!parameter_u64(cell, "ARST_VALUE", reset_value)) {
+            width_error(object, "missing or invalid ARST_VALUE parameter", source);
+            return;
+        }
+        if (width == 0 || width > 64) {
+            width_error(object,
+                        "flip-flop width " + std::to_string(width) +
+                            " cannot carry an async reset value",
                         source);
             return;
         }
-        BitRef d;
+        std::vector<BitRef> d;
+        std::vector<BitRef> q;
         BitRef c;
         BitRef r;
-        BitRef q;
-        if (!one_bit(cell, "D", d, object, source) || !one_bit(cell, "CLK", c, object, source) ||
-            !one_bit(cell, "ARST", r, object, source) || !one_bit(cell, "Q", q, object, source)) {
+        if (!width_bits(cell, "D", width, d, object, source) ||
+            !width_bits(cell, "Q", width, q, object, source) ||
+            !one_bit(cell, "CLK", c, object, source) || !one_bit(cell, "ARST", r, object, source)) {
             return;
         }
-        const std::string dn = fanin(d, object, source);
         const std::string cn = fanin(c, object, source);
         const std::string rn = fanin(r, object, source);
         const std::string control = reset_polarity == 0 ? invert_net(rn, object, source) : rn;
-        std::string clear;
-        std::string preset;
-        if (reset_value == 0) {
-            clear = control;
-        } else if (reset_value == 1) {
-            preset = control;
-        } else {
-            error(DiagnosticCode::UnmappedCell, "unsupported async reset value in '" + object + "'",
-                  object, source);
-            return;
+        const db::ClockEdge edge =
+            clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising;
+        for (std::size_t i = 0; i < d.size(); ++i) {
+            const bool reset_one = ((reset_value >> i) & 1u) != 0;
+            const std::string clear = reset_one ? std::string() : control;
+            const std::string preset = reset_one ? control : std::string();
+            const std::string dn = fanin(d[i], object, source);
+            std::vector<std::string> fanins = {dn, cn};
+            if (!clear.empty()) {
+                fanins.push_back(clear);
+            }
+            if (!preset.empty()) {
+                fanins.push_back(preset);
+            }
+            std::string out;
+            if (!output(q[i], object, source, out)) {
+                continue;
+            }
+            add_gate(db::GateType::Dff, std::move(fanins), out, {}, clear, preset, edge);
         }
-        std::vector<std::string> fanins = {dn, cn};
-        if (!clear.empty()) {
-            fanins.push_back(clear);
-        }
-        if (!preset.empty()) {
-            fanins.push_back(preset);
-        }
-        std::string out;
-        if (!output(q, object, source, out)) {
-            return;
-        }
-        add_gate(db::GateType::Dff, std::move(fanins), out, {}, clear, preset,
-                 clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising);
     }
 
     void map_word_dffsr(const JsonValue& cell, const std::string& object,
@@ -999,34 +1083,37 @@ class Importer {
             !require_width(cell, "CLR_POLARITY", object, source, clear_polarity)) {
             return;
         }
-        if (width != 1) {
-            width_error(object, "flip-flop width " + std::to_string(width) + ", expected 1",
-                        source);
+        if (width == 0) {
+            width_error(object, "flip-flop has zero width", source);
             return;
         }
-        BitRef d;
+        std::vector<BitRef> d;
+        std::vector<BitRef> q;
         BitRef c;
         BitRef s;
         BitRef r;
-        BitRef q;
-        if (!one_bit(cell, "D", d, object, source) || !one_bit(cell, "CLK", c, object, source) ||
-            !one_bit(cell, "SET", s, object, source) || !one_bit(cell, "CLR", r, object, source) ||
-            !one_bit(cell, "Q", q, object, source)) {
+        if (!width_bits(cell, "D", width, d, object, source) ||
+            !width_bits(cell, "Q", width, q, object, source) ||
+            !one_bit(cell, "CLK", c, object, source) || !one_bit(cell, "SET", s, object, source) ||
+            !one_bit(cell, "CLR", r, object, source)) {
             return;
         }
-        const std::string dn = fanin(d, object, source);
         const std::string cn = fanin(c, object, source);
         const std::string sn = fanin(s, object, source);
         const std::string rn = fanin(r, object, source);
         const std::string preset = set_polarity == 0 ? invert_net(sn, object, source) : sn;
         const std::string clear = clear_polarity == 0 ? invert_net(rn, object, source) : rn;
-        std::vector<std::string> fanins = {dn, cn, clear, preset};
-        std::string out;
-        if (!output(q, object, source, out)) {
-            return;
+        const db::ClockEdge edge =
+            clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising;
+        for (std::size_t i = 0; i < d.size(); ++i) {
+            const std::string dn = fanin(d[i], object, source);
+            std::vector<std::string> fanins = {dn, cn, clear, preset};
+            std::string out;
+            if (!output(q[i], object, source, out)) {
+                continue;
+            }
+            add_gate(db::GateType::Dff, std::move(fanins), out, {}, clear, preset, edge);
         }
-        add_gate(db::GateType::Dff, std::move(fanins), out, {}, clear, preset,
-                 clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising);
     }
 
     void map_word_dlatch(const JsonValue& cell, const std::string& object,
@@ -1037,25 +1124,28 @@ class Importer {
             !require_width(cell, "EN_POLARITY", object, source, enable_polarity)) {
             return;
         }
-        if (width != 1) {
-            width_error(object, "latch width " + std::to_string(width) + ", expected 1", source);
+        if (width == 0) {
+            width_error(object, "latch has zero width", source);
             return;
         }
-        BitRef d;
+        std::vector<BitRef> d;
+        std::vector<BitRef> q;
         BitRef e;
-        BitRef q;
-        if (!one_bit(cell, "D", d, object, source) || !one_bit(cell, "EN", e, object, source) ||
-            !one_bit(cell, "Q", q, object, source)) {
+        if (!width_bits(cell, "D", width, d, object, source) ||
+            !width_bits(cell, "Q", width, q, object, source) ||
+            !one_bit(cell, "EN", e, object, source)) {
             return;
         }
-        const std::string dn = fanin(d, object, source);
         const std::string en = fanin(e, object, source);
         const std::string enable = enable_polarity == 0 ? invert_net(en, object, source) : en;
-        std::string out;
-        if (!output(q, object, source, out)) {
-            return;
+        for (std::size_t i = 0; i < d.size(); ++i) {
+            const std::string dn = fanin(d[i], object, source);
+            std::string out;
+            if (!output(q[i], object, source, out)) {
+                continue;
+            }
+            add_gate(db::GateType::Dlat, {dn, enable}, out);
         }
-        add_gate(db::GateType::Dlat, {dn, enable}, out);
     }
 
     void map_primitive(const JsonValue& cell, const std::string& type, const std::string& object,
