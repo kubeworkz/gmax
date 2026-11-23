@@ -6,7 +6,8 @@ add_library(gmax_core STATIC
   db/string_table.cpp
   frontend/decompose.cpp
   frontend/expr.cpp
-  frontend/liberty.cpp)
+  frontend/liberty.cpp
+  sim/logic.cpp)
 
 target_include_directories(gmax_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 
