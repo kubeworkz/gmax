@@ -151,7 +151,13 @@ Status DesignDb::flatten() {
                         "gate '" + gate.name +
                             "' carries an asynchronous control but is not a DFF or DLAT");
                 }
-                for (const std::string* control : {&gate.async_clear, &gate.async_preset}) {
+                if (!gate.enable.empty() && gate.type != GateType::Dff) {
+                    return Status::failure(Error::BadPayload,
+                                           "gate '" + gate.name +
+                                               "' carries an enable but is not a DFF");
+                }
+                for (const std::string* control :
+                     {&gate.enable, &gate.async_clear, &gate.async_preset}) {
                     if (!control->empty() && std::find(gate.fanins.begin(), gate.fanins.end(),
                                                        *control) == gate.fanins.end()) {
                         return Status::failure(Error::BadPayload,
@@ -184,6 +190,8 @@ Status DesignDb::flatten() {
                 flat.flags.push_back(0);
                 flat.level.push_back(0);
                 flat.lib_cell.push_back(gate.lib_cell);
+                flat.enable.push_back(gate.enable.empty() ? kInvalidId
+                                                          : net_for(prefix, ports, gate.enable));
                 flat.async_clear.push_back(gate.async_clear.empty()
                                                ? kInvalidId
                                                : net_for(prefix, ports, gate.async_clear));

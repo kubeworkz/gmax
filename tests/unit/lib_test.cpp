@@ -88,6 +88,16 @@ library (demo) {
       ff (IQ) { next_state : "D"; clocked_on : "CK"; clear : "!CDN"; preset : "SN"; }
     }
   }
+  cell (DFFE) {
+    pin (D) { direction : input; }
+    pin (CK) { direction : input; }
+    pin (EN) { direction : input; }
+    pin (RN) { direction : input; }
+    pin (Q) {
+      direction : output;
+      ff (IQ) { next_state : "D"; clocked_on : "CK"; enable : "!EN"; clear : "RN"; }
+    }
+  }
   cell (LAT) {
     statetable ("D", "IQ") {
       table : "0 : 0 : 0, 1 : 0 : 1, 0 : 1 : 0, 1 : 1 : 1";
@@ -154,7 +164,7 @@ void test_parse() {
         return;
     }
     expect(library.name == "demo", "the library keeps its name");
-    expect(library.cells.size() == 11, "the demo library has eleven cells");
+    expect(library.cells.size() == 12, "the demo library has twelve cells");
 
     const frontend::Cell* and2 = library.find_cell("AND2");
     expect(and2 != nullptr, "AND2 is present");
@@ -188,6 +198,11 @@ void test_parse() {
     expect(dffsr != nullptr && dffsr->find_pin("Q") != nullptr &&
                dffsr->find_pin("Q")->ff.clear == "!CDN" && dffsr->find_pin("Q")->ff.preset == "SN",
            "an active-low clear and a preset are parsed");
+
+    const frontend::Cell* dffe = library.find_cell("DFFE");
+    expect(dffe != nullptr && dffe->find_pin("Q") != nullptr &&
+               dffe->find_pin("Q")->ff.enable == "!EN" && dffe->find_pin("Q")->ff.clear == "RN",
+           "an ff enable and clear are parsed");
 
     const frontend::Cell* lat = library.find_cell("LAT");
     expect(lat != nullptr, "LAT is present");
@@ -327,6 +342,7 @@ void test_decomposition(const frontend::Library& library) {
         expect(q != nullptr && q->type == db::GateType::Dff, "Q is a Dff");
         expect(q != nullptr && q->fanins.size() == 2 && q->fanins[1] == "CK",
                "the Dff's clock is CK");
+        expect(q != nullptr && q->enable.empty(), "a plain flop has no enable");
         const db::Gate* data = q != nullptr && q->fanins.size() == 2
                                    ? gate_driving(dff_module, q->fanins[0])
                                    : nullptr;
@@ -368,6 +384,27 @@ void test_decomposition(const frontend::Library& library) {
         }
     }
 
+    const frontend::Cell* dffe = library.find_cell("DFFE");
+    db::Module dffe_module;
+    if (dffe != nullptr) {
+        expect(frontend::decompose_cell(*dffe, dffe_module).ok(),
+               "a clock-enabled flop decomposes");
+        const db::Gate* q = gate_driving(dffe_module, "Q");
+        expect(q != nullptr && q->type == db::GateType::Dff, "the enabled flop is a Dff");
+        expect(q != nullptr && q->fanins.size() == 4, "the enabled flop has four inputs");
+        if (q != nullptr && q->fanins.size() == 4) {
+            expect(q->async_clear == "RN", "the async clear is RN");
+            expect(q->async_preset.empty(), "the enabled flop has no preset");
+            expect(q->enable != "EN" && q->enable == q->fanins[2],
+                   "the active-low enable is normalized onto a new net");
+            expect(q->fanins[3] == "RN", "the clear follows the enable");
+            const db::Gate* inverter = gate_driving(dffe_module, q->enable);
+            expect(inverter != nullptr && inverter->type == db::GateType::Not &&
+                       inverter->fanins == std::vector<std::string>({"EN"}),
+                   "the active-low enable inverts EN");
+        }
+    }
+
     const frontend::Cell* lat = library.find_cell("LAT");
     db::Module lat_module;
     if (lat != nullptr) {
@@ -376,6 +413,8 @@ void test_decomposition(const frontend::Library& library) {
         expect(q != nullptr && q->type == db::GateType::Dlat, "Q is a Dlat");
         expect(q != nullptr && q->fanins.size() == 2 && q->fanins[1] == "G",
                "the Dlat's enable is G");
+        expect(q != nullptr && q->enable.empty(),
+               "a latch keeps its enable as the transparency fanin");
         const db::Gate* cone = q != nullptr && q->fanins.size() == 2
                                    ? gate_driving(lat_module, q->fanins[0])
                                    : nullptr;
@@ -425,6 +464,19 @@ void test_errors(const frontend::Library& library) {
         const db::Status compound_status = frontend::decompose_cell(compound, module);
         expect(!compound_status.ok() && mentions(compound_status, "one pin"),
                "a compound asynchronous clear is rejected");
+    }
+
+    if (const frontend::Cell* dffe = library.find_cell("DFFE"); dffe != nullptr) {
+        frontend::Cell compound_enable = *dffe;
+        compound_enable.name = "COMPOUND_ENABLE";
+        for (frontend::Pin& pin : compound_enable.pins) {
+            if (pin.name == "Q") {
+                pin.ff.enable = "EN & D";
+            }
+        }
+        const db::Status enable_status = frontend::decompose_cell(compound_enable, module);
+        expect(!enable_status.ok() && mentions(enable_status, "one pin"),
+               "a compound enable is rejected");
     }
 
     frontend::Library scratch;
@@ -531,6 +583,78 @@ void test_integration(const frontend::Library& library) {
     }
 }
 
+void test_enable_flatten(const frontend::Library& library) {
+    const frontend::Cell* dffe = library.find_cell("DFFE");
+    expect(dffe != nullptr, "the clock-enabled cell exists");
+    if (dffe == nullptr) {
+        return;
+    }
+
+    frontend::Library subset;
+    subset.name = "enable";
+    subset.cells.push_back(*dffe);
+
+    db::Design design;
+    design.top = "top";
+    const db::Status decomposed = frontend::decompose_library(subset, design);
+    expect(decomposed.ok(), "the clock-enabled flop decomposes into a module");
+    if (!decomposed.ok()) {
+        std::cerr << "  " << decomposed.message() << std::endl;
+        return;
+    }
+
+    db::Module top;
+    top.name = "top";
+    top.inputs = {"d", "ck", "en", "rn"};
+    top.outputs = {"q"};
+    design.modules.push_back(top);
+
+    db::Instance instance;
+    instance.path = "u0";
+    instance.module = "DFFE";
+    instance.connections = {{"D", "d"}, {"CK", "ck"}, {"EN", "en"}, {"RN", "rn"}, {"Q", "q"}};
+    design.instances = {instance};
+
+    db::DesignDb database;
+    database.design() = design;
+    const db::Status flattened = database.flatten();
+    expect(flattened.ok(), "the enabled flop's design flattens");
+    if (!flattened.ok()) {
+        std::cerr << "  " << flattened.message() << std::endl;
+        return;
+    }
+
+    expect(database.flat().enable.size() == database.flat().gate_count(),
+           "the flat graph carries an enable entry for every gate");
+
+    bool found = false;
+    for (db::GateId gate = 0; gate < database.flat().gate_count(); ++gate) {
+        if (database.flat().type[gate] != db::GateType::Dff) {
+            continue;
+        }
+        found = true;
+        const db::NetId enable = database.flat().enable[gate];
+        const db::NetId clear = database.flat().async_clear[gate];
+        expect(enable != db::kInvalidId, "the enable reaches the flat graph");
+        expect(clear == net_named(database, "rn"), "the async clear is the RN pin net");
+        if (enable != db::kInvalidId) {
+            const db::GateId inverter = database.flat().driver[enable];
+            expect(inverter != db::kInvalidId &&
+                       database.flat().type[inverter] == db::GateType::Not,
+                   "the flat enable is driven by an inverter");
+            if (inverter != db::kInvalidId) {
+                expect(database.flat().fanins[database.flat().fanin_begin[inverter]] ==
+                           net_named(database, "en"),
+                       "the inverter reads the active-low enable pin");
+            }
+        }
+        const auto begin = database.flat().fanins.begin() + database.flat().fanin_begin[gate];
+        const auto end = database.flat().fanins.begin() + database.flat().fanin_begin[gate + 1];
+        expect(std::find(begin, end, enable) != end, "the enable is also a flop fanin");
+    }
+    expect(found, "the flat graph has the enabled flop");
+}
+
 void test_async_flatten(const frontend::Library& library) {
     const frontend::Cell* dffsr = library.find_cell("DFFSR");
     expect(dffsr != nullptr, "the set/reset cell exists");
@@ -622,6 +746,7 @@ int main() {
         test_decomposition(library);
         test_errors(library);
         test_integration(library);
+        test_enable_flatten(library);
         test_async_flatten(library);
     }
 

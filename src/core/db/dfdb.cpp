@@ -26,6 +26,7 @@ enum class Section : std::uint32_t {
     Sources = 5,
     Meta = 6,
     Async = 7,
+    Enable = 8,
 };
 
 Status fail(Error error, std::string message) { return Status::failure(error, std::move(message)); }
@@ -279,6 +280,28 @@ std::vector<std::uint8_t> build_async(const Design& design, const FlatNetlist& f
     return writer.take();
 }
 
+// enable follows the same additive pattern as async: .dfdb 1.2 stores it in its
+// own optional section, so a 1.0 or 1.1 file loads with every enable absent.
+std::vector<std::uint8_t> build_enable(const Design& design, const FlatNetlist& flat,
+                                       StringTable& strings) {
+    Writer writer;
+    std::uint32_t design_gates = 0;
+    for (const Module& module : design.modules) {
+        design_gates += static_cast<std::uint32_t>(module.gates.size());
+    }
+    writer.u32(design_gates);
+    for (const Module& module : design.modules) {
+        for (const Gate& gate : module.gates) {
+            writer.u32(gate.enable.empty() ? kInvalidId : strings.intern(gate.enable));
+        }
+    }
+    writer.u32(flat.gate_count());
+    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
+        writer.u32(gate < flat.enable.size() ? flat.enable[gate] : kInvalidId);
+    }
+    return writer.take();
+}
+
 // Counts are repeated here on purpose: they are cheap, and a section that parses
 // but disagrees with the rest of the file is a bug worth catching at load.
 std::vector<std::uint8_t> build_meta(const FlatNetlist& flat, const StringTable& strings) {
@@ -300,6 +323,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     // then writes.
     std::vector<std::uint8_t> hierarchy = build_hierarchy(design, table);
     std::vector<std::uint8_t> async = build_async(design, flat, table);
+    std::vector<std::uint8_t> enable = build_enable(design, flat, table);
     std::vector<std::pair<Section, std::vector<std::uint8_t>>> sections;
     sections.emplace_back(Section::Strings, build_strings(table));
     sections.emplace_back(Section::Hierarchy, std::move(hierarchy));
@@ -308,6 +332,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     sections.emplace_back(Section::Sources, build_sources(flat));
     sections.emplace_back(Section::Meta, build_meta(flat, table));
     sections.emplace_back(Section::Async, std::move(async));
+    sections.emplace_back(Section::Enable, std::move(enable));
 
     Writer writer;
     for (const std::uint8_t byte : kMagic) {
@@ -607,8 +632,7 @@ Status parse_sources(Reader& reader, FlatNetlist& flat) {
 }
 
 // Restores a section written by build_async. The caller has already sized both
-// flat arrays to kInvalidId, so a 1.0 file's absent section needs no special
-// case here.
+// flat arrays to kInvalidId, so a file older than 1.1 needs no special case.
 Status parse_async(Reader& reader, const StringTable& strings, Design& design, FlatNetlist& flat) {
     std::size_t design_gates = 0;
     for (const Module& module : design.modules) {
@@ -665,6 +689,54 @@ Status parse_async(Reader& reader, const StringTable& strings, Design& design, F
     return Status{};
 }
 
+// Restores a section written by build_enable; absent in 1.0 and 1.1 files.
+Status parse_enable(Reader& reader, const StringTable& strings, Design& design, FlatNetlist& flat) {
+    std::size_t design_gates = 0;
+    for (const Module& module : design.modules) {
+        design_gates += module.gates.size();
+    }
+    const std::uint32_t stored_gates = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "enable section ends inside its hierarchy count");
+    }
+    if (stored_gates != design_gates) {
+        return fail(Error::BadPayload, "enable section disagrees with the hierarchy gate count");
+    }
+    for (Module& module : design.modules) {
+        for (Gate& gate : module.gates) {
+            const StringId enable = reader.u32();
+            if (!reader.ok()) {
+                return fail(Error::TruncatedFile, "enable section ends inside a gate record");
+            }
+            if (enable != kInvalidId) {
+                if (!strings.contains(enable)) {
+                    return fail(Error::BadPayload,
+                                "enable section names a string id the table does not have");
+                }
+                gate.enable = std::string(strings.at(enable));
+            }
+        }
+    }
+
+    const std::uint32_t flat_gates = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "enable section ends inside its flat gate count");
+    }
+    if (flat_gates != flat.gate_count()) {
+        return fail(Error::BadPayload, "enable section disagrees with the flat gate count");
+    }
+    for (std::size_t gate = 0; gate < flat.gate_count(); ++gate) {
+        flat.enable[gate] = reader.u32();
+    }
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "enable section ends inside its control array");
+    }
+    if (!reader.at_end()) {
+        return fail(Error::BadPayload, "enable section has trailing bytes");
+    }
+    return Status{};
+}
+
 Status parse_meta(Reader& reader, const FlatNetlist& flat, const StringTable& strings) {
     const std::uint32_t gate_count = reader.u32();
     const std::uint32_t net_count = reader.u32();
@@ -701,6 +773,8 @@ const char* section_name(const Section section) {
         return "meta";
     case Section::Async:
         return "async";
+    case Section::Enable:
+        return "enable";
     }
     return "unknown";
 }
@@ -731,7 +805,8 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
     }
     if (flat.out_net.size() != gate_count || flat.flags.size() != gate_count ||
         flat.level.size() != gate_count || flat.lib_cell.size() != gate_count ||
-        flat.async_clear.size() != gate_count || flat.async_preset.size() != gate_count) {
+        flat.enable.size() != gate_count || flat.async_clear.size() != gate_count ||
+        flat.async_preset.size() != gate_count) {
         return fail(Error::BadPayload, "gates section arrays disagree on the gate count");
     }
     if (flat.name_id.size() != net_count || flat.source_loc.size() != net_count) {
@@ -753,6 +828,20 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
         }
     }
     for (std::size_t gate = 0; gate < gate_count; ++gate) {
+        const auto enable = flat.enable[gate];
+        if (enable != kInvalidId) {
+            if (enable >= net_count) {
+                return fail(Error::BadPayload, "an enable names a net that does not exist");
+            }
+            if (flat.type[gate] != GateType::Dff) {
+                return fail(Error::BadPayload, "a gate that is not a DFF carries an enable");
+            }
+            const auto enable_begin = flat.fanins.begin() + flat.fanin_begin[gate];
+            const auto enable_end = flat.fanins.begin() + flat.fanin_begin[gate + 1];
+            if (std::find(enable_begin, enable_end, enable) == enable_end) {
+                return fail(Error::BadPayload, "an enable is not one of its gate's fanins");
+            }
+        }
         for (const NetId net : {flat.async_clear[gate], flat.async_preset[gate]}) {
             if (net == kInvalidId) {
                 continue;
@@ -890,9 +979,13 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
     };
     std::vector<Section> required = {Section::Strings, Section::Hierarchy, Section::Gates,
                                      Section::Nets,    Section::Sources,   Section::Meta};
-    // 1.1 added the async section; a 1.0 file predates it and is still valid.
+    // Each minor added one optional-in-older-files section; a file that predates
+    // it is still valid and loads with that control absent.
     if (minor >= 1) {
         required.push_back(Section::Async);
+    }
+    if (minor >= 2) {
+        required.push_back(Section::Enable);
     }
     for (const Section section : required) {
         if (find(section) == nullptr) {
@@ -909,6 +1002,7 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         case Section::Sources:
         case Section::Meta:
         case Section::Async:
+        case Section::Enable:
             break;
         default:
             return fail(Error::UnknownSection,
@@ -964,6 +1058,14 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
     if (const Entry* async = find(Section::Async); async != nullptr) {
         Reader section = open(*async);
         const Status status = parse_async(section, strings, design, flat);
+        if (!status) {
+            return status;
+        }
+    }
+    flat.enable.assign(flat.gate_count(), kInvalidId);
+    if (const Entry* enable = find(Section::Enable); enable != nullptr) {
+        Reader section = open(*enable);
+        const Status status = parse_enable(section, strings, design, flat);
         if (!status) {
             return status;
         }

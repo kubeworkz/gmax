@@ -49,11 +49,11 @@ gmax::db::Design make_design(bool reverse) {
     leaf.inputs = {"a", "b"};
     leaf.outputs = {"y"};
     leaf.gates = {
-        {GateType::And2, "g1", {"a", "b"}, "n1", 0, "", ""},
-        {GateType::Or2, "g2", {"n1", "a"}, "n2", 0, "", ""},
-        {GateType::Not, "g3", {"n2"}, "n3", 0, "", ""},
-        {GateType::Buf, "g4", {"n3"}, "n4", 0, "", ""},
-        {GateType::Nand2, "g5", {"n4", "b"}, "y", 1, "", ""},
+        {GateType::And2, "g1", {"a", "b"}, "n1", 0, "", "", ""},
+        {GateType::Or2, "g2", {"n1", "a"}, "n2", 0, "", "", ""},
+        {GateType::Not, "g3", {"n2"}, "n3", 0, "", "", ""},
+        {GateType::Buf, "g4", {"n3"}, "n4", 0, "", "", ""},
+        {GateType::Nand2, "g5", {"n4", "b"}, "y", 1, "", "", ""},
     };
 
     Module top;
@@ -155,7 +155,7 @@ int main() {
         buffer.name = "buf";
         buffer.inputs = {"a"};
         buffer.outputs = {"y"};
-        buffer.gates = {{GateType::Buf, "g1", {"a"}, "y", kInvalidId, "", ""}};
+        buffer.gates = {{GateType::Buf, "g1", {"a"}, "y", kInvalidId, "", "", ""}};
 
         Module top;
         top.name = "top";
@@ -219,9 +219,9 @@ int main() {
     latch.inputs = {"d", "en"};
     latch.outputs = {"q"};
     latch.gates = {
-        {GateType::Not, "g1", {"q"}, "n1", 0, "", ""},
-        {GateType::And2, "g2", {"d", "n1"}, "n2", 0, "", ""},
-        {GateType::Dlat, "g3", {"n2", "en"}, "q", 0, "", ""},
+        {GateType::Not, "g1", {"q"}, "n1", 0, "", "", ""},
+        {GateType::And2, "g2", {"d", "n1"}, "n2", 0, "", "", ""},
+        {GateType::Dlat, "g3", {"n2", "en"}, "q", 0, "", "", ""},
     };
     Design sequential;
     sequential.top = "latch";
@@ -263,57 +263,72 @@ int main() {
     expect(rebuilt.flat() == db.flat(), "re-flattening assigns identical gate and net ids");
     expect(rebuilt.strings() == db.strings(), "re-flattening assigns identical string ids");
 
-    // Asynchronous clear and preset are part of the gate model and the flat
-    // graph. 1.1 carries them in an optional section, so a 1.0 file still loads.
+    // Sequential controls are part of the gate model and the flat graph. 1.1
+    // added async clear/preset and 1.2 added the DFF enable, each in an optional
+    // section so older files still load.
     {
-        DesignDb async;
-        async.design().top = "top";
+        DesignDb sequential;
+        sequential.design().top = "top";
         Module top;
         top.name = "top";
-        top.inputs = {"d", "ck", "rn", "sn"};
+        top.inputs = {"d", "ck", "en", "rn", "sn"};
         top.outputs = {"q"};
         Gate flop;
         flop.type = GateType::Dff;
         flop.name = "g1";
-        flop.fanins = {"d", "ck", "rn", "sn"};
+        flop.fanins = {"d", "ck", "en", "rn", "sn"};
         flop.out = "q";
+        flop.enable = "en";
         flop.async_clear = "rn";
         flop.async_preset = "sn";
         top.gates = {flop};
-        async.design().modules = {top};
+        sequential.design().modules = {top};
 
-        expect(async.flatten().ok(), "a flop with async set and reset flattens");
-        expect(async.flat().gate_count() == 1, "the async flop is one gate");
-        expect(async.flat().async_clear.size() == 1 && async.flat().async_preset.size() == 1,
+        expect(sequential.flatten().ok(), "a flop with enable, async set and reset flattens");
+        expect(sequential.flat().gate_count() == 1, "the controlled flop is one gate");
+        expect(sequential.flat().enable.size() == 1 && sequential.flat().async_clear.size() == 1 &&
+                   sequential.flat().async_preset.size() == 1,
                "the flat graph carries one control entry per gate");
-        if (async.flat().gate_count() == 1) {
-            const NetId clear = async.flat().async_clear[0];
-            const NetId preset = async.flat().async_preset[0];
-            expect(clear != kInvalidId && preset != kInvalidId, "both controls name a net");
-            expect(clear != kInvalidId && async.strings().at(async.flat().name_id[clear]) == "rn",
+        if (sequential.flat().gate_count() == 1) {
+            const NetId enable = sequential.flat().enable[0];
+            const NetId clear = sequential.flat().async_clear[0];
+            const NetId preset = sequential.flat().async_preset[0];
+            expect(enable != kInvalidId && clear != kInvalidId && preset != kInvalidId,
+                   "all three controls name a net");
+            expect(enable != kInvalidId &&
+                       sequential.strings().at(sequential.flat().name_id[enable]) == "en",
+                   "the enable is the en net");
+            expect(clear != kInvalidId &&
+                       sequential.strings().at(sequential.flat().name_id[clear]) == "rn",
                    "the async clear is the rn net");
-            expect(preset != kInvalidId && async.strings().at(async.flat().name_id[preset]) == "sn",
+            expect(preset != kInvalidId &&
+                       sequential.strings().at(sequential.flat().name_id[preset]) == "sn",
                    "the async preset is the sn net");
         }
 
         const std::vector<std::uint8_t> bytes =
-            dfdb::serialize(async.design(), async.flat(), async.strings());
+            dfdb::serialize(sequential.design(), sequential.flat(), sequential.strings());
         Design design_out;
         FlatNetlist flat_out;
         StringTable strings_out;
         expect(dfdb::parse(bytes, design_out, flat_out, strings_out).ok(),
-               "the async controls round-trip through .dfdb");
-        expect(flat_out == async.flat(), "the async flat graph survives the round trip");
-        expect(design_out == async.design(), "the async hierarchy survives the round trip");
+               "the sequential controls round-trip through .dfdb");
+        expect(flat_out == sequential.flat(), "the controlled flat graph survives the round trip");
+        expect(design_out == sequential.design(),
+               "the controlled hierarchy survives the round trip");
 
-        // Downgrade the file to schema 1.0: async is written last in both the
-        // section table and the payload, so drop its entry and trailing payload
-        // and set the minor version to zero.
         const auto u32_at = [](const std::vector<std::uint8_t>& data, std::size_t at) {
             return static_cast<std::uint32_t>(data[at]) |
                    (static_cast<std::uint32_t>(data[at + 1]) << 8) |
                    (static_cast<std::uint32_t>(data[at + 2]) << 16) |
                    (static_cast<std::uint32_t>(data[at + 3]) << 24);
+        };
+        const auto set_u32_at = [](std::vector<std::uint8_t>& data, std::size_t at,
+                                   std::uint32_t value) {
+            for (int byte = 0; byte < 4; ++byte) {
+                data[at + static_cast<std::size_t>(byte)] =
+                    static_cast<std::uint8_t>((value >> (8 * byte)) & 0xFFu);
+            }
         };
         const auto u64_at = [](const std::vector<std::uint8_t>& data, std::size_t at) {
             std::uint64_t value = 0;
@@ -322,42 +337,62 @@ int main() {
             }
             return value;
         };
-        std::vector<std::uint8_t> old = bytes;
-        const std::uint32_t sections = u32_at(old, 12);
-        const std::size_t last_entry = 16 + (sections - 1) * 28;
-        const auto async_offset = u64_at(old, last_entry + 8);
-        old.erase(old.begin() + static_cast<std::ptrdiff_t>(last_entry),
-                  old.begin() + static_cast<std::ptrdiff_t>(last_entry + 28));
-        // Every payload moved back by one table entry, so every remaining
-        // section offset does too.
-        for (std::uint32_t i = 0; i + 1 < sections; ++i) {
-            const std::size_t at = 16 + i * 28 + 8;
-            const std::uint64_t shifted = u64_at(old, at) - 28;
-            for (int byte = 0; byte < 8; ++byte) {
-                old[at + static_cast<std::size_t>(byte)] =
-                    static_cast<std::uint8_t>((shifted >> (8 * byte)) & 0xFFu);
+        const auto set_minor = [](std::vector<std::uint8_t>& data, std::uint16_t minor) {
+            data[6] = static_cast<std::uint8_t>(minor & 0xFFu);
+            data[7] = static_cast<std::uint8_t>((minor >> 8) & 0xFFu);
+        };
+        // Drop the last section: it is last in the table and in the payload, so
+        // the remaining payloads move back by one table entry.
+        const auto drop_last_section = [&](std::vector<std::uint8_t>& data) {
+            const std::uint32_t sections = u32_at(data, 12);
+            const std::size_t entry = 16 + (sections - 1) * 28;
+            const auto payload = u64_at(data, entry + 8);
+            data.erase(data.begin() + static_cast<std::ptrdiff_t>(entry),
+                       data.begin() + static_cast<std::ptrdiff_t>(entry + 28));
+            for (std::uint32_t i = 0; i + 1 < sections; ++i) {
+                const std::size_t at = 16 + i * 28 + 8;
+                const std::uint64_t shifted = u64_at(data, at) - 28;
+                for (int byte = 0; byte < 8; ++byte) {
+                    data[at + static_cast<std::size_t>(byte)] =
+                        static_cast<std::uint8_t>((shifted >> (8 * byte)) & 0xFFu);
+                }
             }
-        }
-        old.resize(static_cast<std::size_t>(async_offset) - 28);
-        const std::uint32_t old_sections = sections - 1;
-        old[12] = static_cast<std::uint8_t>(old_sections & 0xFFu);
-        old[13] = static_cast<std::uint8_t>((old_sections >> 8) & 0xFFu);
-        old[14] = static_cast<std::uint8_t>((old_sections >> 16) & 0xFFu);
-        old[15] = static_cast<std::uint8_t>((old_sections >> 24) & 0xFFu);
-        old[6] = 0;
-        old[7] = 0;
+            data.resize(static_cast<std::size_t>(payload) - 28);
+            set_u32_at(data, 12, sections - 1);
+        };
 
-        Design old_design;
-        FlatNetlist old_flat;
-        StringTable old_strings;
-        const Status old_status = dfdb::parse(old, old_design, old_flat, old_strings);
-        expect(old_status.ok(), "a 1.0 file without the async section still loads");
-        if (!old_status.ok()) {
-            std::cerr << "  " << old_status.message() << std::endl;
+        std::vector<std::uint8_t> older = bytes;  // 1.1: no enable section
+        drop_last_section(older);
+        set_minor(older, 1);
+        Design design_11;
+        FlatNetlist flat_11;
+        StringTable strings_11;
+        const Status status_11 = dfdb::parse(older, design_11, flat_11, strings_11);
+        expect(status_11.ok(), "a 1.1 file without the enable section still loads");
+        if (!status_11.ok()) {
+            std::cerr << "  " << status_11.message() << std::endl;
         }
-        expect(old_flat.async_clear.size() == 1 && old_flat.async_preset.size() == 1 &&
-                   old_flat.async_clear[0] == kInvalidId && old_flat.async_preset[0] == kInvalidId,
-               "a 1.0 file loads with its async controls absent");
+        expect(flat_11.enable.size() == 1 && flat_11.enable[0] == kInvalidId,
+               "a 1.1 file loads with its enable absent");
+        expect(flat_11.async_clear.size() == 1 && flat_11.async_clear[0] != kInvalidId &&
+                   flat_11.async_preset[0] != kInvalidId,
+               "a 1.1 file keeps its async controls");
+
+        std::vector<std::uint8_t> oldest = older;  // 1.0: also no async section
+        drop_last_section(oldest);
+        set_minor(oldest, 0);
+        Design design_10;
+        FlatNetlist flat_10;
+        StringTable strings_10;
+        const Status status_10 = dfdb::parse(oldest, design_10, flat_10, strings_10);
+        expect(status_10.ok(), "a 1.0 file without the async section still loads");
+        if (!status_10.ok()) {
+            std::cerr << "  " << status_10.message() << std::endl;
+        }
+        expect(flat_10.enable.size() == 1 && flat_10.async_clear.size() == 1 &&
+                   flat_10.async_preset.size() == 1 && flat_10.enable[0] == kInvalidId &&
+                   flat_10.async_clear[0] == kInvalidId && flat_10.async_preset[0] == kInvalidId,
+               "a 1.0 file loads with all sequential controls absent");
     }
 
     expect(loaded.save(copy).ok(), "the loaded database saves");
@@ -378,7 +413,7 @@ int main() {
     };
 
     std::vector<std::uint8_t> newer = good;
-    newer[6] = 2;  // minor version, one past what this build writes
+    newer[6] = 3;  // minor version, one past what this build writes
     expect(load_error(newer) == Error::NewerSchema, "a newer minor is refused, not guessed");
 
     std::vector<std::uint8_t> foreign = good;
@@ -404,8 +439,8 @@ int main() {
     loop.name = "top";
     loop.inputs = {"a"};
     loop.gates = {
-        {GateType::And2, "g1", {"n2", "a"}, "n1", kInvalidId, "", ""},
-        {GateType::Or2, "g2", {"n1"}, "n2", kInvalidId, "", ""},
+        {GateType::And2, "g1", {"n2", "a"}, "n1", kInvalidId, "", "", ""},
+        {GateType::Or2, "g2", {"n1"}, "n2", kInvalidId, "", "", ""},
     };
     cyclic.design().modules = {loop};
     expect(cyclic.flatten().error() == Error::CycleDetected,
@@ -416,8 +451,8 @@ int main() {
     Module shared;
     shared.name = "top";
     shared.gates = {
-        {GateType::Buf, "g1", {"n0"}, "n1", kInvalidId, "", ""},
-        {GateType::Buf, "g2", {"n0"}, "n1", kInvalidId, "", ""},
+        {GateType::Buf, "g1", {"n0"}, "n1", kInvalidId, "", "", ""},
+        {GateType::Buf, "g2", {"n0"}, "n1", kInvalidId, "", "", ""},
     };
     doubled.design().modules = {shared};
     expect(doubled.flatten().error() == Error::MultipleDrivers,
@@ -441,6 +476,7 @@ int main() {
         flat.flags = {0};
         flat.level = {0};
         flat.lib_cell = {kInvalidId};
+        flat.enable = {kInvalidId};
         flat.async_clear = {kInvalidId};
         flat.async_preset = {kInvalidId};
         flat.driver = {0};
