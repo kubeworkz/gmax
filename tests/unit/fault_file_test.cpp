@@ -190,6 +190,43 @@ void test_round_trip_and_counts() {
     std::filesystem::remove(copy);
 }
 
+void test_netlist_hash_binds_through_dfdb_round_trip() {
+    Fixture fixture = make_fixture();
+    const auto directory = std::filesystem::temp_directory_path();
+    const std::string faults_path = (directory / "gmax-fault-file-test-dfdb.faults").string();
+    const std::string database_path = (directory / "gmax-fault-file-test-dfdb.dfdb").string();
+
+    expect(atpg::write_faults(faults_path, fixture.database, fixture.raw, fixture.collapsed).ok(),
+           "the .faults file is written before the database round trip");
+    expect(fixture.database.save(database_path).ok(), "the design database saves before reloading");
+
+    db::DesignDb reloaded;
+    const db::Status loaded = db::DesignDb::load(database_path, reloaded);
+    expect(loaded.ok(), "the saved design database reloads");
+    if (!loaded.ok()) {
+        std::cerr << "  " << loaded.message() << std::endl;
+    }
+    expect(atpg::netlist_hash(reloaded) == atpg::netlist_hash(fixture.database),
+           "the .dfdb round trip preserves the netlist hash");
+
+    atpg::FaultListFile file;
+    const db::Status read = atpg::read_faults(faults_path, reloaded, file);
+    expect(read.ok(), "the reloaded database reads the original .faults file");
+    if (!read.ok()) {
+        std::cerr << "  " << read.message() << std::endl;
+    }
+    expect(file.header.netlist_hash == atpg::netlist_hash(reloaded),
+           "the reloaded database matches the .faults netlist header");
+    expect(file.raw == fixture.raw, "the reloaded database reads the same raw faults");
+    expect(file.collapsed == fixture.collapsed.faults,
+           "the reloaded database reads the same collapsed faults");
+    expect(file.raw_to_collapsed == fixture.collapsed.raw_to_collapsed,
+           "the reloaded database reads the same raw-to-collapsed mapping");
+
+    std::filesystem::remove(faults_path);
+    std::filesystem::remove(database_path);
+}
+
 void test_netlist_identity() {
     const db::DesignDb forward = flatten(make_design(false));
     const db::DesignDb reverse = flatten(make_design(true));
@@ -280,6 +317,7 @@ void test_invalid_mapping_is_refused() {
 
 int main() {
     test_round_trip_and_counts();
+    test_netlist_hash_binds_through_dfdb_round_trip();
     test_netlist_identity();
     test_payload_corruption_is_detected();
     test_empty_lists();
