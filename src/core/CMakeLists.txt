@@ -3,7 +3,10 @@ add_library(gmax_core STATIC
   db/crc32.cpp
   db/db.cpp
   db/dfdb.cpp
-  db/string_table.cpp)
+  db/string_table.cpp
+  frontend/decompose.cpp
+  frontend/expr.cpp
+  frontend/liberty.cpp)
 
 target_include_directories(gmax_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 
