@@ -632,6 +632,29 @@ class Importer {
         return true;
     }
 
+    // Word-level $dffsr carries one SET and one CLR bit per lane, but accepting a
+    // single shared bit keeps older or simplified JSON importable.
+    bool control_bits(const JsonValue& cell, const std::string_view port, const std::uint32_t width,
+                      std::vector<BitRef>& out, const std::string& object,
+                      const SourceLocation& source) {
+        if (!read_bits(cell, port, out, object, source)) {
+            return false;
+        }
+        if (out.size() == width) {
+            return true;
+        }
+        if (out.size() == 1) {
+            out.resize(width, out.front());
+            return true;
+        }
+        const std::string expected = width == 1 ? "1" : std::to_string(width) + " or 1";
+        error(DiagnosticCode::WidthMismatch,
+              "cell '" + object + "' port '" + std::string(port) + "' is " +
+                  std::to_string(out.size()) + " bits, expected " + expected,
+              object, source);
+        return false;
+    }
+
     void width_error(const std::string& object, const std::string& what,
                      const SourceLocation& source) {
         error(DiagnosticCode::WidthMismatch, "cell '" + object + "': " + what, object, source);
@@ -1089,30 +1112,43 @@ class Importer {
         }
         std::vector<BitRef> d;
         std::vector<BitRef> q;
+        std::vector<BitRef> set;
+        std::vector<BitRef> clear;
         BitRef c;
-        BitRef s;
-        BitRef r;
         if (!width_bits(cell, "D", width, d, object, source) ||
             !width_bits(cell, "Q", width, q, object, source) ||
-            !one_bit(cell, "CLK", c, object, source) || !one_bit(cell, "SET", s, object, source) ||
-            !one_bit(cell, "CLR", r, object, source)) {
+            !one_bit(cell, "CLK", c, object, source) ||
+            !control_bits(cell, "SET", width, set, object, source) ||
+            !control_bits(cell, "CLR", width, clear, object, source)) {
             return;
         }
         const std::string cn = fanin(c, object, source);
-        const std::string sn = fanin(s, object, source);
-        const std::string rn = fanin(r, object, source);
-        const std::string preset = set_polarity == 0 ? invert_net(sn, object, source) : sn;
-        const std::string clear = clear_polarity == 0 ? invert_net(rn, object, source) : rn;
+        std::map<std::string, std::string> inverted_controls;
+        const auto control = [&](const BitRef& bit, const std::uint32_t polarity) -> std::string {
+            const std::string net = fanin(bit, object, source);
+            if (polarity != 0) {
+                return net;
+            }
+            const auto cached = inverted_controls.find(net);
+            if (cached != inverted_controls.end()) {
+                return cached->second;
+            }
+            const std::string inverted = invert_net(net, object, source);
+            inverted_controls.emplace(net, inverted);
+            return inverted;
+        };
         const db::ClockEdge edge =
             clock_polarity == 0 ? db::ClockEdge::Falling : db::ClockEdge::Rising;
         for (std::size_t i = 0; i < d.size(); ++i) {
             const std::string dn = fanin(d[i], object, source);
-            std::vector<std::string> fanins = {dn, cn, clear, preset};
+            const std::string preset = control(set[i], set_polarity);
+            const std::string clear_net = control(clear[i], clear_polarity);
+            std::vector<std::string> fanins = {dn, cn, clear_net, preset};
             std::string out;
             if (!output(q[i], object, source, out)) {
                 continue;
             }
-            add_gate(db::GateType::Dff, std::move(fanins), out, {}, clear, preset, edge);
+            add_gate(db::GateType::Dff, std::move(fanins), out, {}, clear_net, preset, edge);
         }
     }
 
