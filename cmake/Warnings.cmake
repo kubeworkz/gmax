@@ -1,0 +1,15 @@
+# -Wall -Wextra -Werror is a gate, not a preference: G0.4 requires that a
+# warning fails the build, so the default is on (see GMAX_WARNINGS_AS_ERRORS).
+function(gmax_set_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive-)
+    if(GMAX_WARNINGS_AS_ERRORS)
+      target_compile_options(${target} PRIVATE /WX)
+    endif()
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    if(GMAX_WARNINGS_AS_ERRORS)
+      target_compile_options(${target} PRIVATE -Werror)
+    endif()
+  endif()
+endfunction()
