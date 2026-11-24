@@ -3,7 +3,9 @@
 - Status: **SIGNED — GO-WITH-WAIVERS (W1, W2), 2026-11-24. G0 is not recorded
   as met without waivers; WP-101 is not authorized.**
 - Gate: G0, plan section 10. Gate pack: `docs/gates/G0-gate-pack.md`,
-  SHA-256 `e00417751147e5baeca6b0ac6de0aadee0119fd912401e6b375e92599412a5b5` (signed in PR #8).
+  blob SHA-256 `cc37d5792533389cb25f7529f7efc3db5b06eb1c0300d130dcbc5a2dee2f73e3`
+  at `3942c65` (a Windows checkout with `core.autocrlf=true` hashes the CRLF
+  working copy as `e00417751147e5baeca6b0ac6de0aadee0119fd912401e6b375e92599412a5b5`).
 - Evidence pin: gate pack reviewed commit `2649fe8cf81b574fa1f3c8f5bb30c7c84d0c2dc8`.
 - Plan: v0.9, `sha256:7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`.
 - Architecture baseline: `dft-atpg-platform-architecture-grx930-g100.md` at blob
