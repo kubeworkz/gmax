@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
         args.emplace_back(argv[i]);
     }
 
-    gmax::shell::Cli cli(std::string(gmax::version()));
+    gmax::shell::Cli cli{std::string(gmax::version())};
     std::string error;
     if (!gmax::shell::register_commands(cli, error)) {
         std::cerr << "gmax: " << error << '\n';
