@@ -14,16 +14,11 @@ The implementation is **one C++20 command-line tool**, not a collection of unrel
 |---|---|---|
 | Netlist intake | `gmax read_verilog` | Runs the Yosys front end, flattens a gate-level Verilog design and writes a `.dfdb` database. |
 | Liberty reader | C++ library (`src/core/frontend/liberty`) | Parses the cell, pin, function, scan and timing subset needed by the platform. No standalone CLI command yet. |
+| SDC reader | `gmax read_sdc` | Parses the restricted SDC subset: clocks, generated clocks, clock groups, false paths, case analysis, input/output delays, driving cells and loads. Unsupported commands warn with command and line. |
 | Fault list | `gmax write_faults` | Builds the collapsed single-stuck-at fault list from a flattened `.dfdb`. |
 | ATPG engine | `gmax run_atpg` | Runs PODEM with a SAT closer over the collapsed fault list, with deterministic thread merging and coverage/manifest reports. |
 | Fault simulation | C++ library (`src/core/sim`) | 64-lane bit-parallel fault simulation with a scalar-reference differential test. No standalone CLI command yet. |
 | SAT smoke check | `gmax sat_smoke` | Runs one SAT and one UNSAT fault through the SAT boundary and writes a diagnostic report. |
-
-### In review
-
-| Tool | Surface | Current state |
-|---|---|---|
-| SDC reader (WP-110) | `gmax read_sdc` on `feature/wp-110-sdc-subset` | Parses clocks, generated clocks, clock groups, false paths, case analysis, input/output delays, driving cells and loads, with warnings for unsupported commands. Not in `main` yet. |
 
 ### Planned next
 
@@ -56,7 +51,7 @@ gmax read_verilog ───► design.dfdb
                               coverage.json + manifest.json
 ```
 
-The WP-110 SDC reader on `feature/wp-110-sdc-subset` parses, validates and reports the constraint set as a separate side input; it is not in `main` yet. Wiring those constraints into the persisted design database and the ATPG run is follow-on work; `run_atpg` today consumes the flattened database and fault list only.
+`gmax read_sdc constraints.sdc` parses, validates and reports the constraint set as a separate side input. Wiring those constraints into the persisted design database and the ATPG run is follow-on work; `run_atpg` today consumes the flattened database and fault list only.
 
 The current ATPG path starts from an already-flattened gate-level database. Scan insertion, stitching, DRC, pattern generation and STIL/WGL export are the next stages, not part of the current `run_atpg` command.
 
@@ -113,7 +108,8 @@ The bootstrap scripts are developer caches, not frozen dependencies; see [`third
 # Run PODEM with the SAT closer; reports go to reports/
 ./build/debug/gmax run_atpg design.dfdb design.faults 200 10000 reports/
 
-# The SDC inspection command is part of the WP-110 branch, not this checkout yet.
+# Inspect the restricted SDC constraint set
+./build/debug/gmax read_sdc constraints.sdc
 ```
 
 `run_atpg` accepts optional per-fault backtrack and wall-clock limits, and `--threads N` for deterministic multi-threaded grading. It returns `4` (`ATPG incomplete`) if any fault aborts. Run `gmax help <command>` for the exact arguments.
@@ -123,7 +119,7 @@ The bootstrap scripts are developer caches, not frozen dependencies; see [`third
 ```text
 src/core/
   db/          versioned design database and .dfdb persistence
-  frontend/    Yosys and Liberty readers; SDC reader in review
+  frontend/    Yosys, Liberty and restricted SDC readers
   dft/         scan replacement, stitching and DRC        (planned)
   atpg/        fault list, PODEM, SAT, implication
   sim/         four-state and bit-parallel fault simulation
