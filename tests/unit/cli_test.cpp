@@ -32,7 +32,7 @@ bool contains(const std::string_view text, const std::string_view needle) {
 }
 
 shell::Handler success_handler() {
-    return [](const std::vector<std::string>&, std::ostream&, std::ostream&) {
+    return [](const shell::Invocation&, std::ostream&, std::ostream&) {
         return shell::ExitCode::Success;
     };
 }
@@ -114,11 +114,32 @@ void test_schema_validation() {
                "a command without a handler is rejected");
         expect(contains(error, "handler"), "a missing handler is named");
     }
+    {
+        shell::CommandSpec spec = command("bad-option", "bad");
+        spec.options = {{"", "N", "empty name"}};
+        expect_invalid(spec, "invalid option name", "an empty option name is rejected");
+    }
+    {
+        shell::CommandSpec spec = command("bad-option-value", "bad");
+        spec.options = {{"level", "", "no value name"}};
+        expect_invalid(spec, "no value name", "an option without a value name is rejected");
+    }
+    {
+        shell::CommandSpec spec = command("duplicate-option", "bad");
+        spec.options = {{"level", "N", "one"}, {"level", "M", "two"}};
+        expect_invalid(spec, "twice", "a duplicate option is rejected");
+    }
 }
 
 shell::CommandSpec parser_spec() {
     shell::CommandSpec spec = command("demo", "demo command");
     spec.positionals = {{"input", "input file", true}, {"output", "output file", false}};
+    return spec;
+}
+
+shell::CommandSpec option_parser_spec() {
+    shell::CommandSpec spec = parser_spec();
+    spec.options = {{"level", "N", "level to use"}};
     return spec;
 }
 
@@ -153,6 +174,45 @@ void test_parsing() {
             shell::parse_arguments(spec, std::vector<std::string>{"-top", "chip"});
         expect(!parsed.ok && contains(parsed.error, "unknown option"),
                "an option is rejected until the schema has one");
+    }
+    {
+        const shell::CommandSpec with_option = option_parser_spec();
+        const shell::ParseResult parsed =
+            shell::parse_arguments(with_option, std::vector<std::string>{"in.v", "--level", "3"});
+        expect(parsed.ok, "an option after a positional parses");
+        expect(parsed.positionals == std::vector<std::string>{"in.v"},
+               "the positional survives an option");
+        expect(parsed.options.size() == 1 && parsed.options[0].name == "level" &&
+                   parsed.options[0].value == "3",
+               "the option name and value are kept");
+    }
+    {
+        const shell::CommandSpec with_option = option_parser_spec();
+        const shell::ParseResult parsed = shell::parse_arguments(
+            with_option, std::vector<std::string>{"--level", "3", "in.v", "out.v"});
+        expect(parsed.ok && parsed.positionals.size() == 2,
+               "an option between positionals keeps both");
+    }
+    {
+        const shell::CommandSpec with_option = option_parser_spec();
+        const shell::ParseResult parsed = shell::parse_arguments(
+            with_option, std::vector<std::string>{"--level", "1", "--level", "2", "in.v"});
+        expect(!parsed.ok && contains(parsed.error, "more than once"),
+               "a repeated option is rejected");
+    }
+    {
+        const shell::CommandSpec with_option = option_parser_spec();
+        const shell::ParseResult parsed =
+            shell::parse_arguments(with_option, std::vector<std::string>{"in.v", "--level"});
+        expect(!parsed.ok && contains(parsed.error, "requires a value"),
+               "an option without a value is rejected");
+    }
+    {
+        const shell::CommandSpec with_option = option_parser_spec();
+        const shell::ParseResult parsed =
+            shell::parse_arguments(with_option, std::vector<std::string>{"--other", "1", "in.v"});
+        expect(!parsed.ok && contains(parsed.error, "unknown option"),
+               "an option outside the schema is still rejected");
     }
     {
         for (const std::string help : {"-help", "--help", "-h"}) {
@@ -200,6 +260,11 @@ void test_generated_help() {
     const std::string extended_help = shell::command_help(extended);
     expect(contains(extended_help, "[<format>]"), "help is rendered from the supplied schema");
     expect(!contains(help, "<format>"), "help does not invent arguments");
+
+    const std::string option_help = shell::command_help(option_parser_spec());
+    expect(contains(option_help, "[--level <N>]"), "help renders an option in the usage line");
+    expect(contains(option_help, "--level <N>"), "help lists the option and its value");
+    expect(contains(option_help, "level to use"), "help carries the option help");
 }
 
 void test_run() {
@@ -208,8 +273,8 @@ void test_run() {
     shell::CommandSpec echo = command("echo", "print its argument");
     echo.positionals = {{"text", "text to print", true}};
     add_command(cli, echo,
-                [](const std::vector<std::string>& positionals, std::ostream& out, std::ostream&) {
-                    out << positionals.front() << '\n';
+                [](const shell::Invocation& invocation, std::ostream& out, std::ostream&) {
+                    out << invocation.positionals.front() << '\n';
                     return shell::ExitCode::Success;
                 });
 
@@ -221,13 +286,22 @@ void test_run() {
          }) {
         add_command(
             cli, command(name, "return a fixed exit code"),
-            [code](const std::vector<std::string>&, std::ostream&, std::ostream&) { return code; });
+            [code](const shell::Invocation&, std::ostream&, std::ostream&) { return code; });
     }
 
     shell::CommandSpec boom = command("boom", "throw from a handler");
     add_command(cli, boom,
-                [](const std::vector<std::string>&, std::ostream&,
-                   std::ostream&) -> shell::ExitCode { throw std::runtime_error("boom"); });
+                [](const shell::Invocation&, std::ostream&, std::ostream&) -> shell::ExitCode {
+                    throw std::runtime_error("boom");
+                });
+
+    shell::CommandSpec scaled = command("scaled", "print its option");
+    scaled.options = {{"factor", "N", "factor to print"}};
+    add_command(cli, scaled,
+                [](const shell::Invocation& invocation, std::ostream& out, std::ostream&) {
+                    out << invocation.options.front().value << '\n';
+                    return shell::ExitCode::Success;
+                });
 
     {
         const RunResult result = run(cli, {"--version"});
@@ -300,6 +374,11 @@ void test_run() {
         const RunResult result = run(cli, {"echo", "hi"});
         expect(result.code == shell::ExitCode::Success, "a command handler succeeds");
         expect(result.out == "hi\n", "a command handler writes to stdout");
+    }
+    {
+        const RunResult result = run(cli, {"scaled", "--factor", "7"});
+        expect(result.code == shell::ExitCode::Success, "an option reaches the handler");
+        expect(result.out == "7\n", "the handler reads the option value");
     }
     {
         const RunResult design = run(cli, {"exit-design"});

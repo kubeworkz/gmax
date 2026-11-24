@@ -43,7 +43,20 @@ std::string command_usage(const CommandSpec& spec) {
         usage += ' ';
         usage += positional_signature(positional);
     }
+    for (const OptionSpec& option : spec.options) {
+        usage += " [--" + option.name + " <" + option.value_name + ">]";
+    }
     return usage;
+}
+
+const OptionSpec* option_for(const CommandSpec& spec, const std::string_view token) {
+    for (const OptionSpec& option : spec.options) {
+        if (token.size() == option.name.size() + 2 && token.substr(0, 2) == "--" &&
+            token.substr(2) == option.name) {
+            return &option;
+        }
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -61,10 +74,27 @@ ParseResult parse_arguments(const CommandSpec& spec, const std::span<const std::
         }
     }
 
-    for (const std::string& arg : args) {
+    for (std::size_t index = 0; index < args.size(); ++index) {
+        const std::string& arg = args[index];
         if (arg.size() > 1 && arg.front() == '-') {
-            result.error = "unknown option '" + arg + "' for command '" + spec.name + "'";
-            return result;
+            const OptionSpec* option = option_for(spec, arg);
+            if (option == nullptr) {
+                result.error = "unknown option '" + arg + "' for command '" + spec.name + "'";
+                return result;
+            }
+            for (const OptionValue& seen : result.options) {
+                if (seen.name == option->name) {
+                    result.error = "option '--" + option->name + "' is given more than once";
+                    return result;
+                }
+            }
+            if (index + 1 == args.size()) {
+                result.error =
+                    "option '--" + option->name + "' requires a value <" + option->value_name + ">";
+                return result;
+            }
+            result.options.push_back(OptionValue{option->name, args[++index]});
+            continue;
         }
         result.positionals.push_back(arg);
     }
@@ -108,7 +138,13 @@ std::string command_help(const CommandSpec& spec) {
     }
 
     out += "\nOptions:\n";
-    out += "  -help  print this help and exit\n";
+    std::vector<std::pair<std::string, std::string>> options;
+    options.reserve(spec.options.size() + 1);
+    for (const OptionSpec& option : spec.options) {
+        options.emplace_back("--" + option.name + " <" + option.value_name + ">", option.help);
+    }
+    options.emplace_back("-help", "print this help and exit");
+    append_table(out, options);
     return out;
 }
 
@@ -121,7 +157,8 @@ Cli::Cli(std::string version) : version_(std::move(version)) {
     std::string error;
     add_command(
         std::move(help),
-        [this](const std::vector<std::string>& positionals, std::ostream& out, std::ostream& err) {
+        [this](const Invocation& invocation, std::ostream& out, std::ostream& err) {
+            const std::vector<std::string>& positionals = invocation.positionals;
             if (positionals.empty()) {
                 out << global_help();
                 return ExitCode::Success;
@@ -157,6 +194,24 @@ bool Cli::add_command(CommandSpec spec, Handler handler, std::string& error) {
     if (find(spec.name) != nullptr) {
         error = "command '" + spec.name + "' is already registered";
         return false;
+    }
+
+    for (std::size_t index = 0; index < spec.options.size(); ++index) {
+        const OptionSpec& option = spec.options[index];
+        if (option.name.empty() || option.name.front() == '-') {
+            error = "command '" + spec.name + "' has an invalid option name '" + option.name + "'";
+            return false;
+        }
+        if (option.value_name.empty()) {
+            error = "command '" + spec.name + "' option '--" + option.name + "' has no value name";
+            return false;
+        }
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (spec.options[earlier].name == option.name) {
+                error = "command '" + spec.name + "' has option '--" + option.name + "' twice";
+                return false;
+            }
+        }
     }
 
     // parse_arguments() identifies a missing required positional by its index,
@@ -260,7 +315,7 @@ ExitCode Cli::run(const std::span<const std::string> args, std::ostream& out,
     }
 
     try {
-        return entry->handler(parsed.positionals, out, err);
+        return entry->handler(Invocation{parsed.positionals, parsed.options}, out, err);
     } catch (const std::exception& exception) {
         err << "gmax: internal error: " << exception.what() << '\n';
         return ExitCode::Internal;

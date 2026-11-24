@@ -26,19 +26,39 @@ struct PositionalSpec {
     bool required = true;
 };
 
-// The schema is the single source of truth for both parsing and -help. It
-// currently describes positional arguments only; option support lands with the
-// first command that needs it.
+// The schema is the single source of truth for both parsing and -help. Every
+// option takes a value, written "--name value" anywhere between or after the
+// positionals.
+struct OptionSpec {
+    std::string name;        // without the leading "--"
+    std::string value_name;  // e.g. "N"
+    std::string help;
+};
+
 struct CommandSpec {
     std::string name;  // no leading '-'
     std::string summary;
     std::vector<PositionalSpec> positionals;
+    std::vector<OptionSpec> options;
+};
+
+struct OptionValue {
+    std::string name;
+    std::string value;
+};
+
+// What a handler receives: positionals in schema order and supplied options in
+// command-line order.
+struct Invocation {
+    std::vector<std::string> positionals;
+    std::vector<OptionValue> options;
 };
 
 struct ParseResult {
     bool ok = false;
     bool help = false;
     std::vector<std::string> positionals;
+    std::vector<OptionValue> options;
     std::string error;
 };
 
@@ -47,8 +67,8 @@ struct ParseResult {
 // still show its help.
 ParseResult parse_arguments(const CommandSpec& spec, std::span<const std::string> args);
 
-using Handler = std::function<ExitCode(const std::vector<std::string>& positionals,
-                                       std::ostream& out, std::ostream& err)>;
+using Handler =
+    std::function<ExitCode(const Invocation& invocation, std::ostream& out, std::ostream& err)>;
 
 std::string command_help(const CommandSpec& spec);
 

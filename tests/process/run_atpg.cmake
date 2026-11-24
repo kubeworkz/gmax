@@ -70,6 +70,26 @@ if(NOT out MATCHES "decisions: 2")
     message(FATAL_ERROR "wrong decision counter: ${out}")
 endif()
 
+# ADR-011: the same faults through two worker threads must report exactly the
+# same statuses, counters and per-fault lines as the single-threaded default.
+# The fixture has fewer faults than one 64-fault chunk, so the worker count is
+# clamped; the merge path and the option plumbing are still exercised.
+execute_process(
+    COMMAND "${GMAX_BINARY}" run_atpg "${database}" "${faults}" 100000 0 --threads 2
+    RESULT_VARIABLE result
+    OUTPUT_VARIABLE threaded_out
+    ERROR_VARIABLE threaded_err)
+if(NOT "${result}" STREQUAL "0")
+    message(FATAL_ERROR "run_atpg --threads 2 returned ${result}: ${threaded_err}")
+endif()
+if(NOT "${threaded_err}" STREQUAL "")
+    message(FATAL_ERROR "run_atpg --threads 2 wrote to stderr: ${threaded_err}")
+endif()
+if(NOT "${threaded_out}" STREQUAL "${out}")
+    message(FATAL_ERROR
+        "two-thread output differs from the single-threaded run:\n${threaded_out}\n--- expected ---\n${out}")
+endif()
+
 # A zero backtrack budget aborts the backtracking fault; the command must
 # report it, count it, and return exit code 4 rather than silently dropping it.
 execute_process(
@@ -119,6 +139,9 @@ if(NOT out MATCHES "usage: gmax run_atpg <design> <faults>")
 endif()
 if(NOT out MATCHES "max-backtracks" OR NOT out MATCHES "max-time-ms")
     message(FATAL_ERROR "budget arguments are missing from help: ${out}")
+endif()
+if(NOT out MATCHES "--threads <N>")
+    message(FATAL_ERROR "the --threads option is missing from help: ${out}")
 endif()
 
 # Missing required arguments are usage errors, not unknown commands.
@@ -183,6 +206,43 @@ if(NOT "${result}" STREQUAL "1")
 endif()
 if(NOT err MATCHES "invalid max-time-ms 'nope'")
     message(FATAL_ERROR "invalid-time diagnostic was not specific: ${err}")
+endif()
+
+# --threads is validated before any work starts, like the budgets.
+execute_process(
+    COMMAND "${GMAX_BINARY}" run_atpg "${database}" "${faults}" --threads 0
+    RESULT_VARIABLE result
+    OUTPUT_VARIABLE out
+    ERROR_VARIABLE err)
+if(NOT "${result}" STREQUAL "1")
+    message(FATAL_ERROR "zero threads returned ${result}, expected 1: ${err}")
+endif()
+if(NOT err MATCHES "invalid --threads '0'")
+    message(FATAL_ERROR "invalid-threads diagnostic was not specific: ${err}")
+endif()
+
+execute_process(
+    COMMAND "${GMAX_BINARY}" run_atpg "${database}" "${faults}" --threads nope
+    RESULT_VARIABLE result
+    OUTPUT_VARIABLE out
+    ERROR_VARIABLE err)
+if(NOT "${result}" STREQUAL "1")
+    message(FATAL_ERROR "non-numeric threads returned ${result}, expected 1: ${err}")
+endif()
+if(NOT err MATCHES "invalid --threads 'nope'")
+    message(FATAL_ERROR "non-numeric-threads diagnostic was not specific: ${err}")
+endif()
+
+execute_process(
+    COMMAND "${GMAX_BINARY}" run_atpg "${database}" "${faults}" --threads
+    RESULT_VARIABLE result
+    OUTPUT_VARIABLE out
+    ERROR_VARIABLE err)
+if(NOT "${result}" STREQUAL "1")
+    message(FATAL_ERROR "missing thread value returned ${result}, expected 1: ${err}")
+endif()
+if(NOT err MATCHES "requires a value")
+    message(FATAL_ERROR "missing-thread-value diagnostic was not specific: ${err}")
 endif()
 
 file(REMOVE_RECURSE "${WORK_DIR}")

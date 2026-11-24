@@ -1,16 +1,19 @@
 #include "shell/commands.h"
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <ostream>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -99,6 +102,28 @@ bool parse_u64(const std::string& text, std::uint64_t& value) {
     return error == std::errc{} && end == text.data() + text.size();
 }
 
+// ADR-011: a work unit is a fixed 64-fault chunk in fault-list order, matching
+// the word engine's lane chunking, and workers merge by fault ID rather than by
+// completion order.
+constexpr std::size_t kFaultChunk = 64;
+constexpr std::size_t kMaxThreads = 256;
+
+bool parse_threads(const Invocation& invocation, std::size_t& threads, std::string& error) {
+    for (const OptionValue& option : invocation.options) {
+        if (option.name != "threads") {
+            continue;
+        }
+        std::uint64_t value = 0;
+        if (!parse_u64(option.value, value) || value == 0 || value > kMaxThreads) {
+            error = "invalid --threads '" + option.value + "', expected 1.." +
+                    std::to_string(kMaxThreads);
+            return false;
+        }
+        threads = static_cast<std::size_t>(value);
+    }
+    return true;
+}
+
 bool parse_budget(const std::vector<std::string>& positionals, atpg::PodemBudget& budget,
                   std::string& error) {
     if (positionals.size() > 2) {
@@ -149,8 +174,8 @@ bool parse_fault_spec(const std::string& text, sim::Fault& fault, std::string& e
     return false;
 }
 
-ExitCode read_verilog_handler(const std::vector<std::string>& positionals, std::ostream& out,
-                              std::ostream& err) {
+ExitCode read_verilog_handler(const Invocation& invocation, std::ostream& out, std::ostream& err) {
+    const std::vector<std::string>& positionals = invocation.positionals;
     const std::string& netlist_path = positionals[0];
     const std::string& design_path = positionals[1];
     const std::string& top = positionals[2];
@@ -186,8 +211,8 @@ ExitCode read_verilog_handler(const std::vector<std::string>& positionals, std::
     return ExitCode::Success;
 }
 
-ExitCode write_faults_handler(const std::vector<std::string>& positionals, std::ostream& out,
-                              std::ostream& err) {
+ExitCode write_faults_handler(const Invocation& invocation, std::ostream& out, std::ostream& err) {
+    const std::vector<std::string>& positionals = invocation.positionals;
     const std::string& design_path = positionals[0];
     const std::string& output_path = positionals[1];
 
@@ -220,8 +245,65 @@ ExitCode write_faults_handler(const std::vector<std::string>& positionals, std::
     return ExitCode::Success;
 }
 
-ExitCode run_atpg_handler(const std::vector<std::string>& positionals, std::ostream& out,
-                          std::ostream& err) {
+struct FaultGrade {
+    atpg::PodemStatus status = atpg::PodemStatus::Aborted;
+    std::size_t decisions = 0;
+    std::size_t backtracks = 0;
+    bool sat_fallback = false;
+};
+
+// Grades one fault: PODEM first, then the SAT closer only for a budget abort.
+// The function touches no shared state, so workers call it concurrently and
+// write into disjoint fault-indexed slots.
+FaultGrade grade_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
+                       const std::span<const db::NetId> observables,
+                       const atpg::PodemBudget& budget) {
+    const auto fault_start = std::chrono::steady_clock::now();
+    const atpg::PodemResult result = atpg::run_podem(netlist, fault, observables, budget);
+    FaultGrade grade;
+    grade.status = result.status;
+    grade.decisions = result.decisions;
+    grade.backtracks = result.backtracks;
+    // PODEM is the structural engine; a budget abort is not evidence of
+    // redundancy. Hand only those faults to the complete SAT miter so a test can
+    // be recovered or an UNSAT proof can classify the fault as untestable. SAT
+    // gets only the wall-clock time left in this fault's budget; a
+    // zero-backtrack run is an explicit caller request for an incomplete
+    // result, so it stays aborted and keeps exit code 4.
+    if (grade.status == atpg::PodemStatus::Aborted && budget.max_backtracks > 0) {
+        bool sat_time_available = true;
+        std::uint64_t remaining_time_ms = 0;
+        if (budget.max_time_ms != 0) {
+            const double elapsed = std::chrono::duration<double, std::milli>(
+                                       std::chrono::steady_clock::now() - fault_start)
+                                       .count();
+            sat_time_available = elapsed < static_cast<double>(budget.max_time_ms);
+            if (sat_time_available) {
+                // Floor the remainder: SAT may use less than the caller's budget
+                // but must not receive a fresh millisecond after a time-budget
+                // abort. Zero here means stop, not "unlimited".
+                remaining_time_ms =
+                    static_cast<std::uint64_t>(static_cast<double>(budget.max_time_ms) - elapsed);
+                sat_time_available = remaining_time_ms != 0;
+            }
+        }
+        if (sat_time_available) {
+            const atpg::SatFaultResult proof =
+                atpg::check_fault(netlist, fault, observables, 1000000, remaining_time_ms);
+            if (proof.status == atpg::SatFaultStatus::Detected) {
+                grade.status = atpg::PodemStatus::Detected;
+                grade.sat_fallback = true;
+            } else if (proof.status == atpg::SatFaultStatus::Untestable) {
+                grade.status = atpg::PodemStatus::Untestable;
+                grade.sat_fallback = true;
+            }
+        }
+    }
+    return grade;
+}
+
+ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::ostream& err) {
+    const std::vector<std::string>& positionals = invocation.positionals;
     const std::string& design_path = positionals[0];
     const std::string& faults_path = positionals[1];
 
@@ -229,6 +311,13 @@ ExitCode run_atpg_handler(const std::vector<std::string>& positionals, std::ostr
     std::string budget_error;
     if (!parse_budget(positionals, budget, budget_error)) {
         err << "gmax: " << budget_error << "\n";
+        return ExitCode::Usage;
+    }
+
+    std::size_t threads = 1;
+    std::string threads_error;
+    if (!parse_threads(invocation, threads, threads_error)) {
+        err << "gmax: " << threads_error << "\n";
         return ExitCode::Usage;
     }
 
@@ -270,58 +359,69 @@ ExitCode run_atpg_handler(const std::vector<std::string>& positionals, std::ostr
         return ExitCode::Design;
     }
 
+    out << "raw faults: " << faults.raw.size() << "\n";
+    out << "collapsed faults: " << faults.collapsed.size() << "\n";
+
+    const std::size_t grade_count = faults.collapsed.size();
+    std::vector<FaultGrade> grades(grade_count);
+    std::vector<std::exception_ptr> grade_errors(grade_count);
+    const std::size_t chunk_count = (grade_count + kFaultChunk - 1) / kFaultChunk;
+    const std::size_t worker_count = chunk_count == 0 ? 1 : std::min(threads, chunk_count);
+    const auto grade_chunk = [&](const std::size_t chunk) {
+        const std::size_t begin = chunk * kFaultChunk;
+        const std::size_t end = std::min(begin + kFaultChunk, grade_count);
+        for (std::size_t index = begin; index < end; ++index) {
+            try {
+                grades[index] =
+                    grade_fault(database.flat(), faults.collapsed[index], observables, budget);
+            } catch (...) {
+                grade_errors[index] = std::current_exception();
+            }
+        }
+    };
+
+    if (worker_count == 1) {
+        for (std::size_t chunk = 0; chunk < chunk_count; ++chunk) {
+            grade_chunk(chunk);
+        }
+    } else {
+        // Chunks are handed out by index and results land in fault-ID slots, so
+        // the merge is an order-independent assignment rather than a reduction.
+        std::atomic<std::size_t> next_chunk{0};
+        std::vector<std::thread> workers;
+        workers.reserve(worker_count);
+        for (std::size_t worker = 0; worker < worker_count; ++worker) {
+            workers.emplace_back([&] {
+                for (;;) {
+                    const std::size_t chunk = next_chunk.fetch_add(1, std::memory_order_relaxed);
+                    if (chunk >= chunk_count) {
+                        return;
+                    }
+                    grade_chunk(chunk);
+                }
+            });
+        }
+        for (std::thread& worker : workers) {
+            worker.join();
+        }
+    }
+    for (const std::exception_ptr& error : grade_errors) {
+        if (error) {
+            std::rethrow_exception(error);
+        }
+    }
+
     std::size_t detected = 0;
     std::size_t untestable = 0;
     std::size_t aborted = 0;
     std::size_t backtracks = 0;
     std::size_t decisions = 0;
     std::vector<report::FaultOutcome> outcomes;
-    outcomes.reserve(faults.collapsed.size());
-
-    out << "raw faults: " << faults.raw.size() << "\n";
-    out << "collapsed faults: " << faults.collapsed.size() << "\n";
-    for (const sim::Fault& fault : faults.collapsed) {
-        const auto fault_start = std::chrono::steady_clock::now();
-        const atpg::PodemResult result =
-            atpg::run_podem(database.flat(), fault, observables, budget);
-        atpg::PodemStatus status = result.status;
-        bool sat_fallback = false;
-        // PODEM is the structural engine; a budget abort is not evidence of
-        // redundancy. Hand only those faults to the complete SAT miter so a
-        // test can be recovered or an UNSAT proof can classify the fault as
-        // untestable. SAT gets only the wall-clock time left in this fault's
-        // budget; a zero-backtrack run is an explicit caller request for an
-        // incomplete result, so it stays aborted and keeps exit code 4.
-        if (status == atpg::PodemStatus::Aborted && budget.max_backtracks > 0) {
-            bool sat_time_available = true;
-            std::uint64_t remaining_time_ms = 0;
-            if (budget.max_time_ms != 0) {
-                const double elapsed = std::chrono::duration<double, std::milli>(
-                                           std::chrono::steady_clock::now() - fault_start)
-                                           .count();
-                sat_time_available = elapsed < static_cast<double>(budget.max_time_ms);
-                if (sat_time_available) {
-                    // Floor the remainder: SAT may use less than the caller's
-                    // budget but must not receive a fresh millisecond after a
-                    // time-budget abort. Zero here means stop, not "unlimited".
-                    remaining_time_ms = static_cast<std::uint64_t>(
-                        static_cast<double>(budget.max_time_ms) - elapsed);
-                    sat_time_available = remaining_time_ms != 0;
-                }
-            }
-            if (sat_time_available) {
-                const atpg::SatFaultResult proof = atpg::check_fault(
-                    database.flat(), fault, observables, 1000000, remaining_time_ms);
-                if (proof.status == atpg::SatFaultStatus::Detected) {
-                    status = atpg::PodemStatus::Detected;
-                    sat_fallback = true;
-                } else if (proof.status == atpg::SatFaultStatus::Untestable) {
-                    status = atpg::PodemStatus::Untestable;
-                    sat_fallback = true;
-                }
-            }
-        }
-        switch (status) {
+    outcomes.reserve(grade_count);
+    for (std::size_t index = 0; index < grade_count; ++index) {
+        const sim::Fault& fault = faults.collapsed[index];
+        const FaultGrade& grade = grades[index];
+        switch (grade.status) {
         case atpg::PodemStatus::Detected:
             ++detected;
             break;
@@ -332,15 +432,15 @@ ExitCode run_atpg_handler(const std::vector<std::string>& positionals, std::ostr
             ++aborted;
             break;
         }
-        backtracks += result.backtracks;
-        decisions += result.decisions;
-        outcomes.push_back(report::FaultOutcome{fault, net_name(database, fault.net), status,
-                                                result.decisions, result.backtracks,
-                                                sat_fallback ? "sat" : "podem"});
+        backtracks += grade.backtracks;
+        decisions += grade.decisions;
+        outcomes.push_back(report::FaultOutcome{fault, net_name(database, fault.net), grade.status,
+                                                grade.decisions, grade.backtracks,
+                                                grade.sat_fallback ? "sat" : "podem"});
 
         out << "fault " << fault.net << ' ' << (fault.stuck == sim::StuckValue::One ? '1' : '0')
-            << ": " << atpg::podem_status_name(status) << " decisions=" << result.decisions
-            << " backtracks=" << result.backtracks << (sat_fallback ? " [sat]" : "") << '\n';
+            << ": " << atpg::podem_status_name(grade.status) << " decisions=" << grade.decisions
+            << " backtracks=" << grade.backtracks << (grade.sat_fallback ? " [sat]" : "") << '\n';
     }
 
     report::CoverageSummary summary;
@@ -420,6 +520,7 @@ ExitCode run_atpg_handler(const std::vector<std::string>& positionals, std::ostr
         manifest.gates = database.flat().gate_count();
         manifest.nets = database.flat().net_count();
         manifest.budget = budget;
+        manifest.threads = static_cast<std::uint32_t>(worker_count);
         manifest.summary = summary;
         const db::Status manifest_status =
             report::write_text(manifest_path.string(), report::manifest_json(manifest));
@@ -435,8 +536,8 @@ ExitCode run_atpg_handler(const std::vector<std::string>& positionals, std::ostr
     return aborted == 0 ? ExitCode::Success : ExitCode::AtpgIncomplete;
 }
 
-ExitCode sat_smoke_handler(const std::vector<std::string>& positionals, std::ostream& out,
-                           std::ostream& err) {
+ExitCode sat_smoke_handler(const Invocation& invocation, std::ostream& out, std::ostream& err) {
+    const std::vector<std::string>& positionals = invocation.positionals;
     const std::string& design_path = positionals[0];
     const std::string& faults_path = positionals[1];
     const std::string& report_path = positionals[2];
@@ -571,6 +672,9 @@ bool register_commands(Cli& cli, std::string& error) {
         {"max-backtracks", "per-fault backtrack limit", false},
         {"max-time-ms", "per-fault wall-clock limit; 0 disables", false},
         {"report-dir", "directory for coverage.json and manifest.json", false},
+    };
+    run_spec.options = {
+        {"threads", "N", "worker threads; 1 (the default) stays single-threaded"},
     };
     if (!cli.add_command(std::move(run_spec), run_atpg_handler, error)) {
         return false;

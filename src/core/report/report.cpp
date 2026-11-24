@@ -140,7 +140,8 @@ std::string manifest_json(const RunManifest& manifest) {
     out << ",\"coverage\":{\"path\":" << json_string(manifest.coverage_path) << ",\"hash\":\""
         << hex32(manifest.coverage_hash) << "\",\"algorithm\":\"crc32\"}";
     out << ",\"options\":{\"max_backtracks\":" << manifest.budget.max_backtracks
-        << ",\"max_time_ms\":" << manifest.budget.max_time_ms << ",\"threads\":1,\"seed\":0}";
+        << ",\"max_time_ms\":" << manifest.budget.max_time_ms << ",\"threads\":" << manifest.threads
+        << ",\"seed\":0}";
     out << ",\"stages\":[";
     stages_entry(out, "elaborate", manifest.design_path, manifest.netlist_hash);
     out << ',';

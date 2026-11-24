@@ -59,12 +59,13 @@ jobs:
       - name: check
         run: sh tools/check-offline-build.sh debug
 
-  # The G0.2 gate is deliberately separate from the default test matrix. The
-  # regular ctest invocation stays skip-friendly when Yosys or MiniSat are
-  # absent; this job sets GMAX_G0_2_GATE=1 and uses the pinned caches, so a
-  # missing or broken MiniSat fails CI instead of producing Yosys-only evidence.
+  # The pinned-tool gates are deliberately separate from the default test
+  # matrix. The regular ctest invocation stays skip-friendly when Yosys or
+  # MiniSat are absent; this job sets GMAX_G0_2_GATE=1 and GMAX_G0_3_GATE=1 and
+  # uses the pinned caches, so a missing or broken tool fails CI instead of
+  # producing weaker evidence.
   sat-gate:
-    name: G0.2 SAT smoke gate
+    name: G0.2/G0.3 gates
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -112,3 +113,8 @@ jobs:
           GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
           GMAX_MINISAT: ${{ github.workspace }}/.gmax-cache/minisat/2.2.1/bin/minisat
         run: ctest --test-dir build/gate -R '^cli\.sat-smoke$' --no-tests=error --output-on-failure
+      - name: run G0.3 thread determinism gate
+        env:
+          GMAX_G0_3_GATE: "1"
+          GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
+        run: ctest --test-dir build/gate -R '^cli\.threads$' --no-tests=error --output-on-failure

@@ -52,6 +52,17 @@ add_test(NAME cli.iscas85
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-iscas85
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/iscas85.cmake)
 
+# G0.3 / ADR-011: c432 run with one worker thread and with four must write
+# identical coverage and manifests that differ only in the recorded count. The
+# test shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made
+# mandatory by GMAX_G0_3_GATE=1 in the gate job.
+add_test(NAME cli.threads
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-threads
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/threads.cmake)
+
 # G0.2 requires an independent SAT cross-check, not just a second call into
 # our own solver. This runs the two c432 smoke cases through Yosys `sat` on a
 # two-copy miter and, when GMAX_MINISAT is set, through the pinned MiniSat

@@ -72,6 +72,10 @@ struct RunManifest {
     std::uint32_t gates = 0;
     std::uint32_t nets = 0;
     atpg::PodemBudget budget;
+    // ADR-011: the worker count actually used. The determinism test compares
+    // manifests with this field excluded, so 1-thread and N-thread runs differ
+    // only here.
+    std::uint32_t threads = 1;
     CoverageSummary summary;
 };
 
