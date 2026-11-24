@@ -178,6 +178,11 @@ class Lexer {
         std::uint32_t depth = 1;
         while (pos_ < text_.size()) {
             const char c = text_[pos_];
+            if (at_line_continuation()) {
+                token.text.push_back(' ');
+                consume_line_continuation();
+                continue;
+            }
             if (c == '{') {
                 ++depth;
                 token.text.push_back(c);

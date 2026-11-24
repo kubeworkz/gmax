@@ -240,6 +240,47 @@ void test_crlf_continuations() {
            "a continuation after whitespace keeps the option stream");
 }
 
+void test_braced_continuations() {
+    const std::string lf =
+        "create_clock -name clk_a -period 10 [get_ports clk_a]\n"
+        "create_clock -name clk_b -period 10 [get_ports clk_b]\n"
+        "create_clock -name clk_c -period 10 [get_ports clk_c]\n"
+        "set_clock_groups -asynchronous -group {clk_a\\\n"
+        "  clk_b} -group {clk_c}\n";
+    const std::string crlf =
+        "create_clock -name clk_a -period 10 [get_ports clk_a]\r\n"
+        "create_clock -name clk_b -period 10 [get_ports clk_b]\r\n"
+        "create_clock -name clk_c -period 10 [get_ports clk_c]\r\n"
+        "set_clock_groups -asynchronous -group {clk_a\\\r\n"
+        "  clk_b} -group {clk_c}\r\n";
+
+    struct Case {
+        const char* label;
+        const std::string* sdc;
+    };
+    const Case cases[] = {{"LF", &lf}, {"CRLF", &crlf}};
+    for (const Case& test : cases) {
+        const frontend::SdcResult result = frontend::read_sdc(*test.sdc, test.label);
+        expect(result.ok, std::string(test.label) + " braced continuation parses");
+        expect(result.diagnostics.empty(),
+               std::string(test.label) + " braced continuation has no warnings");
+        expect(result.constraints.clock_groups.size() == 1,
+               std::string(test.label) + " records one clock group");
+        if (result.constraints.clock_groups.size() != 1) {
+            continue;
+        }
+        const frontend::SdcClockGroup& group = result.constraints.clock_groups.front();
+        expect(group.groups.size() == 2,
+               std::string(test.label) + " records both braced groups");
+        if (group.groups.size() == 2) {
+            expect(group.groups[0] == std::vector<std::string>{"clk_a", "clk_b"},
+                   std::string(test.label) + " splits the continued braced list into clocks");
+            expect(group.groups[1] == std::vector<std::string>{"clk_c"},
+                   std::string(test.label) + " keeps the second group intact");
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -249,6 +290,7 @@ int main() {
     test_comments_and_continuation();
     test_negative_delays();
     test_crlf_continuations();
+    test_braced_continuations();
     if (failures != 0) {
         std::cerr << failures << " SDC test(s) failed" << std::endl;
         return 1;
