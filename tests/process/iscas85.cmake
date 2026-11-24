@@ -1,8 +1,10 @@
-# WP-011: c432 and c499 must go from a netlist through the pinned Yosys
+# G0.1 / WP-011: c432 and c499 must go from a netlist through the pinned Yosys
 # frontend, a .dfdb, a .faults list, and PODEM plus the SAT closer to a coverage
 # report and run manifest. The test is skipped when the pinned Yosys executable
-# is not available; otherwise it validates the expected benchmark counts and
-# hashes and reruns c499 in place to catch nondeterministic report bytes.
+# is not available; GMAX_G0_1_GATE=1 makes that absence a hard failure so CI
+# cannot pass without the coverage evidence. Otherwise it validates the expected
+# benchmark counts and hashes and reruns c499 in place to catch nondeterministic
+# report bytes.
 
 foreach(required GMAX_BINARY GMAX_SOURCE_DIR WORK_DIR)
     if(NOT DEFINED ${required})
@@ -11,6 +13,9 @@ foreach(required GMAX_BINARY GMAX_SOURCE_DIR WORK_DIR)
 endforeach()
 
 if(NOT DEFINED ENV{GMAX_YOSYS} OR NOT EXISTS "$ENV{GMAX_YOSYS}")
+    if(DEFINED ENV{GMAX_G0_1_GATE})
+        message(FATAL_ERROR "G0.1 gate requires GMAX_YOSYS to point at the pinned Yosys binary")
+    endif()
     message(STATUS "Skipping ISCAS'85 end-to-end test: GMAX_YOSYS is not set to an existing binary")
     return()
 endif()

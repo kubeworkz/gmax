@@ -65,7 +65,7 @@ jobs:
   # pinned caches, so a missing or broken tool fails CI instead of producing
   # weaker evidence.
   sat-gate:
-    name: G0.2/G0.3/G0.7 gates
+    name: G0 pinned-tool gates
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -107,6 +107,11 @@ jobs:
         run: cmake -S . -B build/gate -G Ninja -DCMAKE_BUILD_TYPE=Debug
       - name: build gate
         run: cmake --build build/gate
+      - name: run G0.1 ISCAS'85 coverage gate
+        env:
+          GMAX_G0_1_GATE: "1"
+          GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
+        run: ctest --test-dir build/gate -R '^cli\.iscas85$' --no-tests=error --output-on-failure
       - name: run G0.2 SAT smoke gate
         env:
           GMAX_G0_2_GATE: "1"
