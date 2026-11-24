@@ -46,6 +46,7 @@ foreach(needle
         "nets: 350"
         "faults: 700"
         "patterns: 256"
+        "detected: 691"
         "the 64-lane engine and the scalar reference agree on every fault")
     string(FIND "${diff_out}" "${needle}" position)
     if(position EQUAL -1)
