@@ -4,9 +4,12 @@ add_subdirectory(differential)
 find_program(GMAX_PYTHON_EXECUTABLE NAMES python3 python)
 
 # G0 evidence retention: process tests copy their reports here before deleting
-# their work directories. The tree is generated, not tracked; the gate pack
+# their work directories. The default lives inside the build tree so a test run
+# never writes generated files into the checkout; the gate job overrides it with
+# the checkout's reports/g0 path so the retained artifact location stays stable.
+# The tree is generated, not tracked; the gate pack
 # records the artifact hashes.
-set(GMAX_REPORTS_DIR "${CMAKE_SOURCE_DIR}/reports/g0" CACHE PATH
+set(GMAX_REPORTS_DIR "${CMAKE_BINARY_DIR}/reports/g0" CACHE PATH
   "Directory where process tests preserve coverage and run reports")
 
 # WP-010's executable contract: the schema only matters if the installed gmax
