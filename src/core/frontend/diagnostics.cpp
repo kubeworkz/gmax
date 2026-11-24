@@ -36,6 +36,16 @@ std::string_view diagnostic_code_name(const DiagnosticCode code) {
         return "cell-count-mismatch";
     case DiagnosticCode::IoError:
         return "io-error";
+    case DiagnosticCode::SdcSyntax:
+        return "sdc-syntax";
+    case DiagnosticCode::SdcUnsupportedCommand:
+        return "sdc-unsupported-command";
+    case DiagnosticCode::SdcUnsupportedOption:
+        return "sdc-unsupported-option";
+    case DiagnosticCode::SdcInvalidValue:
+        return "sdc-invalid-value";
+    case DiagnosticCode::SdcDuplicateClock:
+        return "sdc-duplicate-clock";
     }
     return "unknown";
 }
