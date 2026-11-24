@@ -1,8 +1,8 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.6 for review — supersedes v0.5, which clarified architecture 6.4's MUX2 select-X rule.
+**Status:** Draft v0.7 for review — supersedes v0.6, which recorded the G0.2 SAT smoke evidence.
 **Date:** 2026-11-24
-**Revision:** v0.6, 2026-11-24 — G0.2 evidence now names the pinned Yosys and MiniSat 2.2.1 cross-check and the separate `sat-gate` CI job; the default ctest matrix remains skip-friendly. No scope, package, gate, effort or capacity figure changed.
+**Revision:** v0.7, 2026-11-24 — ADR-010 (pattern IR) and ADR-011 (deterministic threading) are accepted, completing G0.6's ADR set; the G0.6 evidence now names all three ADRs and their WP-106 and G0.3 obligations. No scope, package, gate, effort or capacity figure changed.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
 **Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at blob `d9ae07254b87e5b3b5e2b41672613ac8fee340c9`, the MUX2-clarification revision, landed in the same commit as plan v0.5.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
@@ -487,6 +487,16 @@ that set, a missing `GMAX_MINISAT` fails the test instead of skipping it. CI
 runs this gate in the separate `sat-gate` job with the pinned Yosys/MiniSat
 caches; the default ctest matrix remains skip-friendly.
 
+G0.6 evidence is the three accepted ADRs under `docs/adr/`:
+`ADR-009-sat-integration.md`, `ADR-010-pattern-ir.md`, and
+`ADR-011-deterministic-threading.md`. ADR-010 fixes the canonical pattern-IR
+boundary that WP-106 implements and that WP-107 replay, WP-204 parity and the
+WP-211/WP-215 writers consume. ADR-011 fixes the worker and merge model and
+places wall-clock budget aborts outside the determinism guarantee; the N-thread
+path itself lands with WP-011's determinism deliverable, so G0.3's evidence
+begins as 1-thread/N-thread coverage-hash equality and gains the pattern-hash
+leg when WP-106 emits patterns.
+
 ### G1 — M5 (Vertical slice)
 
 | # | Criterion | Threshold | Source | Evidence | Owner |
@@ -682,6 +692,7 @@ The plan's baseline is the architecture blob recorded at the top of this documen
 
 | Rev | Date | What moved | Plan hash |
 |---|---|---|---|
+| v0.7 | 2026-11-24 | Accepted ADR-010 (canonical pattern IR, STIL boundary, structural equality and canonical hash) and ADR-011 (fixed thread pool, 64-fault work units, merge by fault ID, budget-abort exclusion), completing G0.6, and recorded the G0.6 evidence with its WP-106 and G0.3 obligations. No scope, package, gate, effort or capacity figure changed. | `sha256:749df5d0733de564073478589ac36d79075e90798797ef9f5cea6edd2853cf5f` |
 | v0.6 | 2026-11-24 | Recorded the G0.2 SAT smoke evidence: the pinned Yosys `cross_check`, the pinned MiniSat 2.2.1 `minisat_check`, the `GMAX_G0_2_GATE=1` hard-failure mode, and the separate `sat-gate` CI job. The default ctest matrix remains skip-friendly. No scope, package, gate, effort or capacity figure changed. | `sha256:8fbe5402a28ead444b7e815d7f0d5d66b08185cbfa75752ca97bc337898c3b40` |
 | v0.5 | 2026-11-23 | Clarified architecture 6.4: MUX2 uses the conservative select-X rule (a known select picks the then/else data; an X or Z select yields X even when the data inputs agree), and `out = (s & a) | (~s & b)` is explicitly non-normative because it is data-order dependent under an X select. Re-pinned the baseline blob and recomputed the plan hash. No scope, package, gate, effort or capacity figure changed. | `sha256:da562a2b9ecdb06a75618aae14f8f1c3c50767abbb5c8b00e2961d8b28f2a0c1` |
 | v0.4 | 2026-11-22 | Re-pinned to the component-code revision of the architecture: 4.1 gained the ten codes (`FE`, `DB`, `DFT`, `ATPG`, `FSIM`, `CMP`, `PAT`, `DIAG`, `AI`, `VER`), the citation rule `C-` plus code, and a table the checker reads. `ids-defined` now treats a cited code with no row there as dangling, like any other id. No scope, package, gate, effort or capacity figure changed. | `sha256:ae269b8a490b656929d14051d9e6f58b6fa2485e6974589ca5beac048cd71d0b` |
