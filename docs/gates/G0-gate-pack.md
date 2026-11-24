@@ -89,6 +89,14 @@ reports it produced, `if-no-files-found: error` so a green gate that retained
 nothing fails instead of silently passing, and `overwrite: true` so re-running
 the job replaces the earlier attempt's artifact.
 
+The pull-request run at `2649fe8` (`45481612647`) uploaded artifact
+`14962375562`: 19,045 bytes, zip digest
+`sha256:033c201161260709ee52b6240721e81556d6013ad70b1d480de16a19535298d9`,
+expires 2027-02-22. It contains all nine files. The `coverage.json` hashes match
+the table; the manifests and `sat_smoke.json` carry environment-specific
+absolute paths and tool identities, so their CI hashes differ from the local run.
+The table's hashes remain the local evidence identity.
+
 CI evidence identities:
 
 - Pinned-tool gates: run `45454925112`, job `138661665180` — all four steps
