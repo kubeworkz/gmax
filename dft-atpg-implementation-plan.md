@@ -1,8 +1,8 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.5 for review — supersedes v0.4, whose baseline predates the 6.4 MUX2 clarification.
-**Date:** 2026-11-23
-**Revision:** v0.5, 2026-11-23 — 6.4 now states the normative MUX2 select-X rule, with the old AND/OR expression retained only as a non-normative sketch; the baseline blob and plan hash are recomputed. No scope, package, gate, effort or capacity figure changed.
+**Status:** Draft v0.6 for review — supersedes v0.5, which clarified architecture 6.4's MUX2 select-X rule.
+**Date:** 2026-11-24
+**Revision:** v0.6, 2026-11-24 — G0.2 evidence now names the pinned Yosys and MiniSat 2.2.1 cross-check and the separate `sat-gate` CI job; the default ctest matrix remains skip-friendly. No scope, package, gate, effort or capacity figure changed.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
 **Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at blob `d9ae07254b87e5b3b5e2b41672613ac8fee340c9`, the MUX2-clarification revision, landed in the same commit as plan v0.5.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
@@ -479,6 +479,14 @@ ADRs 009–011 (SAT, pattern IR, threading) are P0 deliverables. Every later pac
 | G0.6 | ADRs | 009–011 accepted | 20.2 item 6 | `docs/adr/` | ARCH |
 | G0.7 | Simulation agreement | Parallel-fault simulation matches the scalar reference on every net of c432 | 10.4, 17.1 P0 (bit-parallel simulation) | differential test log | ATPG |
 
+G0.2 evidence is `reports/sat_smoke.json`: `cross_check` is the pinned Yosys
+SAT result and `minisat_check` is the pinned MiniSat 2.2.1 result on the same
+CNFs (ADR-009). The MiniSat leg runs when `GMAX_MINISAT` points at the
+developer-cache binary. The gate invocation also sets `GMAX_G0_2_GATE=1`; with
+that set, a missing `GMAX_MINISAT` fails the test instead of skipping it. CI
+runs this gate in the separate `sat-gate` job with the pinned Yosys/MiniSat
+caches; the default ctest matrix remains skip-friendly.
+
 ### G1 — M5 (Vertical slice)
 
 | # | Criterion | Threshold | Source | Evidence | Owner |
@@ -674,6 +682,7 @@ The plan's baseline is the architecture blob recorded at the top of this documen
 
 | Rev | Date | What moved | Plan hash |
 |---|---|---|---|
+| v0.6 | 2026-11-24 | Recorded the G0.2 SAT smoke evidence: the pinned Yosys `cross_check`, the pinned MiniSat 2.2.1 `minisat_check`, the `GMAX_G0_2_GATE=1` hard-failure mode, and the separate `sat-gate` CI job. The default ctest matrix remains skip-friendly. No scope, package, gate, effort or capacity figure changed. | `sha256:8fbe5402a28ead444b7e815d7f0d5d66b08185cbfa75752ca97bc337898c3b40` |
 | v0.5 | 2026-11-23 | Clarified architecture 6.4: MUX2 uses the conservative select-X rule (a known select picks the then/else data; an X or Z select yields X even when the data inputs agree), and `out = (s & a) | (~s & b)` is explicitly non-normative because it is data-order dependent under an X select. Re-pinned the baseline blob and recomputed the plan hash. No scope, package, gate, effort or capacity figure changed. | `sha256:da562a2b9ecdb06a75618aae14f8f1c3c50767abbb5c8b00e2961d8b28f2a0c1` |
 | v0.4 | 2026-11-22 | Re-pinned to the component-code revision of the architecture: 4.1 gained the ten codes (`FE`, `DB`, `DFT`, `ATPG`, `FSIM`, `CMP`, `PAT`, `DIAG`, `AI`, `VER`), the citation rule `C-` plus code, and a table the checker reads. `ids-defined` now treats a cited code with no row there as dangling, like any other id. No scope, package, gate, effort or capacity figure changed. | `sha256:ae269b8a490b656929d14051d9e6f58b6fa2485e6974589ca5beac048cd71d0b` |
 | v0.3 | 2026-11-22 | Re-pinned to architecture `993a84d` (blob `61c9e75`), the revision Phase 5 was waiting on: 2.2 dropped both capabilities from the non-goals, 21 gained the boundary-scan, memory-BIST and memory-coverage rows, 9.1 defined `MEMORY_ARRAY`, and 14.3/17.1 split coverage into logic and memory. Section 8 records the revision as landed and 8.1 as satisfied on that condition; the Baseline line, and every reference to a pending revision, were updated. No scope, package, gate, effort or capacity figure changed. | `sha256:cfe56c78822d22dae30397d67b56fe0e1da0a06ea7d8b0d27962ca57b90bd191` |

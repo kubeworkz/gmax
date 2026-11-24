@@ -113,4 +113,16 @@ else
     run_isolated sh "$tmp/src/tools/check-yosys.sh" "$yosys_prefix"
 fi
 
+# MiniSat is the test-only G0.2 cross-check. It is not linked into gmax either;
+# when its developer cache exists, prove the pinned binary under the same
+# network barrier, and otherwise say that the check was skipped.
+minisat_prefix=${GMAX_MINISAT_PREFIX:-${GMAX_DEP_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/gmax}/minisat/2.2.1}
+if [ ! -x "$minisat_prefix/bin/minisat" ]; then
+    echo "offline-build: minisat cache not populated; skipping G0.2 dependency check"
+elif [ ! -f "$tmp/src/tools/check-minisat.sh" ]; then
+    echo "offline-build: ref $ref has no MiniSat check; skipping G0.2 dependency check"
+else
+    run_isolated sh "$tmp/src/tools/check-minisat.sh" "$minisat_prefix"
+fi
+
 echo "offline-build: ok"

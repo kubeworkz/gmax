@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -391,6 +392,70 @@ void remove_work_directory(const std::filesystem::path& directory) {
     std::filesystem::remove_all(directory, error);
 }
 
+void replace_all(std::string& text, const std::string& from, const std::string& to) {
+    if (from.empty()) {
+        return;
+    }
+    std::size_t position = 0;
+    while ((position = text.find(from, position)) != std::string::npos) {
+        text.replace(position, from.size(), to);
+        position += to.size();
+    }
+}
+
+void normalize_source_path(std::string& text, const std::string& source) {
+    if (source.empty()) {
+        return;
+    }
+    const std::string label = std::filesystem::path(source).filename().generic_string();
+    if (label.empty()) {
+        return;
+    }
+    replace_all(text, source, label);
+}
+
+// Yosys names anonymous cells after their source file, so the name embeds the
+// absolute checkout path. That would make the serialized netlist hash depend on
+// where the tree lives. Keep only the basename: diagnostics still name the
+// source, and the same netlist hashes the same in every workspace.
+void normalize_design_source_paths(db::Design& design, const YosysOptions& options) {
+    const auto normalize = [&](std::string& text) {
+        normalize_source_path(text, options.netlist);
+        for (const std::string& library : options.libraries) {
+            normalize_source_path(text, library);
+        }
+    };
+
+    normalize(design.top);
+    for (db::Module& module : design.modules) {
+        normalize(module.name);
+        for (std::string& name : module.inputs) {
+            normalize(name);
+        }
+        for (std::string& name : module.outputs) {
+            normalize(name);
+        }
+        for (db::Gate& gate : module.gates) {
+            normalize(gate.name);
+            for (std::string& fanin : gate.fanins) {
+                normalize(fanin);
+            }
+            normalize(gate.out);
+            normalize(gate.enable);
+            normalize(gate.async_clear);
+            normalize(gate.async_preset);
+        }
+    }
+    for (db::Instance& instance : design.instances) {
+        normalize(instance.path);
+        normalize(instance.module);
+        for (auto& [port, net] : instance.connections) {
+            (void)port;
+            normalize(net);
+        }
+    }
+}
+
 }  // namespace
 
 std::string yosys_recipe_script(const YosysOptions& options, const std::string_view json_path) {
@@ -550,6 +615,7 @@ YosysResult elaborate_with_yosys(const YosysOptions& options) {
     }
 
     ImportResult imported = import_yosys_json(json, options.top, {}, options.expected_cells);
+    normalize_design_source_paths(imported.design, resolved);
     result.design = std::move(imported.design);
     result.counts = std::move(imported.counts);
     for (Diagnostic& diagnostic : imported.diagnostics) {

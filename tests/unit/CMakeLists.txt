@@ -58,6 +58,14 @@ gmax_set_sanitizers(cli_test)
 
 add_test(NAME cli COMMAND cli_test)
 
+add_executable(atpg_cli_fixture
+  atpg_cli_fixture.cpp)
+
+target_link_libraries(atpg_cli_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(atpg_cli_fixture)
+gmax_set_sanitizers(atpg_cli_fixture)
+
 add_executable(fault_cli_test
   fault_cli_test.cpp)
 
@@ -95,6 +103,36 @@ gmax_set_warnings(fault_file_test)
 gmax_set_sanitizers(fault_file_test)
 
 add_test(NAME fault_file COMMAND fault_file_test)
+
+add_executable(implication_test
+  implication_test.cpp)
+
+target_link_libraries(implication_test PRIVATE gmax_core)
+
+gmax_set_warnings(implication_test)
+gmax_set_sanitizers(implication_test)
+
+add_test(NAME implication COMMAND implication_test)
+
+add_executable(podem_test
+  podem_test.cpp)
+
+target_link_libraries(podem_test PRIVATE gmax_core)
+
+gmax_set_warnings(podem_test)
+gmax_set_sanitizers(podem_test)
+
+add_test(NAME podem COMMAND podem_test)
+
+add_executable(sat_test
+  sat_test.cpp)
+
+target_link_libraries(sat_test PRIVATE gmax_core)
+
+gmax_set_warnings(sat_test)
+gmax_set_sanitizers(sat_test)
+
+add_test(NAME sat COMMAND sat_test)
 
 add_executable(yosys_test
   yosys_test.cpp)

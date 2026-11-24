@@ -1,5 +1,7 @@
 add_subdirectory(unit)
 
+find_program(GMAX_PYTHON_EXECUTABLE NAMES python3 python)
+
 # WP-010's executable contract: the schema only matters if the installed gmax
 # wires it up. cli_test owns the exhaustive parser and exit-code cases; these
 # ctest entries check the process-level flags.
@@ -30,3 +32,37 @@ add_test(NAME cli.write-faults
     -DFIXTURE_BINARY=$<TARGET_FILE:fault_cli_fixture>
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-write-faults
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/write_faults.cmake)
+
+# The ATPG command must load both artifacts, report each fault's status and
+# budget counters, and return ATPG-incomplete when a fault exhausts its budget.
+add_test(NAME cli.run-atpg
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:atpg_cli_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-run-atpg
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/run_atpg.cmake)
+
+# WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
+# PODEM are exercised on the real ISCAS'85 netlists, including the coverage
+# denominators, hashes, manifest, and repeated-run report determinism.
+add_test(NAME cli.iscas85
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-iscas85
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/iscas85.cmake)
+
+# G0.2 requires an independent SAT cross-check, not just a second call into
+# our own solver. This runs the two c432 smoke cases through Yosys `sat` on a
+# two-copy miter and, when GMAX_MINISAT is set, through the pinned MiniSat
+# 2.2.1 binary on the same CNFs. Both engines must return the same verdicts.
+# The default developer run may omit GMAX_MINISAT and then uses Yosys only;
+# GMAX_G0_2_GATE=1 makes MiniSat mandatory so the gate cannot pass on Yosys
+# alone.
+add_test(NAME cli.sat-smoke
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DPYTHON_EXECUTABLE=${GMAX_PYTHON_EXECUTABLE}
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sat-smoke
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sat_smoke.cmake)

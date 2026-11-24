@@ -1,0 +1,18 @@
+# MiniSat pin candidate for G0.2. Not frozen: TBD-11 is still open.
+# tools/bootstrap-minisat.sh sources this file; keep it POSIX shell syntax.
+#
+# The archive is the pristine MiniSat 2.2.1 release source carried as the
+# Debian/Ubuntu `minisat2` orig tarball; Debian patches live in a separate
+# debian.tar.xz and are not part of this archive. The upstream GitHub mirror
+# publishes tags for 2.0 and 2.2.0 only, so the verified archive hash is the
+# authoritative pin for the 2.2.1 release.
+MINISAT_VERSION=2.2.1
+MINISAT_SOURCE_URL=https://archive.ubuntu.com/ubuntu/pool/universe/m/minisat2/minisat2_2.2.1.orig.tar.gz
+MINISAT_SOURCE_SHA256=e54afa3c192c1753bc8075c0c7e126d5c495d9066e3f90a2588091149ac9ca40
+MINISAT_SOURCE_BYTES=44229
+MINISAT_LICENSE=MIT
+
+# GCC 13 rejects the upstream friend declaration with a default argument;
+# -fpermissive restores the historical compiler behavior. The release target
+# links statically and needs zlib's static library (zlib1g-dev on Ubuntu).
+MINISAT_MAKE_ARGS="r CXXFLAGS=-fpermissive"

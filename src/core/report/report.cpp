@@ -1,0 +1,233 @@
+#include "core/report/report.h"
+
+#include <fstream>
+#include <iomanip>
+#include <ostream>
+#include <sstream>
+#include <string_view>
+#include <utility>
+
+namespace gmax::report {
+namespace {
+
+std::string json_string(const std::string_view text) {
+    std::string out;
+    out.reserve(text.size() + 2);
+    out.push_back('"');
+    for (const char raw : text) {
+        const auto character = static_cast<unsigned char>(raw);
+        switch (character) {
+        case '"':
+            out += "\\\"";
+            break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\b':
+            out += "\\b";
+            break;
+        case '\f':
+            out += "\\f";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            if (character < 0x20) {
+                constexpr char kHex[] = "0123456789abcdef";
+                out += "\\u00";
+                out.push_back(kHex[(character >> 4) & 0x0Fu]);
+                out.push_back(kHex[character & 0x0Fu]);
+            } else {
+                out.push_back(raw);
+            }
+            break;
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+std::string percent(const std::size_t detected, const std::size_t denominator) {
+    const double value =
+        denominator == 0 ? 0.0 : 100.0 * static_cast<double>(detected) / denominator;
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(6) << value;
+    return out.str();
+}
+
+void coverage_entry(std::ostream& out, const std::string_view name, const std::size_t detected,
+                    const std::size_t denominator) {
+    out << '"' << name << "\":{\"detected\":" << detected << ",\"denominator\":" << denominator
+        << ",\"percent\":" << percent(detected, denominator) << '}';
+}
+
+void stages_entry(std::ostream& out, const std::string_view name, const std::string_view path,
+                  const std::uint32_t hash) {
+    out << "{\"name\":" << json_string(name) << ",\"artifact\":" << json_string(path)
+        << ",\"hash\":\"" << hex32(hash) << "\"}";
+}
+
+}  // namespace
+
+std::string hex32(const std::uint32_t value) {
+    std::ostringstream out;
+    out << std::hex << std::setfill('0') << std::setw(8) << value;
+    return out.str();
+}
+
+std::string coverage_json(const CoverageReport& report) {
+    const CoverageSummary& summary = report.summary;
+    std::ostringstream out;
+    out << "{\"schema\":\"gmax-coverage-1\"";
+    out << ",\"design\":" << json_string(report.design);
+    out << ",\"netlist_hash\":\"" << hex32(report.netlist_hash) << '"';
+    out << ",\"fault_list_hash\":\"" << hex32(report.fault_list_hash) << '"';
+    out << ",\"counts\":{\"raw\":" << summary.raw << ",\"collapsed\":" << summary.collapsed
+        << ",\"detected\":" << summary.detected << ",\"untestable\":" << summary.untestable
+        << ",\"aborted\":" << summary.aborted << ",\"raw_detected\":" << summary.raw_detected
+        << ",\"raw_untestable\":" << summary.raw_untestable
+        << ",\"raw_aborted\":" << summary.raw_aborted << '}';
+    out << ",\"coverage\":{";
+    coverage_entry(out, "raw", summary.raw_detected, summary.raw);
+    out << ',';
+    coverage_entry(out, "collapsed", summary.detected, summary.collapsed);
+    out << ',';
+    coverage_entry(out, "testable", summary.detected, summary.detected + summary.aborted);
+    out << ',';
+    coverage_entry(out, "atpg", summary.detected, summary.collapsed);
+    out << '}';
+    out << ",\"budget\":{\"max_backtracks\":" << report.budget.max_backtracks
+        << ",\"max_time_ms\":" << report.budget.max_time_ms << '}';
+    out << ",\"totals\":{\"decisions\":" << summary.decisions
+        << ",\"backtracks\":" << summary.backtracks << '}';
+    out << ",\"faults\":[";
+    for (std::size_t index = 0; index < report.faults.size(); ++index) {
+        const FaultOutcome& fault = report.faults[index];
+        if (index != 0) {
+            out << ',';
+        }
+        out << "{\"net\":" << fault.fault.net << ",\"name\":" << json_string(fault.net_name)
+            << ",\"stuck\":" << (fault.fault.stuck == sim::StuckValue::One ? 1 : 0)
+            << ",\"status\":\"" << atpg::podem_status_name(fault.status) << '"'
+            << ",\"method\":" << json_string(fault.method) << ",\"decisions\":" << fault.decisions
+            << ",\"backtracks\":" << fault.backtracks << '}';
+    }
+    out << "]}";
+    return out.str();
+}
+
+std::string manifest_json(const RunManifest& manifest) {
+    const CoverageSummary& summary = manifest.summary;
+    std::ostringstream out;
+    out << "{\"schema\":\"gmax-run-manifest-1\"";
+    out << ",\"tool\":{\"name\":\"gmax\",\"version\":" << json_string(manifest.tool_version) << '}';
+    out << ",\"command\":\"run_atpg\"";
+    out << ",\"design\":{\"name\":" << json_string(manifest.design)
+        << ",\"gates\":" << manifest.gates << ",\"nets\":" << manifest.nets << '}';
+    out << ",\"inputs\":{\"profile\":null,\"libraries\":[]";
+    out << ",\"netlist\":{\"path\":" << json_string(manifest.design_path) << ",\"hash\":\""
+        << hex32(manifest.netlist_hash) << "\",\"algorithm\":\"crc32\"}";
+    out << ",\"fault_list\":{\"path\":" << json_string(manifest.faults_path) << ",\"hash\":\""
+        << hex32(manifest.fault_list_hash) << "\",\"algorithm\":\"crc32\""
+        << ",\"raw_count\":" << summary.raw << ",\"collapsed_count\":" << summary.collapsed << "}}";
+    out << ",\"coverage\":{\"path\":" << json_string(manifest.coverage_path) << ",\"hash\":\""
+        << hex32(manifest.coverage_hash) << "\",\"algorithm\":\"crc32\"}";
+    out << ",\"options\":{\"max_backtracks\":" << manifest.budget.max_backtracks
+        << ",\"max_time_ms\":" << manifest.budget.max_time_ms << ",\"threads\":1,\"seed\":0}";
+    out << ",\"stages\":[";
+    stages_entry(out, "elaborate", manifest.design_path, manifest.netlist_hash);
+    out << ',';
+    stages_entry(out, "fault_list", manifest.faults_path, manifest.fault_list_hash);
+    out << ',';
+    stages_entry(out, "atpg", manifest.coverage_path, manifest.coverage_hash);
+    out << ']';
+    out << ",\"result\":{\"status\":\"" << (summary.aborted == 0 ? "complete" : "incomplete")
+        << "\",\"detected\":" << summary.detected << ",\"untestable\":" << summary.untestable
+        << ",\"aborted\":" << summary.aborted << "}}";
+    return out.str();
+}
+
+std::string sat_status_name(const atpg::SatFaultStatus status) {
+    switch (status) {
+    case atpg::SatFaultStatus::Detected:
+        return "detected";
+    case atpg::SatFaultStatus::Untestable:
+        return "untestable";
+    case atpg::SatFaultStatus::Unsupported:
+        return "unsupported";
+    case atpg::SatFaultStatus::Unknown:
+        return "unknown";
+    }
+    return "unknown";
+}
+
+std::string sat_verdict(const atpg::SatFaultStatus status) {
+    if (status == atpg::SatFaultStatus::Detected) {
+        return "sat";
+    }
+    if (status == atpg::SatFaultStatus::Untestable) {
+        return "unsat";
+    }
+    return "unknown";
+}
+
+std::string sat_smoke_json(const SatSmokeReport& report) {
+    std::size_t sat = 0;
+    std::size_t unsat = 0;
+    std::size_t unknown = 0;
+    for (const SatSmokeCase& item : report.cases) {
+        if (item.status == atpg::SatFaultStatus::Detected) {
+            ++sat;
+        } else if (item.status == atpg::SatFaultStatus::Untestable) {
+            ++unsat;
+        } else {
+            ++unknown;
+        }
+    }
+
+    std::ostringstream out;
+    out << "{\"schema\":\"gmax-sat-smoke-1\"";
+    out << ",\"design\":" << json_string(report.design);
+    out << ",\"netlist_hash\":\"" << hex32(report.netlist_hash) << '"';
+    out << ",\"fault_list_hash\":\"" << hex32(report.fault_list_hash) << '"';
+    out << ",\"solver\":{\"backend\":\"internal-cdcl\",\"max_conflicts\":1000000}";
+    out << ",\"cases\":[";
+    for (std::size_t index = 0; index < report.cases.size(); ++index) {
+        const SatSmokeCase& item = report.cases[index];
+        if (index != 0) {
+            out << ',';
+        }
+        out << "{\"net\":" << item.fault.net << ",\"name\":" << json_string(item.net_name)
+            << ",\"stuck\":" << (item.fault.stuck == sim::StuckValue::One ? 1 : 0)
+            << ",\"expected\":" << json_string(item.expected)
+            << ",\"status\":" << json_string(sat_status_name(item.status))
+            << ",\"verdict\":" << json_string(sat_verdict(item.status))
+            << ",\"conflicts\":" << item.conflicts << ",\"variables\":" << item.variables
+            << ",\"clauses\":" << item.clauses
+            << ",\"solver_timed_out\":" << (item.solver_timed_out ? "true" : "false") << '}';
+    }
+    out << "],\"summary\":{\"sat\":" << sat << ",\"unsat\":" << unsat << ",\"unknown\":" << unknown
+        << "}}";
+    return out.str();
+}
+
+db::Status write_text(const std::string& path, const std::string_view text) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return db::Status::failure(db::Error::IoError, "cannot open '" + path + "' for writing");
+    }
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (!out) {
+        return db::Status::failure(db::Error::IoError, "cannot write '" + path + "'");
+    }
+    return {};
+}
+
+}  // namespace gmax::report

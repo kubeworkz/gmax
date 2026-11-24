@@ -2,6 +2,10 @@ add_library(gmax_core STATIC
   version.cpp
   atpg/fault_file.cpp
   atpg/fault_list.cpp
+  atpg/implication.cpp
+  atpg/logic5.cpp
+  atpg/podem.cpp
+  atpg/sat.cpp
   db/crc32.cpp
   db/db.cpp
   db/dfdb.cpp
@@ -13,6 +17,7 @@ add_library(gmax_core STATIC
   frontend/liberty.cpp
   frontend/yosys.cpp
   frontend/yosys_recipe.cpp
+  report/report.cpp
   sim/fault.cpp
   sim/logic.cpp)
 

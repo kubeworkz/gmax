@@ -58,3 +58,57 @@ jobs:
       - uses: actions/checkout@v4
       - name: check
         run: sh tools/check-offline-build.sh debug
+
+  # The G0.2 gate is deliberately separate from the default test matrix. The
+  # regular ctest invocation stays skip-friendly when Yosys or MiniSat are
+  # absent; this job sets GMAX_G0_2_GATE=1 and uses the pinned caches, so a
+  # missing or broken MiniSat fails CI instead of producing Yosys-only evidence.
+  sat-gate:
+    name: G0.2 SAT smoke gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GMAX_DEP_CACHE: ${{ github.workspace }}/.gmax-cache
+    steps:
+      - uses: actions/checkout@v4
+      - name: install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison \
+            build-essential \
+            cmake \
+            flex \
+            libfl-dev \
+            ninja-build \
+            pkg-config \
+            python3 \
+            zlib1g-dev
+      - name: cache pinned Yosys
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.gmax-cache/yosys/0.71
+            ${{ github.workspace }}/.gmax-cache/download/yosys-0.71.tar.gz
+          key: gmax-yosys-0.71-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('third_party/yosys-0.71.lock', 'tools/bootstrap-yosys.sh') }}
+      - name: cache pinned MiniSat
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.gmax-cache/minisat/2.2.1
+            ${{ github.workspace }}/.gmax-cache/download/minisat-2.2.1.tar.gz
+          key: gmax-minisat-2.2.1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('third_party/minisat-2.2.1.lock', 'tools/bootstrap-minisat.sh') }}
+      - name: bootstrap pinned Yosys
+        run: sh tools/bootstrap-yosys.sh
+      - name: bootstrap pinned MiniSat
+        run: sh tools/bootstrap-minisat.sh
+      - name: configure gate build
+        run: cmake -S . -B build/gate -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: build gate
+        run: cmake --build build/gate
+      - name: run G0.2 SAT smoke gate
+        env:
+          GMAX_G0_2_GATE: "1"
+          GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
+          GMAX_MINISAT: ${{ github.workspace }}/.gmax-cache/minisat/2.2.1/bin/minisat
+        run: ctest --test-dir build/gate -R '^cli\.sat-smoke$' --no-tests=error --output-on-failure

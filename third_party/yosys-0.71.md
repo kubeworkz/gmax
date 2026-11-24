@@ -58,15 +58,18 @@ Yosys 0.71+post (git sha1 5628c13240f670b97aaaca3d47940c4afb8ff572, Release, GNU
 
 ## Offline gate
 
-`tools/bootstrap-yosys.sh` is a manual, one-time cache population step. It
-downloads only when invoked, verifies the SHA-256, and builds with the fixed
-options. `tools/check-yosys.sh` then runs the WP-004 recipe on
+`tools/bootstrap-yosys.sh` populates the developer cache (normally a manual,
+one-time step; the CI gate job also invokes it). It downloads only when
+invoked, verifies the SHA-256, and builds with the fixed options.
+`tools/check-yosys.sh` then runs the WP-004 recipe on
 `tests/differential/yosys/smoke.v` and validates the JSON module and ports.
 
 `tools/check-offline-build.sh` runs that check inside its network namespace when
-the cache exists. If the cache is absent it prints a skip, because the gmax
-build does not yet link or execute Yosys. Once WP-004's tests require Yosys, the
-absent-cache case must become a failure.
+the cache exists. If the cache is absent it prints a skip, because the default
+gmax build does not link or execute Yosys. The separate G0.2 SAT smoke gate CI
+job bootstraps or restores the pinned Yosys/MiniSat caches and runs the gate
+with `GMAX_G0_2_GATE=1`; a missing tool fails that gate rather than passing on
+Yosys-only evidence.
 
 ## Decisions required
 
