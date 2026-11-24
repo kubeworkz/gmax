@@ -155,3 +155,13 @@ gmax_set_warnings(sdc_test)
 gmax_set_sanitizers(sdc_test)
 
 add_test(NAME sdc COMMAND sdc_test)
+
+add_executable(sdc_cli_test
+  sdc_cli_test.cpp)
+
+target_link_libraries(sdc_cli_test PRIVATE gmax_shell)
+
+gmax_set_warnings(sdc_cli_test)
+gmax_set_sanitizers(sdc_cli_test)
+
+add_test(NAME sdc_cli COMMAND sdc_cli_test)
