@@ -81,14 +81,33 @@ constraint payload. The payload contains, in fixed order:
 - case analysis, including object and binary value;
 - input/output delays, including object, clock, min/max and value;
 - driving cells and loads, including object and cell/value fields;
-- the sorted names of unsupported constructs that made the set incomplete.
+- the sorted, deduplicated names of unsupported constructs that made the set
+  incomplete.
+
+Canonical ordering is part of the hash contract:
+
+- Top-level fields appear in the order listed above.
+- Names are canonical unescaped names compared bytewise, case-sensitively, in
+  ascending order.
+- Repeated records use these primary sort keys: clocks by clock name;
+  generated clocks by generated-clock name; clock groups by relationship kind,
+  group name and sorted member clocks; false paths by their from, through and
+  to object-name lists, with names sorted within each list; case analysis by
+  object name; input/output delays by direction, object name, clock name,
+  min/max and value; driving cells and loads by object name and cell/value;
+  and unsupported construct names by name after deduplication.
+- Numeric values use one canonical decimal encoding, independent of source
+  formatting. Remaining ties are broken by the full canonical record.
 
 The payload excludes the source file path, raw file bytes, comments,
 whitespace, line and column numbers, resolved database IDs, and diagnostic
-message text. Two files with the same supported constraints and the same
-completeness state therefore have the same hash regardless of checkout path or
-formatting. The report-only and attached forms print the same hash for the same
-file.
+message text. Two files have the same canonical hash input, and therefore the
+same `constraints_hash`, when their supported constraints and completeness
+state match and, for an incomplete set, their sorted unsupported construct
+names also match. Checkout path, comments, whitespace and diagnostic text do
+not affect the hash. A different unsupported construct name is a different
+payload and must not be treated as the same constraint set. The report-only and
+attached forms print the same hash for the same file.
 
 The constraints hash and status are recorded in `coverage.json` and
 `manifest.json`. The report schema gains the fields rather than overloading the
@@ -211,6 +230,11 @@ the meaning of `constraints_hash` silently.
   collision, unresolved references, and no output on error.
 - Schema and hash tests for 1.3 compatibility, 1.4 round trips, empty versus
   absent constraints, canonical ordering, and unchanged `netlist_hash`.
+- A hash test with two incomplete sets that have identical supported
+  constraints and completeness state but different unsupported construct
+  names; their hashes must differ. A companion test uses the same sets with
+  identical sorted unsupported names but different source ordering,
+  formatting and path; their hashes must match.
 - Resolver tests for ports, pins, clocks, generated clocks, groups, false
   paths, and case analysis. Case analysis must be enforceable on every net
   that resolves to a top-level input port, including clock and reset inputs;
