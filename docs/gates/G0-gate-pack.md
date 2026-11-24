@@ -2,7 +2,7 @@
 
 - Status: **DRAFT — decision pending signatures.** G0 is not yet declared met.
 - Phase: P0, gate G0 (plan section 10).
-- Reviewed commit: `32e1237c5fa09ebdb84514a67712ace7b730bab4`.
+- Reviewed commit: `a15b347d792cbd6e6e174b4ea02aff11164ccb9e`.
 - Plan: v0.9, `sha256:7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`.
 - Review date: 2026-11-24.
 - Chair: DFT lead (signature below).
@@ -17,7 +17,7 @@ test hashes and the CI run identity below no longer describe it.
 | G0.1 | c432 and c499 end-to-end from CLI | 100% of testable faults on both | **Met** | `tests/process/iscas85.cmake`; CI step "run G0.1 ISCAS'85 coverage gate" | test `sha256:a4a453c2…`; run `45454925112` at `1c4572d`, job `138661665180`; `cli.iscas85` passed |
 | G0.2 | SAT smoke | ≥1 SAT and ≥1 UNSAT on c432; MiniSat agrees | **Met** | `tests/process/sat_smoke.cmake`, `sat_smoke.py`; `cross_check` (Yosys 0.71) and `minisat_check` (2.2.1) | test `sha256:f9b07fab…`, `sha256:6a85ea4f…`; same run, step "run G0.2 SAT smoke gate", success |
 | G0.3 | Determinism | 1-thread and N-thread pattern/coverage hashes identical | **Waived — coverage leg met, pattern leg deferred** (W1) | `tests/process/threads.cmake`: 1 vs 4 workers, byte-identical `coverage.json`, manifests differ only `options.threads` | test `sha256:91a5b26c…`; same run, step "run G0.3 thread determinism gate", success |
-| G0.4 | Commit gate | Debug/release, unit tests, sanitizer smoke, format/lint block a merge | **Met** | `.github/workflows/ci.yml` runs all ten jobs on push to `main` and once per pull-request head; `main` branch protection requires every one, strict and enforced for admins (verified 2026-11-24); PR #1 reported `blocked` then `clean`; PR #3 produced one suite; red run `45326575526`, green run `45436627671` | config `sha256:883b61dc…`; protection snapshot `docs/gates/G0-branch-protection.json` `sha256:c5525d0c…` (`protected: true`, 10 contexts, `enforce_admins: true`) |
+| G0.4 | Commit gate | Debug/release, unit tests, sanitizer smoke, format/lint block a merge | **Met** | `.github/workflows/ci.yml` runs all ten jobs on push to `main` and once per pull-request head; `main` branch protection requires every one, strict and enforced for admins (verified 2026-11-24); PR #1 reported `blocked` then `clean`; PR #3 produced one suite; red run `45326575526`, green run `45436627671` | config `sha256:6418443b…`; protection snapshot `docs/gates/G0-branch-protection.json` `sha256:c5525d0c…` (`protected: true`, 10 contexts, `enforce_admins: true`) |
 | G0.5 | Reproducibility | Every run emits a complete manifest | **Waived — ATPG-run scope** (W2) | `run_atpg` writes `manifest.json`; `cli.iscas85` asserts schema, netlist/fault/coverage/stage hashes and byte-identical repeat | `src/core/report/report.cpp` `sha256:e707e6f4…`; `report.h` `sha256:e8cd354b…`; `src/shell/commands.cpp` `sha256:b522df83…` |
 | G0.6 | ADRs | 009–011 accepted | **Met** | `docs/adr/ADR-009-sat-integration.md`, `ADR-010-pattern-ir.md`, `ADR-011-deterministic-threading.md`, all `Accepted` | `sha256:9c15584c…`, `sha256:a97521ab…`, `sha256:57e5549e…` |
 | G0.7 | Simulation agreement | 64-lane matches scalar on every net of c432 | **Met** | `tests/differential/fault_diff.cpp`, `tests/process/fault_diff.cmake`; 350 nets, 700 raw faults, 256 patterns, **691 detected**, detection and first-pattern agreement | `sha256:e71178b0…`, `sha256:8dfe0c03…`; same run, step "run G0.7 fault-simulation differential gate", success |
@@ -28,11 +28,11 @@ pinned 0.71 build and its MiniSat is the pinned 2.2.1 build.
 
 ## 2. Evidence artifacts, by path and hash
 
-Tracked evidence sources at `32e1237`:
+Tracked evidence sources at `a15b347`:
 
 | Path | SHA-256 |
 |---|---|
-| `.github/workflows/ci.yml` | `883b61dc0a14d5671843cd0ed196886cd029ec8a2189fe0bfe9d89b2c2eb1512` |
+| `.github/workflows/ci.yml` | `6418443b7cddadaff973b9a63dbef8c5c7acb0318175fbf6dda5d1fdaecc607b` |
 | `docs/gates/G0-branch-protection.json` | `c5525d0cc59d8ad5c0450925f1cb377bf929035dd2e28eb162842c773afc6e8d` |
 | `tests/process/iscas85.cmake` | `a4a453c279c6306c95f66362953cde3648a178f7d217401669cd106641cd773c` |
 | `tests/process/sat_smoke.cmake` | `f9b07fab44c2d51350ebebaad106ce61be8939c4a718e47afedb67c7cae97d3b` |
@@ -40,7 +40,7 @@ Tracked evidence sources at `32e1237`:
 | `tests/process/threads.cmake` | `91a5b26cf48152a72e60a3e692b2d5a460e22af82847565af5daa8ec1ba9d846` |
 | `tests/process/fault_diff.cmake` | `8dfe0c03e49cfc9ec2c939dac484ef4d7ba5e5ad66950f5b787f869578df799d` |
 | `tests/differential/fault_diff.cpp` | `e71178b0308c2b74889e0c98d6ed43d6631de81ce77578faaa491f107bca3100` |
-| `tests/CMakeLists.txt` | `23d5ae6fda502fa9b086a7a42833c60682f0b9019f46ef329c3c15155f7e6486` |
+| `tests/CMakeLists.txt` | `5691c0782257e3fbc0ff3f9db245849d46670f631feda09648f9db519d83f2c5` |
 | `src/core/report/report.cpp` | `e707e6f49bd6f6ce273f5b86ede1609936303b71c27d3213de6e5985a07dcd80` |
 | `src/core/report/report.h` | `e8cd354b0b34d71d5d91ed6d916979a39c59334a9403569928f84594640bb3f2` |
 | `src/shell/commands.cpp` | `b522df8326844f8d4c040125ab7a2a22b0f4ac478967b100fe3d02bf635ad563` |
@@ -59,12 +59,17 @@ source-name normalization):
 | G0.3 c432 1 vs 4 threads | `413dd789` | `424032e8` | `coverage.json` byte-identical; manifests equal except `options.threads` 1 vs 4 |
 | G0.7 c432 differential | `413dd789` | raw list (700) | 700 faults, 256 patterns, 691 detected, zero disagreements |
 
-As of `32e1237`, the process tests copy their reports into `reports/g0`
-(`GMAX_REPORTS_DIR`, default `${CMAKE_SOURCE_DIR}/reports/g0`) before deleting
-their work directories. The tree is generated and ignored by git. These
-artifacts were produced by the local gate run at `32e1237`; CI run `45454925112`
-exercised the same assertions at the previous pin `1c4572d`, and this change's
-pull-request run revalidates them.
+As of `a15b347`, the process tests preserve their reports under
+`GMAX_REPORTS_DIR` before deleting their work directories. The default is
+`${CMAKE_BINARY_DIR}/reports/g0`, inside the build tree, so a test run never
+writes generated files into the checkout; the `G0 pinned-tool gates` job sets it
+to `${GITHUB_WORKSPACE}/reports/g0` explicitly, so the artifact paths below stay
+stable. The tree is generated and ignored by git. These artifacts were produced
+by the local gate run at `32e1237`; re-running `cli.iscas85`, `cli.sat-smoke` and
+`cli.threads` at `a15b347` reproduced all nine hashes, with the default under
+`build/gate/reports/g0` and with the gate path under `reports/g0`. CI run
+`45454925112` exercised the same assertions at the previous pin `1c4572d`, and
+this change's pull-request run revalidates them.
 
 | Artifact path | SHA-256 |
 |---|---|
@@ -101,8 +106,9 @@ CI evidence identities:
 - Gate run at the prior pin `1c4572d`: `45454925112` concluded **success**; all
   ten jobs passed. The macOS Debug job waited about ten minutes for a runner,
   then completed successfully. The `32e1237` retention change re-ran the three
-  evidence tests locally (all passed) and is revalidated by this change's
-  pull-request run (G0-D03 closed).
+  evidence tests locally (all passed) and is revalidated by its pull request
+  (G0-D03 closed). The `a15b347` reports-path change re-ran the same three tests
+  successfully and is revalidated by this change's pull-request run.
 
 ## 3. Open defects
 
@@ -119,8 +125,9 @@ through pull requests. PR #1 demonstrated the gate: `blocked` while the macOS
 checks were queued, `clean` once all 21 check runs passed, then merged.
 
 G0-D02 **closed 2026-11-24**: the process tests now preserve `coverage.json`,
-`manifest.json` and `sat_smoke.json` under `reports/g0`; the artifact hashes are
-in section 2.
+`manifest.json` and `sat_smoke.json` under `GMAX_REPORTS_DIR` (default
+`${CMAKE_BINARY_DIR}/reports/g0`; the gate job pins
+`${GITHUB_WORKSPACE}/reports/g0`); the artifact hashes are in section 2.
 
 No Critical defect is open. G0.1/G0.2/G0.3/G0.7 regressions are caught by the
 pinned-tool job; G0.4 enforcement now lives in repository configuration, and
@@ -180,10 +187,11 @@ only when the following hold; items 1, 3 and 4 are already closed:
    admins enforced); the protection snapshot is hashed in section 2.
 2. W1 and W2 are signed by the architecture owner with dates and expiries.
 3. G0-D02 — **closed 2026-11-24**: the process tests preserve their reports
-   under `reports/g0`, with hashes in section 2.
+   under `GMAX_REPORTS_DIR` (build-tree default; the gate job pins `reports/g0`),
+   with hashes in section 2.
 4. G0-D03 — **closed 2026-11-24**: run `45454925112` passed all ten jobs at the
-   prior pin `1c4572d`; the retention-only change at `32e1237` is revalidated by
-   this change's pull request.
+   prior pin `1c4572d`; the retention change at `32e1237` and the reports-path
+   change at `a15b347` are revalidated by this change's pull request.
 5. The decision below is signed by the DFT lead, architect and verification lead.
 
 Until the remaining two hold, **G0 is not met and WP-101 is not authorized to start.**

@@ -105,7 +105,7 @@ jobs:
       - name: bootstrap pinned MiniSat
         run: sh tools/bootstrap-minisat.sh
       - name: configure gate build
-        run: cmake -S . -B build/gate -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S . -B build/gate -G Ninja -DCMAKE_BUILD_TYPE=Debug -DGMAX_REPORTS_DIR="$GITHUB_WORKSPACE/reports/g0"
       - name: build gate
         run: cmake --build build/gate
       - name: run G0.1 ISCAS'85 coverage gate
