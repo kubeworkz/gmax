@@ -1,0 +1,91 @@
+{
+  "url": "https://api.github.com/repos/kubeworkz/gmax/branches/main/protection",
+  "required_status_checks": {
+    "url": "https://api.github.com/repos/kubeworkz/gmax/branches/main/protection/required_status_checks",
+    "strict": true,
+    "contexts": [
+      "format",
+      "G0 pinned-tool gates",
+      "ubuntu-latest Debug",
+      "ubuntu-latest Release",
+      "windows-latest Debug",
+      "windows-latest Release",
+      "macos-latest Debug",
+      "macos-latest Release",
+      "asan+ubsan",
+      "offline build"
+    ],
+    "contexts_url": "https://api.github.com/repos/kubeworkz/gmax/branches/main/protection/required_status_checks/contexts",
+    "checks": [
+      {
+        "context": "format",
+        "app_id": 15368
+      },
+      {
+        "context": "G0 pinned-tool gates",
+        "app_id": 15368
+      },
+      {
+        "context": "ubuntu-latest Debug",
+        "app_id": 15368
+      },
+      {
+        "context": "ubuntu-latest Release",
+        "app_id": 15368
+      },
+      {
+        "context": "windows-latest Debug",
+        "app_id": 15368
+      },
+      {
+        "context": "windows-latest Release",
+        "app_id": 15368
+      },
+      {
+        "context": "macos-latest Debug",
+        "app_id": 15368
+      },
+      {
+        "context": "macos-latest Release",
+        "app_id": 15368
+      },
+      {
+        "context": "asan+ubsan",
+        "app_id": 15368
+      },
+      {
+        "context": "offline build",
+        "app_id": 15368
+      }
+    ]
+  },
+  "required_signatures": {
+    "url": "https://api.github.com/repos/kubeworkz/gmax/branches/main/protection/required_signatures",
+    "enabled": false
+  },
+  "enforce_admins": {
+    "url": "https://api.github.com/repos/kubeworkz/gmax/branches/main/protection/enforce_admins",
+    "enabled": true
+  },
+  "required_linear_history": {
+    "enabled": false
+  },
+  "allow_force_pushes": {
+    "enabled": false
+  },
+  "allow_deletions": {
+    "enabled": false
+  },
+  "block_creations": {
+    "enabled": false
+  },
+  "required_conversation_resolution": {
+    "enabled": false
+  },
+  "lock_branch": {
+    "enabled": false
+  },
+  "allow_fork_syncing": {
+    "enabled": false
+  }
+}
