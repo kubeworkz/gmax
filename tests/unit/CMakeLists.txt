@@ -145,3 +145,13 @@ gmax_set_warnings(yosys_test)
 gmax_set_sanitizers(yosys_test)
 
 add_test(NAME yosys COMMAND yosys_test)
+
+add_executable(sdc_test
+  sdc_test.cpp)
+
+target_link_libraries(sdc_test PRIVATE gmax_core)
+
+gmax_set_warnings(sdc_test)
+gmax_set_sanitizers(sdc_test)
+
+add_test(NAME sdc COMMAND sdc_test)

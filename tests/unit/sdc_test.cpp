@@ -1,0 +1,214 @@
+// WP-110: restricted SDC parsing, clock/generated-clock relationships, clock
+// groups, test-mode case analysis, capture false paths, and unsupported-command
+// warnings. Framework-free like the other tests.
+
+#include <cstddef>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "core/frontend/diagnostics.h"
+#include "core/frontend/sdc.h"
+
+namespace frontend = gmax::frontend;
+
+namespace {
+
+int failures = 0;
+
+void expect(bool ok, std::string_view what) {
+    if (!ok) {
+        std::cerr << "FAIL " << what << std::endl;
+        ++failures;
+    }
+}
+
+bool contains(std::string_view text, std::string_view needle) {
+    return text.find(needle) != std::string_view::npos;
+}
+
+std::size_t error_count(const frontend::SdcResult& result) {
+    std::size_t count = 0;
+    for (const frontend::Diagnostic& diagnostic : result.diagnostics) {
+        if (diagnostic.is_error()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+void test_full_fixture() {
+    constexpr std::string_view kSdc = R"SDC(
+# synthetic G100-like fixture; no chip data
+create_clock -name clk_a -period 10 -waveform {0 5} [get_ports clk_a]
+create_clock -name clk_b -period 12 [get_ports {clk_b}]
+create_generated_clock -name clk_div -source [get_ports clk_a] \
+  -divide_by 2 [get_pins u_div/Q]
+set_clock_groups -asynchronous -group {clk_a clk_div} -group {clk_b}
+set_false_path -from [get_clocks clk_a] -to [get_clocks clk_b]
+set_case_analysis 1 [get_ports test_mode]
+set_input_delay -clock [get_clocks clk_a] 2.5 [get_ports data_in]
+set_output_delay -clock [get_clocks clk_a] -max 1.0 [get_ports data_out]
+set_driving_cell -lib_cell BUF [get_ports data_in]
+set_load 0.5 [get_ports data_out]
+)SDC";
+
+    const frontend::SdcResult result = frontend::read_sdc(kSdc, "fixture.sdc");
+    expect(result.ok, "the synthetic fixture parses");
+    expect(error_count(result) == 0, "the synthetic fixture has no errors");
+    expect(result.diagnostics.empty(), "the synthetic fixture has no warnings");
+
+    const frontend::SdcConstraints& c = result.constraints;
+    expect(c.clocks.size() == 3, "three clocks are recorded");
+    const frontend::SdcClock* clk_a = c.find_clock("clk_a");
+    expect(clk_a != nullptr, "clk_a is present");
+    if (clk_a != nullptr) {
+        expect(clk_a->period == 10.0, "clk_a keeps its period");
+        expect(clk_a->has_waveform && clk_a->rise == 0.0 && clk_a->fall == 5.0,
+               "clk_a keeps its waveform");
+        expect(clk_a->source == "clk_a" && !clk_a->generated, "clk_a is a primary clock");
+    }
+    const frontend::SdcClock* clk_b = c.find_clock("clk_b");
+    expect(clk_b != nullptr && clk_b->period == 12.0, "clk_b keeps its period");
+    const frontend::SdcClock* clk_div = c.find_clock("clk_div");
+    expect(clk_div != nullptr && clk_div->generated, "clk_div is generated");
+    if (clk_div != nullptr) {
+        expect(clk_div->source == "u_div/Q", "the generated clock keeps its target");
+        expect(clk_div->source_pin == "clk_a", "the generated clock keeps its source");
+        expect(clk_div->divide_by == 2, "the generated clock keeps divide_by");
+    }
+
+    expect(c.clock_groups.size() == 1, "one clock-group command is recorded");
+    if (!c.clock_groups.empty()) {
+        const frontend::SdcClockGroup& group = c.clock_groups.front();
+        expect(group.kind == frontend::SdcClockGroupKind::Asynchronous,
+               "the group is asynchronous");
+        expect(group.groups.size() == 2, "the command has two groups");
+        expect(group.groups[0].size() == 2 && group.groups[0][0] == "clk_a" &&
+                   group.groups[0][1] == "clk_div",
+               "the first group keeps both clocks");
+        expect(group.groups[1].size() == 1 && group.groups[1][0] == "clk_b",
+               "the second group keeps its clock");
+    }
+
+    expect(c.false_paths.size() == 1, "one false path is recorded");
+    if (!c.false_paths.empty()) {
+        expect(c.false_paths[0].from == std::vector<std::string>{"clk_a"},
+               "the false path keeps its from clock");
+        expect(c.false_paths[0].to == std::vector<std::string>{"clk_b"},
+               "the false path keeps its to clock");
+        expect(c.false_paths[0].through.empty(), "the false path has no through list");
+    }
+
+    expect(c.case_analysis.size() == 1, "one case analysis is recorded");
+    const frontend::SdcCaseAnalysis* test_mode = c.find_case("test_mode");
+    expect(test_mode != nullptr && test_mode->value, "test_mode is constrained to 1");
+
+    expect(c.delays.size() == 2, "two delays are recorded");
+    if (c.delays.size() == 2) {
+        expect(c.delays[0].kind == frontend::SdcDelayKind::Input &&
+                   c.delays[0].object == "data_in" && c.delays[0].value == 2.5,
+               "the input delay is recorded");
+        expect(c.delays[1].kind == frontend::SdcDelayKind::Output &&
+                   c.delays[1].object == "data_out" && c.delays[1].value == 1.0 &&
+                   c.delays[1].max && !c.delays[1].min,
+               "the output delay and its max flag are recorded");
+    }
+    expect(c.driving_cells.size() == 1 && c.driving_cells[0].object == "data_in" &&
+               c.driving_cells[0].lib_cell == "BUF",
+           "the driving cell is recorded");
+    expect(c.loads.size() == 1 && c.loads[0].object == "data_out" &&
+               c.loads[0].value == 0.5,
+           "the load is recorded");
+}
+
+void test_unsupported_commands() {
+    constexpr std::string_view kSdc = R"SDC(
+set_operating_conditions slow
+set_max_delay 5 [get_ports foo]
+)SDC";
+    const frontend::SdcResult result = frontend::read_sdc(kSdc, "warnings.sdc");
+    expect(result.ok, "unsupported commands do not fail the parse");
+    expect(result.diagnostics.size() == 2, "both unsupported commands produce warnings");
+    if (result.diagnostics.size() == 2) {
+        expect(result.diagnostics[0].code ==
+                   frontend::DiagnosticCode::SdcUnsupportedCommand,
+               "the first diagnostic is an unsupported-command warning");
+        expect(!result.diagnostics[0].is_error(), "the unsupported command is a warning");
+        expect(contains(result.diagnostics[0].message, "set_operating_conditions"),
+               "the warning names the command");
+        expect(result.diagnostics[0].source.line == 2,
+               "the warning keeps the command line");
+        expect(result.diagnostics[1].source.line == 3,
+               "the second warning keeps its line");
+    }
+}
+
+void test_malformed_commands() {
+    {
+        const frontend::SdcResult result = frontend::read_sdc(
+            "create_clock -period 10\n", "missing-source.sdc");
+        expect(!result.ok, "a clock without a source fails");
+        expect(error_count(result) == 1, "the missing source has one error");
+    }
+    {
+        const frontend::SdcResult result = frontend::read_sdc(
+            "set_clock_groups -asynchronous -group {clk_a}\n", "one-group.sdc");
+        expect(!result.ok, "one clock group fails");
+        expect(!result.diagnostics.empty() &&
+                   result.diagnostics[0].code == frontend::DiagnosticCode::SdcInvalidValue,
+               "the one-group error has the expected code");
+    }
+    {
+        const frontend::SdcResult result = frontend::read_sdc(
+            "set_case_analysis 1 [get_ports test_mode]\n"
+            "set_case_analysis 0 [get_ports test_mode]\n",
+            "case-conflict.sdc");
+        expect(!result.ok, "conflicting case analysis fails");
+        expect(!result.diagnostics.empty() &&
+                   result.diagnostics.back().code ==
+                       frontend::DiagnosticCode::SdcInvalidValue,
+               "the conflict has the expected code");
+    }
+    {
+        const frontend::SdcResult result =
+            frontend::read_sdc("create_clock -period 10 {clk_a\n", "bad-brace.sdc");
+        expect(!result.ok, "an unterminated brace fails");
+        expect(!result.diagnostics.empty() &&
+                   result.diagnostics.back().code == frontend::DiagnosticCode::SdcSyntax,
+               "the brace error has the syntax code");
+    }
+}
+
+
+void test_comments_and_continuation() {
+    constexpr std::string_view kSdc = R"SDC(
+# a continuation keeps the command together
+create_clock -name clk_c \
+  -period 4 [get_ports clk_c]
+set_case_analysis 0 [get_ports "test_mode"]
+)SDC";
+    const frontend::SdcResult result = frontend::read_sdc(kSdc, "continuation.sdc");
+    expect(result.ok, "a continued command parses");
+    expect(result.constraints.clocks.size() == 1 &&
+               result.constraints.find_clock("clk_c") != nullptr,
+           "the continued clock is recorded");
+    expect(result.constraints.find_case("test_mode") != nullptr,
+           "a quoted object name is recorded");
+}
+
+}  // namespace
+
+int main() {
+    test_full_fixture();
+    test_unsupported_commands();
+    test_malformed_commands();
+    test_comments_and_continuation();
+    if (failures != 0) {
+        std::cerr << failures << " SDC test(s) failed" << std::endl;
+        return 1;
+    }
+    std::cout << "all SDC tests passed" << std::endl;
+    return 0;
+}
