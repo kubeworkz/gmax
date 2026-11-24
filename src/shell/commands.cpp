@@ -638,7 +638,6 @@ ExitCode sat_smoke_handler(const Invocation& invocation, std::ostream& out, std:
     return ExitCode::Success;
 }
 
-
 ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::ostream& err) {
     const std::string& sdc_path = invocation.positionals[0];
     const frontend::SdcResult result = frontend::read_sdc_file(sdc_path);
@@ -672,11 +671,9 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
     out << "sdc: " << sdc_path << '\n';
     out << "clocks: " << constraints.clocks.size() << '\n';
     for (const frontend::SdcClock& clock : constraints.clocks) {
-        out << "  clock " << clock.name << " period=" << clock.period << " source="
-            << clock.source;
+        out << "  clock " << clock.name << " period=" << clock.period << " source=" << clock.source;
         if (clock.generated) {
-            out << " generated master=" << clock.master_clock << " source_pin="
-                << clock.source_pin;
+            out << " generated master=" << clock.master_clock << " source_pin=" << clock.source_pin;
             if (clock.divide_by != 0) {
                 out << " divide_by=" << clock.divide_by;
             }
@@ -742,7 +739,8 @@ bool register_commands(Cli& cli, std::string& error) {
 
     CommandSpec sdc_spec;
     sdc_spec.name = "read_sdc";
-    sdc_spec.summary = "parse a restricted SDC subset and report clocks, groups, case analysis and false paths";
+    sdc_spec.summary =
+        "parse a restricted SDC subset and report clocks, groups, case analysis and false paths";
     sdc_spec.positionals = {
         {"sdc", "SDC constraints file", true},
     };

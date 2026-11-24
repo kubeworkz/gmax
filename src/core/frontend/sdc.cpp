@@ -131,8 +131,7 @@ class Lexer {
         if (pos_ + 1 < text_.size() && text_[pos_ + 1] == '\n') {
             return true;
         }
-        return pos_ + 2 < text_.size() && text_[pos_ + 1] == '\r' &&
-               text_[pos_ + 2] == '\n';
+        return pos_ + 2 < text_.size() && text_[pos_ + 1] == '\r' && text_[pos_ + 2] == '\n';
     }
 
     void consume_line_continuation() {
@@ -361,8 +360,8 @@ std::vector<std::string> resolve_token(const Token& token, std::vector<Diagnosti
     if (query != "get_ports" && query != "get_pins" && query != "get_clocks" &&
         query != "get_nets" && query != "get_cells") {
         add_warning(diagnostics, DiagnosticCode::SdcUnsupportedCommand,
-                    "unsupported object query '" + query + "'; no objects returned", query,
-                    source, token.line);
+                    "unsupported object query '" + query + "'; no objects returned", query, source,
+                    token.line);
         return {};
     }
     if (split == std::string::npos) {
@@ -424,8 +423,7 @@ class Parser {
     bool take_value(const Command& command, std::size_t& index, Token& value,
                     std::string_view option);
     bool one_object(const Token& token, std::string& object, std::string_view what);
-    bool many_objects(const Token& token, std::vector<std::string>& objects,
-                      std::string_view what);
+    bool many_objects(const Token& token, std::vector<std::string>& objects, std::string_view what);
     bool add_clock(SdcClock clock);
     bool parse_create_clock(const Command& command);
     bool parse_create_generated_clock(const Command& command);
@@ -685,8 +683,7 @@ bool Parser::parse_create_generated_clock(const Command& command) {
         }
         if (token.kind == Token::Kind::Word && !token.text.empty() && token.text.front() == '-') {
             return error(DiagnosticCode::SdcUnsupportedOption,
-                         "unsupported option '" + token.text +
-                             "' on create_generated_clock",
+                         "unsupported option '" + token.text + "' on create_generated_clock",
                          token.line, token.text);
         }
         targets.push_back(token);
@@ -736,10 +733,9 @@ bool Parser::parse_set_clock_groups(const Command& command) {
 
     for (std::size_t i = 1; i < command.tokens.size(); ++i) {
         const Token& token = command.tokens[i];
-        const bool is_option = token.kind == Token::Kind::Word && !token.text.empty() &&
-                               token.text.front() == '-';
-        if (is_option && (token.text == "-asynchronous" ||
-                          token.text == "-logically_exclusive" ||
+        const bool is_option =
+            token.kind == Token::Kind::Word && !token.text.empty() && token.text.front() == '-';
+        if (is_option && (token.text == "-asynchronous" || token.text == "-logically_exclusive" ||
                           token.text == "-physically_exclusive")) {
             if (has_kind && kind_flag != token.text) {
                 return error(DiagnosticCode::SdcInvalidValue,
@@ -771,8 +767,8 @@ bool Parser::parse_set_clock_groups(const Command& command) {
         }
         if (is_option) {
             return error(DiagnosticCode::SdcUnsupportedOption,
-                         "unsupported option '" + token.text + "' on set_clock_groups",
-                         token.line, token.text);
+                         "unsupported option '" + token.text + "' on set_clock_groups", token.line,
+                         token.text);
         }
         return error(DiagnosticCode::SdcSyntax,
                      "set_clock_groups expects -group options, got '" + token.text + "'",
@@ -790,11 +786,10 @@ bool Parser::parse_set_clock_groups(const Command& command) {
                      "set_clock_groups requires at least two -group options",
                      command.tokens.front().line);
     }
-    group.kind = kind_flag == "-asynchronous"
-                     ? SdcClockGroupKind::Asynchronous
-                     : (kind_flag == "-logically_exclusive"
-                            ? SdcClockGroupKind::LogicallyExclusive
-                            : SdcClockGroupKind::PhysicallyExclusive);
+    group.kind = kind_flag == "-asynchronous" ? SdcClockGroupKind::Asynchronous
+                                              : (kind_flag == "-logically_exclusive"
+                                                     ? SdcClockGroupKind::LogicallyExclusive
+                                                     : SdcClockGroupKind::PhysicallyExclusive);
     group.groups = std::move(groups);
     constraints_.clock_groups.push_back(std::move(group));
     return true;
@@ -806,13 +801,13 @@ bool Parser::parse_set_false_path(const Command& command) {
 
     for (std::size_t i = 1; i < command.tokens.size(); ++i) {
         const Token& token = command.tokens[i];
-        const bool is_option = token.kind == Token::Kind::Word && !token.text.empty() &&
-                               token.text.front() == '-';
+        const bool is_option =
+            token.kind == Token::Kind::Word && !token.text.empty() && token.text.front() == '-';
         if (is_option && (token.text == "-setup" || token.text == "-hold")) {
             continue;
         }
-        if (is_option && (token.text == "-from" || token.text == "-to" ||
-                          token.text == "-through")) {
+        if (is_option &&
+            (token.text == "-from" || token.text == "-to" || token.text == "-through")) {
             Token value;
             if (!take_value(command, i, value, token.text)) {
                 return false;
@@ -832,8 +827,8 @@ bool Parser::parse_set_false_path(const Command& command) {
         }
         if (is_option) {
             return error(DiagnosticCode::SdcUnsupportedOption,
-                         "unsupported option '" + token.text + "' on set_false_path",
-                         token.line, token.text);
+                         "unsupported option '" + token.text + "' on set_false_path", token.line,
+                         token.text);
         }
         return error(DiagnosticCode::SdcSyntax,
                      "set_false_path expects -from, -through or -to options", token.line,
@@ -841,8 +836,8 @@ bool Parser::parse_set_false_path(const Command& command) {
     }
 
     if (path.from.empty() && path.to.empty()) {
-        return error(DiagnosticCode::SdcInvalidValue,
-                     "set_false_path requires -from and/or -to", command.tokens.front().line);
+        return error(DiagnosticCode::SdcInvalidValue, "set_false_path requires -from and/or -to",
+                     command.tokens.front().line);
     }
     constraints_.false_paths.push_back(std::move(path));
     return true;
@@ -860,8 +855,8 @@ bool Parser::parse_set_case_analysis(const Command& command) {
         }
         if (token.kind == Token::Kind::Word && !token.text.empty() && token.text.front() == '-') {
             return error(DiagnosticCode::SdcUnsupportedOption,
-                         "unsupported option '" + token.text + "' on set_case_analysis",
-                         token.line, token.text);
+                         "unsupported option '" + token.text + "' on set_case_analysis", token.line,
+                         token.text);
         }
         if (!has_value) {
             if (token.text != "0" && token.text != "1") {
@@ -926,9 +921,9 @@ bool Parser::parse_delay(const Command& command, const SdcDelayKind kind) {
             }
             continue;
         }
-        if (is_option && (token.text == "-max" || token.text == "-min" ||
-                          token.text == "-add_delay" || token.text == "-rise" ||
-                          token.text == "-fall")) {
+        if (is_option &&
+            (token.text == "-max" || token.text == "-min" || token.text == "-add_delay" ||
+             token.text == "-rise" || token.text == "-fall")) {
             if (token.text == "-max") {
                 has_max = true;
             } else if (token.text == "-min") {
@@ -940,18 +935,18 @@ bool Parser::parse_delay(const Command& command, const SdcDelayKind kind) {
             return error(DiagnosticCode::SdcUnsupportedOption,
                          "unsupported option '" + token.text + "' on " +
                              std::string(kind == SdcDelayKind::Input ? "set_input_delay"
-                                                                    : "set_output_delay"),
+                                                                     : "set_output_delay"),
                          token.line, token.text);
         }
         positionals.push_back(token);
     }
 
     if (positionals.size() < 2) {
-        return error(DiagnosticCode::SdcSyntax,
-                     std::string(kind == SdcDelayKind::Input ? "set_input_delay"
-                                                             : "set_output_delay") +
-                         " requires a value and an object",
-                     command.tokens.front().line);
+        return error(
+            DiagnosticCode::SdcSyntax,
+            std::string(kind == SdcDelayKind::Input ? "set_input_delay" : "set_output_delay") +
+                " requires a value and an object",
+            command.tokens.front().line);
     }
     double value = 0.0;
     if (!parse_double(positionals.front().text, value)) {
@@ -986,8 +981,8 @@ bool Parser::parse_set_driving_cell(const Command& command) {
 
     for (std::size_t i = 1; i < command.tokens.size(); ++i) {
         const Token& token = command.tokens[i];
-        const bool is_option = token.kind == Token::Kind::Word && !token.text.empty() &&
-                               token.text.front() == '-';
+        const bool is_option =
+            token.kind == Token::Kind::Word && !token.text.empty() && token.text.front() == '-';
         if (is_option && token.text == "-lib_cell") {
             Token value;
             if (!take_value(command, i, value, "-lib_cell")) {
@@ -1016,8 +1011,8 @@ bool Parser::parse_set_driving_cell(const Command& command) {
         }
         if (is_option) {
             return error(DiagnosticCode::SdcUnsupportedOption,
-                         "unsupported option '" + token.text + "' on set_driving_cell",
-                         token.line, token.text);
+                         "unsupported option '" + token.text + "' on set_driving_cell", token.line,
+                         token.text);
         }
         objects.push_back(token);
     }
@@ -1037,8 +1032,8 @@ bool Parser::parse_set_driving_cell(const Command& command) {
             return false;
         }
         for (std::string& object : resolved) {
-            constraints_.driving_cells.push_back(SdcDrivingCell{
-                std::move(object), lib_cell, pin, command.tokens.front().line});
+            constraints_.driving_cells.push_back(
+                SdcDrivingCell{std::move(object), lib_cell, pin, command.tokens.front().line});
         }
     }
     return true;

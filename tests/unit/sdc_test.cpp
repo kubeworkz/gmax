@@ -118,8 +118,7 @@ set_load 0.5 [get_ports data_out]
     expect(c.driving_cells.size() == 1 && c.driving_cells[0].object == "data_in" &&
                c.driving_cells[0].lib_cell == "BUF",
            "the driving cell is recorded");
-    expect(c.loads.size() == 1 && c.loads[0].object == "data_out" &&
-               c.loads[0].value == 0.5,
+    expect(c.loads.size() == 1 && c.loads[0].object == "data_out" && c.loads[0].value == 0.5,
            "the load is recorded");
 }
 
@@ -132,43 +131,39 @@ set_max_delay 5 [get_ports foo]
     expect(result.ok, "unsupported commands do not fail the parse");
     expect(result.diagnostics.size() == 2, "both unsupported commands produce warnings");
     if (result.diagnostics.size() == 2) {
-        expect(result.diagnostics[0].code ==
-                   frontend::DiagnosticCode::SdcUnsupportedCommand,
+        expect(result.diagnostics[0].code == frontend::DiagnosticCode::SdcUnsupportedCommand,
                "the first diagnostic is an unsupported-command warning");
         expect(!result.diagnostics[0].is_error(), "the unsupported command is a warning");
         expect(contains(result.diagnostics[0].message, "set_operating_conditions"),
                "the warning names the command");
-        expect(result.diagnostics[0].source.line == 2,
-               "the warning keeps the command line");
-        expect(result.diagnostics[1].source.line == 3,
-               "the second warning keeps its line");
+        expect(result.diagnostics[0].source.line == 2, "the warning keeps the command line");
+        expect(result.diagnostics[1].source.line == 3, "the second warning keeps its line");
     }
 }
 
 void test_malformed_commands() {
     {
-        const frontend::SdcResult result = frontend::read_sdc(
-            "create_clock -period 10\n", "missing-source.sdc");
+        const frontend::SdcResult result =
+            frontend::read_sdc("create_clock -period 10\n", "missing-source.sdc");
         expect(!result.ok, "a clock without a source fails");
         expect(error_count(result) == 1, "the missing source has one error");
     }
     {
-        const frontend::SdcResult result = frontend::read_sdc(
-            "set_clock_groups -asynchronous -group {clk_a}\n", "one-group.sdc");
+        const frontend::SdcResult result =
+            frontend::read_sdc("set_clock_groups -asynchronous -group {clk_a}\n", "one-group.sdc");
         expect(!result.ok, "one clock group fails");
         expect(!result.diagnostics.empty() &&
                    result.diagnostics[0].code == frontend::DiagnosticCode::SdcInvalidValue,
                "the one-group error has the expected code");
     }
     {
-        const frontend::SdcResult result = frontend::read_sdc(
-            "set_case_analysis 1 [get_ports test_mode]\n"
-            "set_case_analysis 0 [get_ports test_mode]\n",
-            "case-conflict.sdc");
+        const frontend::SdcResult result =
+            frontend::read_sdc("set_case_analysis 1 [get_ports test_mode]\n"
+                               "set_case_analysis 0 [get_ports test_mode]\n",
+                               "case-conflict.sdc");
         expect(!result.ok, "conflicting case analysis fails");
         expect(!result.diagnostics.empty() &&
-                   result.diagnostics.back().code ==
-                       frontend::DiagnosticCode::SdcInvalidValue,
+                   result.diagnostics.back().code == frontend::DiagnosticCode::SdcInvalidValue,
                "the conflict has the expected code");
     }
     {
@@ -180,7 +175,6 @@ void test_malformed_commands() {
                "the brace error has the syntax code");
     }
 }
-
 
 void test_comments_and_continuation() {
     constexpr std::string_view kSdc = R"SDC(
@@ -221,13 +215,12 @@ set_output_delay -clock [get_clocks clk] -1.25 [get_ports data_out]
 }
 
 void test_crlf_continuations() {
-    const std::string kSdc =
-        "create_clock -name clk_a -period 10\\"
-        "\r\n"
-        "  [get_ports clk_a]\r\n"
-        "create_clock -name clk_b \\"
-        "\r\n"
-        "  -period 20 [get_ports clk_b]\r\n";
+    const std::string kSdc = "create_clock -name clk_a -period 10\\"
+                             "\r\n"
+                             "  [get_ports clk_a]\r\n"
+                             "create_clock -name clk_b \\"
+                             "\r\n"
+                             "  -period 20 [get_ports clk_b]\r\n";
     const frontend::SdcResult result = frontend::read_sdc(kSdc, "crlf-continuation.sdc");
     expect(result.ok, "CRLF continuations keep commands together");
     expect(result.diagnostics.empty(), "CRLF continuations produce no warnings");
@@ -241,18 +234,16 @@ void test_crlf_continuations() {
 }
 
 void test_braced_continuations() {
-    const std::string lf =
-        "create_clock -name clk_a -period 10 [get_ports clk_a]\n"
-        "create_clock -name clk_b -period 10 [get_ports clk_b]\n"
-        "create_clock -name clk_c -period 10 [get_ports clk_c]\n"
-        "set_clock_groups -asynchronous -group {clk_a\\\n"
-        "  clk_b} -group {clk_c}\n";
-    const std::string crlf =
-        "create_clock -name clk_a -period 10 [get_ports clk_a]\r\n"
-        "create_clock -name clk_b -period 10 [get_ports clk_b]\r\n"
-        "create_clock -name clk_c -period 10 [get_ports clk_c]\r\n"
-        "set_clock_groups -asynchronous -group {clk_a\\\r\n"
-        "  clk_b} -group {clk_c}\r\n";
+    const std::string lf = "create_clock -name clk_a -period 10 [get_ports clk_a]\n"
+                           "create_clock -name clk_b -period 10 [get_ports clk_b]\n"
+                           "create_clock -name clk_c -period 10 [get_ports clk_c]\n"
+                           "set_clock_groups -asynchronous -group {clk_a\\\n"
+                           "  clk_b} -group {clk_c}\n";
+    const std::string crlf = "create_clock -name clk_a -period 10 [get_ports clk_a]\r\n"
+                             "create_clock -name clk_b -period 10 [get_ports clk_b]\r\n"
+                             "create_clock -name clk_c -period 10 [get_ports clk_c]\r\n"
+                             "set_clock_groups -asynchronous -group {clk_a\\\r\n"
+                             "  clk_b} -group {clk_c}\r\n";
 
     struct Case {
         const char* label;
@@ -270,8 +261,7 @@ void test_braced_continuations() {
             continue;
         }
         const frontend::SdcClockGroup& group = result.constraints.clock_groups.front();
-        expect(group.groups.size() == 2,
-               std::string(test.label) + " records both braced groups");
+        expect(group.groups.size() == 2, std::string(test.label) + " records both braced groups");
         if (group.groups.size() == 2) {
             expect(group.groups[0] == std::vector<std::string>{"clk_a", "clk_b"},
                    std::string(test.label) + " splits the continued braced list into clocks");
