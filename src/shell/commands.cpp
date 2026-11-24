@@ -26,6 +26,7 @@
 #include "core/db/design.h"
 #include "core/db/status.h"
 #include "core/frontend/diagnostics.h"
+#include "core/frontend/sdc.h"
 #include "core/frontend/yosys.h"
 #include "core/report/report.h"
 #include "core/sim/fault.h"
@@ -637,6 +638,90 @@ ExitCode sat_smoke_handler(const Invocation& invocation, std::ostream& out, std:
     return ExitCode::Success;
 }
 
+ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::ostream& err) {
+    const std::string& sdc_path = invocation.positionals[0];
+    const frontend::SdcResult result = frontend::read_sdc_file(sdc_path);
+    if (!result.diagnostics.empty()) {
+        print_diagnostics(result.diagnostics, err);
+    }
+    if (!result.ok) {
+        if (result.diagnostics.empty()) {
+            err << "gmax: the SDC frontend failed without a diagnostic\n";
+        }
+        return ExitCode::Design;
+    }
+
+    const frontend::SdcConstraints& constraints = result.constraints;
+    std::size_t warnings = 0;
+    for (const frontend::Diagnostic& diagnostic : result.diagnostics) {
+        if (!diagnostic.is_error()) {
+            ++warnings;
+        }
+    }
+    std::size_t input_delays = 0;
+    std::size_t output_delays = 0;
+    for (const frontend::SdcDelay& delay : constraints.delays) {
+        if (delay.kind == frontend::SdcDelayKind::Input) {
+            ++input_delays;
+        } else {
+            ++output_delays;
+        }
+    }
+
+    out << "sdc: " << sdc_path << '\n';
+    out << "clocks: " << constraints.clocks.size() << '\n';
+    for (const frontend::SdcClock& clock : constraints.clocks) {
+        out << "  clock " << clock.name << " period=" << clock.period << " source=" << clock.source;
+        if (clock.generated) {
+            out << " generated master=" << clock.master_clock << " source_pin=" << clock.source_pin;
+            if (clock.divide_by != 0) {
+                out << " divide_by=" << clock.divide_by;
+            }
+            if (clock.multiply_by != 0) {
+                out << " multiply_by=" << clock.multiply_by;
+            }
+        }
+        out << '\n';
+    }
+    out << "clock groups: " << constraints.clock_groups.size() << '\n';
+    for (const frontend::SdcClockGroup& group : constraints.clock_groups) {
+        out << "  group " << frontend::sdc_clock_group_kind_name(group.kind);
+        for (const std::vector<std::string>& clocks : group.groups) {
+            out << " [";
+            for (std::size_t i = 0; i < clocks.size(); ++i) {
+                if (i != 0) {
+                    out << ' ';
+                }
+                out << clocks[i];
+            }
+            out << ']';
+        }
+        out << '\n';
+    }
+    out << "case analysis: " << constraints.case_analysis.size() << '\n';
+    for (const frontend::SdcCaseAnalysis& item : constraints.case_analysis) {
+        out << "  case " << item.object << '=' << (item.value ? '1' : '0') << '\n';
+    }
+    out << "false paths: " << constraints.false_paths.size() << '\n';
+    for (const frontend::SdcFalsePath& path : constraints.false_paths) {
+        out << "  false_path from=";
+        for (std::size_t i = 0; i < path.from.size(); ++i) {
+            out << (i == 0 ? "" : ",") << path.from[i];
+        }
+        out << " to=";
+        for (std::size_t i = 0; i < path.to.size(); ++i) {
+            out << (i == 0 ? "" : ",") << path.to[i];
+        }
+        out << '\n';
+    }
+    out << "input delays: " << input_delays << '\n';
+    out << "output delays: " << output_delays << '\n';
+    out << "driving cells: " << constraints.driving_cells.size() << '\n';
+    out << "loads: " << constraints.loads.size() << '\n';
+    out << "warnings: " << warnings << '\n';
+    return ExitCode::Success;
+}
+
 }  // namespace
 
 bool register_commands(Cli& cli, std::string& error) {
@@ -649,6 +734,17 @@ bool register_commands(Cli& cli, std::string& error) {
         {"top", "top module name", true},
     };
     if (!cli.add_command(std::move(read_spec), read_verilog_handler, error)) {
+        return false;
+    }
+
+    CommandSpec sdc_spec;
+    sdc_spec.name = "read_sdc";
+    sdc_spec.summary =
+        "parse a restricted SDC subset and report clocks, groups, case analysis and false paths";
+    sdc_spec.positionals = {
+        {"sdc", "SDC constraints file", true},
+    };
+    if (!cli.add_command(std::move(sdc_spec), read_sdc_handler, error)) {
         return false;
     }
 

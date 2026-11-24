@@ -15,6 +15,7 @@ add_library(gmax_core STATIC
   frontend/expr.cpp
   frontend/json.cpp
   frontend/liberty.cpp
+  frontend/sdc.cpp
   frontend/yosys.cpp
   frontend/yosys_recipe.cpp
   report/report.cpp
