@@ -1,4 +1,5 @@
 add_subdirectory(unit)
+add_subdirectory(differential)
 
 find_program(GMAX_PYTHON_EXECUTABLE NAMES python3 python)
 
@@ -62,6 +63,19 @@ add_test(NAME cli.threads
     -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-threads
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/threads.cmake)
+
+# G0.7 / architecture 10.4: the 64-lane fault simulator must match the scalar
+# reference on every net. Raw faults on all c432 nets are simulated over a fixed
+# pattern set and any disagreement fails the test. It shares the pinned-Yosys
+# prerequisite with the ISCAS'85 test and is made mandatory by GMAX_G0_7_GATE=1
+# in the gate job.
+add_test(NAME sim.fault-diff
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DDIFF_BINARY=$<TARGET_FILE:fault_diff>
+    -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/fault-diff
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/fault_diff.cmake)
 
 # G0.2 requires an independent SAT cross-check, not just a second call into
 # our own solver. This runs the two c432 smoke cases through Yosys `sat` on a

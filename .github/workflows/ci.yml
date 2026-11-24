@@ -61,11 +61,11 @@ jobs:
 
   # The pinned-tool gates are deliberately separate from the default test
   # matrix. The regular ctest invocation stays skip-friendly when Yosys or
-  # MiniSat are absent; this job sets GMAX_G0_2_GATE=1 and GMAX_G0_3_GATE=1 and
-  # uses the pinned caches, so a missing or broken tool fails CI instead of
-  # producing weaker evidence.
+  # MiniSat are absent; this job sets the GMAX_G0_*_GATE flags and uses the
+  # pinned caches, so a missing or broken tool fails CI instead of producing
+  # weaker evidence.
   sat-gate:
-    name: G0.2/G0.3 gates
+    name: G0.2/G0.3/G0.7 gates
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -118,3 +118,8 @@ jobs:
           GMAX_G0_3_GATE: "1"
           GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
         run: ctest --test-dir build/gate -R '^cli\.threads$' --no-tests=error --output-on-failure
+      - name: run G0.7 fault-simulation differential gate
+        env:
+          GMAX_G0_7_GATE: "1"
+          GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
+        run: ctest --test-dir build/gate -R '^sim\.fault-diff$' --no-tests=error --output-on-failure

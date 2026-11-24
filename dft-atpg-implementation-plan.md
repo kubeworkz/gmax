@@ -1,8 +1,8 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.8 for review — supersedes v0.7, which accepted the pattern-IR and threading ADRs.
+**Status:** Draft v0.9 for review — supersedes v0.8, which recorded the G0.3 thread-determinism evidence.
 **Date:** 2026-11-24
-**Revision:** v0.8, 2026-11-24 — Recorded the G0.3 thread-determinism evidence: `run_atpg` gains `--threads N` with 64-fault work units merged by fault ID (ADR-011), defaulting to one thread, and the `cli.threads` gate compares 1-thread and N-thread c432 reports. No scope, package, gate, effort or capacity figure changed.
+**Revision:** v0.9, 2026-11-24 — Recorded the G0.7 differential evidence: `sim.fault-diff` compares the 64-lane fault simulator with the scalar reference on the raw stuck-at list of every c432 net over 256 deterministic patterns, failing on any detection or first-pattern disagreement. No scope, package, gate, effort or capacity figure changed.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
 **Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at blob `d9ae07254b87e5b3b5e2b41672613ac8fee340c9`, the MUX2-clarification revision, landed in the same commit as plan v0.5.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
@@ -506,6 +506,15 @@ abort cannot mask a merge-order defect. CI runs the test in the pinned-Yosys
 gate job with `GMAX_G0_3_GATE=1`; the default ctest matrix remains
 skip-friendly.
 
+G0.7 evidence is `sim.fault-diff`: the raw stuck-at list on c432 — both stuck
+values on all 350 nets, 700 faults — is simulated over 256 deterministic
+patterns (all-zero, all-one, alternating, X-seeded, then a fixed-seed
+pseudo-random sequence) by the 64-lane engine and by the scalar reference. The
+detection set and the first detecting pattern must match fault for fault, and
+any disagreement fails the run; the harness reports 691 detected faults on the
+current netlist. CI runs it in the pinned-Yosys gate job with
+`GMAX_G0_7_GATE=1`; the default ctest matrix remains skip-friendly.
+
 ### G1 — M5 (Vertical slice)
 
 | # | Criterion | Threshold | Source | Evidence | Owner |
@@ -701,6 +710,7 @@ The plan's baseline is the architecture blob recorded at the top of this documen
 
 | Rev | Date | What moved | Plan hash |
 |---|---|---|---|
+| v0.9 | 2026-11-24 | Recorded the G0.7 differential evidence: `sim.fault-diff` runs the 64-lane fault simulator and the scalar reference over the 700 raw stuck-at faults on all 350 c432 nets for 256 deterministic patterns, requiring identical detection sets and first detecting patterns. No scope, package, gate, effort or capacity figure changed. | `sha256:c6034b93e654744a83321ff222cc03261284c37bde62499983aa6c4cd51d5429` |
 | v0.8 | 2026-11-24 | Recorded the G0.3 evidence: `run_atpg --threads N` grades fixed 64-fault chunks and merges by fault ID (ADR-011), defaulting to one thread; the `cli.threads` gate compares 1-thread and 4-thread c432 coverage byte for byte and manifests with only `options.threads` differing. No scope, package, gate, effort or capacity figure changed. | `sha256:4d916157563c26d86961a18ee05afa245062e16926d95d5c084b64a56f1134c3` |
 | v0.7 | 2026-11-24 | Accepted ADR-010 (canonical pattern IR, STIL boundary, structural equality and canonical hash) and ADR-011 (fixed thread pool, 64-fault work units, merge by fault ID, budget-abort exclusion), completing G0.6, and recorded the G0.6 evidence with its WP-106 and G0.3 obligations. No scope, package, gate, effort or capacity figure changed. | `sha256:749df5d0733de564073478589ac36d79075e90798797ef9f5cea6edd2853cf5f` |
 | v0.6 | 2026-11-24 | Recorded the G0.2 SAT smoke evidence: the pinned Yosys `cross_check`, the pinned MiniSat 2.2.1 `minisat_check`, the `GMAX_G0_2_GATE=1` hard-failure mode, and the separate `sat-gate` CI job. The default ctest matrix remains skip-friendly. No scope, package, gate, effort or capacity figure changed. | `sha256:8fbe5402a28ead444b7e815d7f0d5d66b08185cbfa75752ca97bc337898c3b40` |
