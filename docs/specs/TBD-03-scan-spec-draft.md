@@ -13,6 +13,8 @@
   architecture baseline blob `d9ae07254b87e5b3b5e2b41672613ac8fee340c9`.
 - Target artifact after freeze: `profiles/g100/<block>-scan.yaml`, with the
   block selected by TBD-10.
+- Freeze boundary: `constraints.x_sources` is **outside TBD-03** (TBD-07);
+  the frozen scan artifact omits the key.
 
 > This is an intake draft, not a frozen scan spec. Unknown G100 values are left
 > deliberately unresolved. It must not be loaded by insertion, treated as TBD-03
@@ -52,6 +54,30 @@ file.
   clock/test-mode/scan-I/O port name, and WP-101 lead confirmation of
   consumability. G0-D04 closes only when the accepted path and hash are recorded
   in the gate pack.
+
+### 1.2 Freeze boundary for `constraints.x_sources`
+
+`constraints.x_sources` is **outside the TBD-03 freeze.** TBD-03 is the scan
+specification: the twelve fields in package section 5.1 plus the `scan:` values
+and `constraints.test_mode_ports`. The X-source inventory/policy is TBD-07,
+needed at M2, and blocks WP-209, not WP-101 or WP-102 (plan section 13).
+Including it here would make TBD-03 depend on TBD-07 and would delay WP-101 for
+an input WP-101 does not consume.
+
+The frozen-file contract is therefore:
+
+- The TBD-03 artifact contains the `scan:` values and
+  `constraints.test_mode_ports`, plus the signed-table values. It **omits**
+  `constraints.x_sources` entirely: no `x_sources: null`, no placeholder, and no
+  empty list.
+- The G0-D04 path/hash covers the TBD-03 scan artifact only. It makes no claim
+  that TBD-07 is complete.
+- TBD-07 adds `constraints.x_sources` to the broader G100 profile as a separate
+  dated revision after this freeze. That addition does not reopen TBD-03 and is
+  not part of the TBD-03 signature or hash.
+- If the project later requires one combined profile file, TBD-07 records the
+  new path/hash; the TBD-03 record remains the scan baseline and is not
+  retroactively widened.
 
 ## 2. Field-by-field draft
 
@@ -270,12 +296,16 @@ scan:
   async_controls: null      # groups + test-mode value/bypass
 constraints:
   test_mode_ports: null     # name/direction/active/default/SE relationship
-  x_sources: null           # TBD-07; not invented here
 ```
+
+`constraints.x_sources` is deliberately absent: it is outside TBD-03 (section
+1.2). Do not add a null placeholder to the frozen file.
 
 ### 3.1 Signed-table values not covered by section 3 keys
 
-The package requires these values in the same frozen file, in a signed table:
+The package requires these values in the same frozen file, in a signed table.
+`constraints.x_sources` is not listed: it is outside TBD-03 (section 1.2) and is
+TBD-07's separate profile input.
 
 | Value | Draft state |
 |---|---|
@@ -290,13 +320,13 @@ The package requires these values in the same frozen file, in a signed table:
 | Gated-clock bypass method and ports | UNRESOLVED — TBD-02a/b |
 | Power-domain boundaries or single-domain statement | UNRESOLVED — TBD-02a/Design |
 | Chain order, tie-breaks, chain IDs, scan-map bit numbering | Policy provisional; bit order fixed |
-| `constraints.x_sources` | UNRESOLVED — TBD-07 |
 
 ## 4. Unresolved G100 assumptions
 
-Every row is an assumption or missing G100 input that the draft does **not**
-resolve. A row marked BLOCKED prevents TBD-03 freeze; a row marked DEFERRED does
-not, but must be recorded so it is not mistaken for a frozen value.
+Every row is an assumption, missing G100 input, or explicit scope boundary that
+the draft does **not** resolve. **BLOCKED** prevents TBD-03 freeze; **DEFERRED**
+does not, but must be recorded so it is not mistaken for a frozen value;
+**OUTSIDE TBD-03** is not part of this freeze at all.
 
 | ID | Assumption or missing input | State | Resolve via | Effect on this spec |
 |---|---|---|---|---|
@@ -312,14 +342,14 @@ not, but must be recorded so it is not mistaken for a frozen value.
 | A10 | Power-domain boundaries are not available; no explicit single-domain statement is signed, and no UPF is assumed. | BLOCKED | TBD-02a, Design | Field 2.11 |
 | A11 | Incompatible clock groups and lockup insertion points are not defined. | BLOCKED | DFT, SDC clock plan | Field 2.9 |
 | A12 | Physical placement is unavailable (`TBD-12`, M13); v1 proposes name-order tie-breaks. | DEFERRED | TBD-12 | Field 2.12; physical-aware order reopens later |
-| A13 | The X-source inventory/policy is not available; `constraints.x_sources` is outside TBD-03's twelve fields. | DEFERRED | TBD-07 (M2) | Profile use for X-aware work; WP-209, not WP-101 |
+| A13 | `constraints.x_sources` is explicitly outside TBD-03; TBD-07 owns the X-source inventory/policy. | OUTSIDE TBD-03 | TBD-07 (M2) | G100 profile for X-aware work; WP-209, not WP-101 |
 | A14 | The architecture section 3 values (64 chains, 2500-bit length, `tck_a`/`tck_b`, `tsmc_n5`, `test_mode`) are illustrative, not G100 data. | CONFIRMED — not data | Architecture section 3 | All fields; these values must not be copied as decisions |
 | A15 | The compression decision (TBD-05, M3) may change the target chain count after this spec freezes. | DEFERRED | TBD-05 | Field 2.4; any change reopens the spec |
 | A16 | The ATE platform/tester is not selected; the profile's `tester` key remains outside this scan spec. | DEFERRED | TBD-04 | WP-211, not WP-101 |
 
 No other G100 values are assumed beyond the provisional defaults recorded above.
-In particular, this draft does **not** assume a
-single clock, a single power domain, a particular scan I/O count, a dedicated
+In particular, this draft does **not** assume a single
+clock, a single power domain, a particular scan I/O count, a dedicated
 scan cell, an active level for SE, or a final chain count.
 
 ## 5. Freeze and acceptance status
@@ -358,7 +388,8 @@ acceptance record.
 - It does not authorize or start WP-101 or WP-102.
 - It does not create a profile, insert scan cells, modify the netlist, or change
   source, tests, or build configuration.
-- It does not define the TBD-06 capture procedure or the TBD-07 X-source policy.
+- It does not define the TBD-06 capture procedure or the TBD-07 X-source policy,
+  and it deliberately omits `constraints.x_sources`.
 - It does not select a G100 block, library, clock, pin map, or chain count by
   implication.
 
@@ -372,7 +403,9 @@ acceptance record.
    confirms all port and clock names.
 4. The WP-101 lead reviews consumability, then the DFT lead freezes and signs the
    artifact and records its path and SHA-256 in the gate pack.
-5. A separate written WP-101 start authorization remains required. Until then,
+5. TBD-07 adds `constraints.x_sources` to the G100 profile at M2 as a separate
+   revision; it does not reopen the TBD-03 freeze.
+6. A separate written WP-101 start authorization remains required. Until then,
    WP-101 stays blocked even if this document is reviewed or merged.
 
 ---
