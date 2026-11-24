@@ -3,6 +3,12 @@ add_subdirectory(differential)
 
 find_program(GMAX_PYTHON_EXECUTABLE NAMES python3 python)
 
+# G0 evidence retention: process tests copy their reports here before deleting
+# their work directories. The tree is generated, not tracked; the gate pack
+# records the artifact hashes.
+set(GMAX_REPORTS_DIR "${CMAKE_SOURCE_DIR}/reports/g0" CACHE PATH
+  "Directory where process tests preserve coverage and run reports")
+
 # WP-010's executable contract: the schema only matters if the installed gmax
 # wires it up. cli_test owns the exhaustive parser and exit-code cases; these
 # ctest entries check the process-level flags.
@@ -51,6 +57,7 @@ add_test(NAME cli.iscas85
     -DGMAX_BINARY=$<TARGET_FILE:gmax>
     -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-iscas85
+    -DGMAX_REPORTS_DIR=${GMAX_REPORTS_DIR}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/iscas85.cmake)
 
 # G0.3 / ADR-011: c432 run with one worker thread and with four must write
@@ -62,6 +69,7 @@ add_test(NAME cli.threads
     -DGMAX_BINARY=$<TARGET_FILE:gmax>
     -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-threads
+    -DGMAX_REPORTS_DIR=${GMAX_REPORTS_DIR}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/threads.cmake)
 
 # G0.7 / architecture 10.4: the 64-lane fault simulator must match the scalar
@@ -90,4 +98,5 @@ add_test(NAME cli.sat-smoke
     -DGMAX_SOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DPYTHON_EXECUTABLE=${GMAX_PYTHON_EXECUTABLE}
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sat-smoke
+    -DGMAX_REPORTS_DIR=${GMAX_REPORTS_DIR}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sat_smoke.cmake)

@@ -3,7 +3,7 @@
 # recorded worker count. The wall-clock budget is disabled so a timeout cannot
 # mask a merge-order defect. GMAX_G0_3_GATE=1 makes a missing pinned Yosys a
 # hard failure instead of a skip, mirroring the G0.2 gate.
-foreach(required GMAX_BINARY GMAX_SOURCE_DIR WORK_DIR)
+foreach(required GMAX_BINARY GMAX_SOURCE_DIR WORK_DIR GMAX_REPORTS_DIR)
     if(NOT DEFINED ${required})
         message(FATAL_ERROR "${required} is required")
     endif()
@@ -18,7 +18,7 @@ if(NOT DEFINED ENV{GMAX_YOSYS} OR NOT EXISTS "$ENV{GMAX_YOSYS}")
 endif()
 
 set(netlist_dir "${GMAX_SOURCE_DIR}/tests/benchmarks/iscas85")
-file(REMOVE_RECURSE "${WORK_DIR}")
+file(REMOVE_RECURSE "${WORK_DIR}" "${GMAX_REPORTS_DIR}/threads")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
 function(run_gmax expected_result)
@@ -88,6 +88,21 @@ string(REGEX REPLACE "\"threads\":[0-9]+" "\"threads\":N" normalized_one "${mani
 string(REGEX REPLACE "\"threads\":[0-9]+" "\"threads\":N" normalized_four "${manifest_four}")
 if(NOT "${normalized_one}" STREQUAL "${normalized_four}")
     message(FATAL_ERROR "manifests differ beyond options.threads")
+endif()
+
+# Preserve both thread-count runs outside the work directory.
+file(MAKE_DIRECTORY "${GMAX_REPORTS_DIR}/threads/one" "${GMAX_REPORTS_DIR}/threads/four")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy "${one_coverage}"
+    "${GMAX_REPORTS_DIR}/threads/one/coverage.json" RESULT_VARIABLE copy_one_coverage)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy "${one_manifest}"
+    "${GMAX_REPORTS_DIR}/threads/one/manifest.json" RESULT_VARIABLE copy_one_manifest)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy "${report}/coverage.json"
+    "${GMAX_REPORTS_DIR}/threads/four/coverage.json" RESULT_VARIABLE copy_four_coverage)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E copy "${report}/manifest.json"
+    "${GMAX_REPORTS_DIR}/threads/four/manifest.json" RESULT_VARIABLE copy_four_manifest)
+if(NOT copy_one_coverage STREQUAL "0" OR NOT copy_one_manifest STREQUAL "0"
+   OR NOT copy_four_coverage STREQUAL "0" OR NOT copy_four_manifest STREQUAL "0")
+    message(FATAL_ERROR "cannot preserve the thread determinism reports")
 endif()
 
 file(REMOVE_RECURSE "${WORK_DIR}")
