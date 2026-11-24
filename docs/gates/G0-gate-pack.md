@@ -17,7 +17,7 @@ test hashes and the CI run identity below no longer describe it.
 | G0.1 | c432 and c499 end-to-end from CLI | 100% of testable faults on both | **Met** | `tests/process/iscas85.cmake`; CI step "run G0.1 ISCAS'85 coverage gate" | test `sha256:35cc69d6…`; run `45440639492`, job `138610464419`; `cli.iscas85` passed 33.64 s |
 | G0.2 | SAT smoke | ≥1 SAT and ≥1 UNSAT on c432; MiniSat agrees | **Met** | `tests/process/sat_smoke.cmake`, `sat_smoke.py`; `cross_check` (Yosys 0.71) and `minisat_check` (2.2.1) | test `sha256:dfe7e4a7…`, `sha256:6a85ea4f…`; same run, step "run G0.2 SAT smoke gate", success |
 | G0.3 | Determinism | 1-thread and N-thread pattern/coverage hashes identical | **Waived — coverage leg met, pattern leg deferred** (W1) | `tests/process/threads.cmake`: 1 vs 4 workers, byte-identical `coverage.json`, manifests differ only `options.threads` | test `sha256:4b84fd78…`; same run, step "run G0.3 thread determinism gate", success |
-| G0.4 | Commit gate | Debug/release, unit tests, sanitizer smoke, format/lint block a merge | **Met** | `.github/workflows/ci.yml` runs all ten jobs; `main` branch protection requires every one, strict and enforced for admins (verified 2026-11-24); red run `45326575526`, green run `45436627671` | config `sha256:f833eea1…`; protection snapshot `docs/gates/G0-branch-protection.json` `sha256:c5525d0c…` (`protected: true`, 10 contexts, `enforce_admins: true`) |
+| G0.4 | Commit gate | Debug/release, unit tests, sanitizer smoke, format/lint block a merge | **Met** | `.github/workflows/ci.yml` runs all ten jobs; `main` branch protection requires every one, strict and enforced for admins (verified 2026-11-24); PR #1 reported `blocked` then `clean`; red run `45326575526`, green run `45436627671` | config `sha256:f833eea1…`; protection snapshot `docs/gates/G0-branch-protection.json` `sha256:c5525d0c…` (`protected: true`, 10 contexts, `enforce_admins: true`) |
 | G0.5 | Reproducibility | Every run emits a complete manifest | **Waived — ATPG-run scope** (W2) | `run_atpg` writes `manifest.json`; `cli.iscas85` asserts schema, netlist/fault/coverage/stage hashes and byte-identical repeat | `src/core/report/report.cpp` `sha256:e707e6f4…`; `report.h` `sha256:e8cd354b…`; `src/shell/commands.cpp` `sha256:b522df83…` |
 | G0.6 | ADRs | 009–011 accepted | **Met** | `docs/adr/ADR-009-sat-integration.md`, `ADR-010-pattern-ir.md`, `ADR-011-deterministic-threading.md`, all `Accepted` | `sha256:9c15584c…`, `sha256:a97521ab…`, `sha256:57e5549e…` |
 | G0.7 | Simulation agreement | 64-lane matches scalar on every net of c432 | **Met** | `tests/differential/fault_diff.cpp`, `tests/process/fault_diff.cmake`; 350 nets, 700 raw faults, 256 patterns, **691 detected**, detection and first-pattern agreement | `sha256:e71178b0…`, `sha256:8dfe0c03…`; same run, step "run G0.7 fault-simulation differential gate", success |
@@ -72,6 +72,9 @@ CI evidence identities:
   success; `cli.iscas85` passed 33.64 s.
 - G0.4 red run: `45326575526` on `824d632` (Windows `NOMINMAX` failure).
 - G0.4 green run: `45436627671` on `fa90c6b`, all ten jobs success.
+- G0.4 pull-request verification: PR #1 was `mergeable_state: blocked` while
+  the last macOS check was queued, then `clean` once all 21 check runs passed;
+  merged as `645474b`.
 - G0.4 enforcement: `main` protected 2026-11-24; required contexts `format`,
   `G0 pinned-tool gates`, `ubuntu-latest Debug`, `ubuntu-latest Release`,
   `windows-latest Debug`, `windows-latest Release`, `macos-latest Debug`,
@@ -96,8 +99,10 @@ CI evidence identities:
 
 G0-D01 **closed 2026-11-24**: `main` now requires all ten CI checks, with
 strict up-to-date and admin enforcement, verified through the branch and
-protection APIs. Required status checks gate pull-request merges, not direct
-pushes; a direct push can still place a red commit on `main` before CI finishes.
+protection APIs. The rule also rejects direct pushes whose commit has no check
+runs (`GH006: 10 of 10 required status checks are expected`), so changes land
+through pull requests. PR #1 demonstrated the gate: `blocked` while the macOS
+checks were queued, `clean` once all 21 check runs passed, then merged.
 
 No Critical defect is open. G0.1/G0.2/G0.3/G0.7 regressions are caught by the
 pinned-tool job; G0.4 enforcement now lives in repository configuration, and
