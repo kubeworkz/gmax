@@ -1,4 +1,5 @@
 /build/
+/reports/
 CMakeUserPresets.json
 __pycache__/
 *.pyc

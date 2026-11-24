@@ -14,7 +14,7 @@
 # With the gate set, a missing Yosys or MiniSat binary is a hard failure; the
 # gate cannot pass on Yosys alone.
 
-foreach(required GMAX_BINARY GMAX_SOURCE_DIR PYTHON_EXECUTABLE WORK_DIR)
+foreach(required GMAX_BINARY GMAX_SOURCE_DIR PYTHON_EXECUTABLE WORK_DIR GMAX_REPORTS_DIR)
     if(NOT DEFINED ${required})
         message(FATAL_ERROR "${required} is required")
     endif()
@@ -149,5 +149,9 @@ endif()
 if(g0_2_gate)
     message(STATUS "G0.2 gate: Yosys and MiniSat both agree on the two c432 cases")
 endif()
+
+# Preserve the gate evidence outside the work directory.
+file(MAKE_DIRECTORY "${GMAX_REPORTS_DIR}")
+file(COPY "${report}" DESTINATION "${GMAX_REPORTS_DIR}")
 
 file(REMOVE_RECURSE "${WORK_DIR}")

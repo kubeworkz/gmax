@@ -6,7 +6,7 @@
 # benchmark counts and hashes and reruns c499 in place to catch nondeterministic
 # report bytes.
 
-foreach(required GMAX_BINARY GMAX_SOURCE_DIR WORK_DIR)
+foreach(required GMAX_BINARY GMAX_SOURCE_DIR WORK_DIR GMAX_REPORTS_DIR)
     if(NOT DEFINED ${required})
         message(FATAL_ERROR "${required} is required")
     endif()
@@ -21,7 +21,7 @@ if(NOT DEFINED ENV{GMAX_YOSYS} OR NOT EXISTS "$ENV{GMAX_YOSYS}")
 endif()
 
 set(netlist_dir "${GMAX_SOURCE_DIR}/tests/benchmarks/iscas85")
-file(REMOVE_RECURSE "${WORK_DIR}")
+file(REMOVE_RECURSE "${WORK_DIR}" "${GMAX_REPORTS_DIR}/iscas85")
 file(MAKE_DIRECTORY "${WORK_DIR}")
 
 function(run_gmax expected_result)
@@ -183,5 +183,12 @@ endif()
 if(NOT "${manifest_again}" STREQUAL "${manifest_first}")
     message(FATAL_ERROR "c499 run manifest is not byte-identical across repeated runs")
 endif()
+
+# Preserve the gate evidence outside the work directory. The manifest embeds
+# the input paths, so these hashes identify this run's artifacts; the gate pack
+# records them alongside the run identity.
+file(MAKE_DIRECTORY "${GMAX_REPORTS_DIR}/iscas85/c432" "${GMAX_REPORTS_DIR}/iscas85/c499")
+file(COPY "${c432_coverage}" "${c432_manifest}" DESTINATION "${GMAX_REPORTS_DIR}/iscas85/c432")
+file(COPY "${c499_coverage}" "${c499_manifest}" DESTINATION "${GMAX_REPORTS_DIR}/iscas85/c499")
 
 file(REMOVE_RECURSE "${WORK_DIR}")
