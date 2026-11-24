@@ -82,9 +82,8 @@ class Lexer {
                 }
                 continue;
             }
-            if (c == '\\' && pos_ + 1 < text_.size() && text_[pos_ + 1] == '\n') {
-                pos_ += 2;
-                ++line_;
+            if (at_line_continuation()) {
+                consume_line_continuation();
                 continue;
             }
 
@@ -125,6 +124,22 @@ class Lexer {
         current.clear();
     }
 
+    bool at_line_continuation() const {
+        if (pos_ >= text_.size() || text_[pos_] != '\\') {
+            return false;
+        }
+        if (pos_ + 1 < text_.size() && text_[pos_ + 1] == '\n') {
+            return true;
+        }
+        return pos_ + 2 < text_.size() && text_[pos_ + 1] == '\r' &&
+               text_[pos_ + 2] == '\n';
+    }
+
+    void consume_line_continuation() {
+        pos_ += text_[pos_ + 1] == '\r' ? 3 : 2;
+        ++line_;
+    }
+
     bool fail(std::string message) {
         add_error(diagnostics_, DiagnosticCode::SdcSyntax, std::move(message), {}, source_, line_);
         return false;
@@ -138,12 +153,10 @@ class Lexer {
             if (is_space(c) || c == '\n' || c == ';' || c == '[' || c == ']') {
                 break;
             }
+            if (at_line_continuation()) {
+                break;
+            }
             if (c == '\\' && pos_ + 1 < text_.size()) {
-                if (text_[pos_ + 1] == '\n') {
-                    pos_ += 2;
-                    ++line_;
-                    continue;
-                }
                 token.text.push_back(text_[pos_ + 1]);
                 pos_ += 2;
                 continue;
@@ -197,6 +210,11 @@ class Lexer {
                 ++pos_;
                 return true;
             }
+            if (at_line_continuation()) {
+                token.text.push_back(' ');
+                consume_line_continuation();
+                continue;
+            }
             if (c == '\\' && pos_ + 1 < text_.size()) {
                 const char escaped = text_[pos_ + 1];
                 if (escaped == '\n') {
@@ -231,6 +249,11 @@ class Lexer {
         bool quoted = false;
         while (pos_ < text_.size()) {
             const char c = text_[pos_];
+            if (at_line_continuation()) {
+                token.text.push_back(' ');
+                consume_line_continuation();
+                continue;
+            }
             if (c == '\\' && pos_ + 1 < text_.size()) {
                 token.text.push_back(c);
                 token.text.push_back(text_[pos_ + 1]);
@@ -362,6 +385,11 @@ bool parse_double(const std::string& text, double& value) {
     }
     value = parsed;
     return true;
+}
+
+bool is_number(const std::string& text) {
+    double ignored = 0.0;
+    return parse_double(text, ignored);
 }
 
 bool parse_positive_int(const std::string& text, int& value) {
@@ -882,7 +910,7 @@ bool Parser::parse_delay(const Command& command, const SdcDelayKind kind) {
     for (std::size_t i = 1; i < command.tokens.size(); ++i) {
         const Token& token = command.tokens[i];
         const bool is_option = token.kind == Token::Kind::Word && !token.text.empty() &&
-                               token.text.front() == '-';
+                               token.text.front() == '-' && !is_number(token.text);
         if (is_option && token.text == "-clock") {
             Token value;
             if (!take_value(command, i, value, "-clock")) {

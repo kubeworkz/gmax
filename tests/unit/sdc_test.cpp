@@ -198,6 +198,48 @@ set_case_analysis 0 [get_ports "test_mode"]
            "a quoted object name is recorded");
 }
 
+void test_negative_delays() {
+    constexpr std::string_view kSdc = R"SDC(
+create_clock -name clk -period 10 [get_ports clk]
+set_input_delay -clock [get_clocks clk] -0.5 [get_ports data_in]
+set_output_delay -clock [get_clocks clk] -1.25 [get_ports data_out]
+)SDC";
+    const frontend::SdcResult result = frontend::read_sdc(kSdc, "negative-delays.sdc");
+    expect(result.ok, "negative delay values parse");
+    expect(result.diagnostics.empty(), "negative delay values produce no warnings");
+    expect(result.constraints.delays.size() == 2, "both negative delays are recorded");
+    if (result.constraints.delays.size() == 2) {
+        expect(result.constraints.delays[0].kind == frontend::SdcDelayKind::Input &&
+                   result.constraints.delays[0].object == "data_in" &&
+                   result.constraints.delays[0].value == -0.5,
+               "a negative input delay is a value, not an option");
+        expect(result.constraints.delays[1].kind == frontend::SdcDelayKind::Output &&
+                   result.constraints.delays[1].object == "data_out" &&
+                   result.constraints.delays[1].value == -1.25,
+               "a negative output delay is a value, not an option");
+    }
+}
+
+void test_crlf_continuations() {
+    const std::string kSdc =
+        "create_clock -name clk_a -period 10\\"
+        "\r\n"
+        "  [get_ports clk_a]\r\n"
+        "create_clock -name clk_b \\"
+        "\r\n"
+        "  -period 20 [get_ports clk_b]\r\n";
+    const frontend::SdcResult result = frontend::read_sdc(kSdc, "crlf-continuation.sdc");
+    expect(result.ok, "CRLF continuations keep commands together");
+    expect(result.diagnostics.empty(), "CRLF continuations produce no warnings");
+    expect(result.constraints.clocks.size() == 2, "both continued clocks are recorded");
+    const frontend::SdcClock* clk_a = result.constraints.find_clock("clk_a");
+    const frontend::SdcClock* clk_b = result.constraints.find_clock("clk_b");
+    expect(clk_a != nullptr && clk_a->period == 10.0,
+           "a continuation adjacent to a word splits the token");
+    expect(clk_b != nullptr && clk_b->period == 20.0,
+           "a continuation after whitespace keeps the option stream");
+}
+
 }  // namespace
 
 int main() {
@@ -205,6 +247,8 @@ int main() {
     test_unsupported_commands();
     test_malformed_commands();
     test_comments_and_continuation();
+    test_negative_delays();
+    test_crlf_continuations();
     if (failures != 0) {
         std::cerr << failures << " SDC test(s) failed" << std::endl;
         return 1;
