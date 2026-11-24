@@ -1,6 +1,7 @@
 # ADR-011: Deterministic threading and merge order
 
-- Status: Accepted
+- Status: Accepted (amended 2026-11-24: the seed option lands with the first
+  shuffled order)
 - Date: 2026-11-24
 - Context: WP-012 / G0.6, with WP-011 and G0.3 as the implementing package and
   gate criterion
@@ -51,11 +52,15 @@ scheduler happened to do.
    parallel compactor needs its own deterministic reduction and is not assumed
    by this ADR.
 
-5. The seed is a run option recorded in the manifest, defaulting to 0. Where a
-   bucket's fault order is shuffled to avoid pathological structural ordering,
-   the shuffle derives from (seed, bucket index) and nothing else — never from
-   thread count, wall clock or address. The same seed and budgets produce the
-   same candidate order for any N.
+5. The manifest records the seed, fixed at 0 in P0 because nothing shuffles
+   yet: chunks are visited in fault-list order and there is no bucket reorder
+   to seed. `run_atpg` therefore exposes no seed option; an option with no
+   consumer would silently do nothing, which is worse than a recorded constant.
+   The first package that introduces a shuffled bucket order adds the seed as a
+   run option in that change set. From then on the shuffle derives from
+   (seed, bucket index) and nothing else — never from thread count, wall clock
+   or address — and the same seed and budgets produce the same candidate order
+   for any N.
 
 6. The hash guarantee applies to runs that complete without a budget abort.
    `max_time_ms` is wall-clock and cannot be deterministic; a time-budget abort
@@ -99,6 +104,9 @@ scheduler happened to do.
 - Wall-clock budgets stay outside the guarantee by design. A determinism
   failure caused by a timeout is a budget diagnosis, not a merge-order bug, and
   the manifest says which one happened.
+- The seed stays a recorded 0 until a shuffled order exists. G0.3 and G1.6 do
+  not depend on it, and adding `--seed` before its consumer would make the
+  manifest record a choice the run does not make.
 
 ## References
 
