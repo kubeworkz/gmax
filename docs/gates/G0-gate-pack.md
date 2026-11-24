@@ -1,11 +1,13 @@
 # G0 gate pack — Foundation (M2)
 
-- Status: **DRAFT — decision pending signatures.** G0 is not yet declared met.
+- Status: **SIGNED — GO-WITH-WAIVERS (W1, W2), 2026-11-24.** G0 is not recorded
+  as met without waivers; WP-101 remains unauthorized until its intake
+  conditions are met.
 - Phase: P0, gate G0 (plan section 10).
 - Reviewed commit: `2649fe8cf81b574fa1f3c8f5bb30c7c84d0c2dc8`.
 - Plan: v0.9, `sha256:7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`.
 - Review date: 2026-11-24.
-- Chair: DFT lead (signature below).
+- Chair: DFT lead (Gridworkz, single operator; signature below).
 
 Evidence is pinned to the reviewed commit. A later commit reopens the pack: the
 test hashes and the CI run identity below no longer describe it.
@@ -158,7 +160,8 @@ runs to record.
 
 A waiver requires an owner, a reason, an expiry date, a written risk acceptance
 and an approver under plan section 15. Both below narrow a gate criterion, so
-the approver is the **architecture owner**. Neither is approved yet.
+the approver is the **architecture owner**. Both were approved on 2026-11-24 by
+Gridworkz, the single operator, who signs for all roles.
 
 ### W1 — G0.3 pattern-hash leg deferred to WP-106
 
@@ -170,7 +173,9 @@ the approver is the **architecture owner**. Neither is approved yet.
 | Scope granted | G0.3 is met on the coverage leg: 1-thread and 4-thread runs produce byte-identical coverage and manifests differing only in the recorded worker count (ADR-011). The pattern-hash leg is carried into G1.6, which repeats the test when patterns exist. |
 | Risk accepted | A nondeterministic pattern order could escape until WP-106. ADR-011 fixes fault chunks, merge by fault ID, seed handling and forbidden ordering sources; G1.6's determinism test runs the full flow, including patterns, once they exist, and would catch a violation before the G1 gate. |
 | Expiry | WP-106 merge, and no later than the G1 gate (proposed hard date 2027-04-30) |
-| Approver | Architecture owner (ARCH) — signature pending |
+| Approver | Architecture owner (ARCH) — Gridworkz (single operator) |
+| Signature | `/s/ Gridworkz` |
+| Date | 2026-11-24 |
 | Recorded in | This pack; plan section 10 G0.3 |
 
 ### W2 — G0.5 manifest scope limited to ATPG runs
@@ -183,7 +188,9 @@ the approver is the **architecture owner**. Neither is approved yet.
 | Scope granted | G0.5 is met for runs that start from a `.dfdb` and `.faults`: tool version, netlist hash, fault-list hash, coverage hash, stage hashes, budget, seed and result are recorded, and repeated runs are byte-identical. Manifest coverage for ingest stages (`read_verilog`, `write_faults`) is deferred to the next WP-011 maintenance change; manifest coverage for profile and library inputs is deferred to WP-111, which first makes them gate-relevant. |
 | Risk accepted | A run cannot be reproduced from its manifest alone across Yosys builds. Mitigated by pinning Yosys 0.71 and by the netlist hash identifying the elaborated input. |
 | Expiry | WP-111 bring-up, and no later than the G1 gate (proposed hard date 2027-04-30) |
-| Approver | Architecture owner (ARCH) — signature pending |
+| Approver | Architecture owner (ARCH) — Gridworkz (single operator) |
+| Signature | `/s/ Gridworkz` |
+| Date | 2026-11-24 |
 | Recorded in | This pack; plan section 10 G0.5 |
 
 ## 6. Sets named by a criterion
@@ -196,28 +203,31 @@ faults 168 SA1 (SAT) and 51 SA0 (UNSAT).
 
 ## 7. Decision
 
-**Recommendation: GO-WITH-WAIVERS (W1, W2), conditional.** It becomes effective
-only when the following hold; items 1, 3 and 4 are already closed:
+**Decision: GO-WITH-WAIVERS (W1, W2), signed 2026-11-24.** The gate conditions:
 
 1. G0-D01 — **closed 2026-11-24**: `main` requires all ten CI checks (strict,
    admins enforced); the protection snapshot is hashed in section 2.
-2. W1 and W2 are signed by the architecture owner with dates and expiries.
+2. W1 and W2 — **signed 2026-11-24** by the architecture owner with dates and
+   expiries.
 3. G0-D02 — **closed 2026-11-24**: the process tests preserve their reports
    under `GMAX_REPORTS_DIR` (build-tree default; the gate job pins `reports/g0`),
    with hashes in section 2 and a downloadable `g0-evidence` artifact.
 4. G0-D03 — **closed 2026-11-24**: run `45454925112` passed all ten jobs at the
    prior pin `1c4572d`; the retention change at `32e1237` and the reports-path
    change at `a15b347` are revalidated by this change's pull request.
-5. The decision below is signed by the DFT lead, architect and verification lead.
+5. The decision below — **signed 2026-11-24** by the DFT lead, architect and
+   verification lead.
 
-Until the remaining two hold, **G0 is not met and WP-101 is not authorized to start.**
-The PM signature is not required at G0; it is required at the release gate.
+**G0 is not recorded as met without waivers; it is passed for phase entry by the
+signed GO-WITH-WAIVERS decision. WP-101 is not authorized to start:** TBD-03 and
+a `test_cell` library remain open, and a separate written start authorization is
+required. The PM signature is not required at G0; it is required at the release gate.
 
 ### What blocks starting WP-101
 
-1. **A signed G0 decision.** WP-101's only stated dependency is G0 (plan
-   section 9). Until the decision above is signed, starting it violates the hard
-   gate protocol.
+1. **A separate written WP-101 start authorization.** The G0 decision is signed,
+   but it does not authorize implementation. The start record must name the
+   scope and the accepted intake.
 2. **TBD-03, the scan spec (chains, clocks, SE).** Plan section 13 lists it as
    needed by M1 and blocking WP-101 and WP-102. Without it the insertion target
    is undefined; only library-independent scaffolding can proceed, and only
@@ -231,14 +241,17 @@ The PM signature is not required at G0; it is required at the release gate.
 Not blocking: pinned Yosys 0.71 is available and its `equiv_make`/`equiv_simple`
 path is the ADR-009 choice; the G0.1/G0.2/G0.3/G0.7 gates are green in CI.
 
-If the gate signs go-with-waivers before intake lands, the authorization should
-cover only WP-101's library-independent slice — mux-D insertion scaffolding,
-`test_cell` scan-cell detection with the acknowledgement warning, and the
-≤ 6-input exhaustive function check — and hold real-library insertion and its
-equivalence proof until TBD-03 and a library arrive.
+Any WP-101 start authorization before intake lands should cover only the
+library-independent slice — mux-D insertion scaffolding, `test_cell` scan-cell
+detection with the acknowledgement warning, and the ≤ 6-input exhaustive function
+check — and hold real-library insertion and its equivalence proof until TBD-03
+and a library arrive.
 
 | Role | Name | Decision | Signature | Date |
 |---|---|---|---|---|
-| DFT lead (chair) | | | | |
-| Architect | | | | |
-| Verification lead | | | | |
+| DFT lead (chair) | Gridworkz | GO-WITH-WAIVERS (W1, W2) | `/s/ Gridworkz` | 2026-11-24 |
+| Architect | Gridworkz | GO-WITH-WAIVERS (W1, W2) | `/s/ Gridworkz` | 2026-11-24 |
+| Verification lead | Gridworkz | GO-WITH-WAIVERS (W1, W2) | `/s/ Gridworkz` | 2026-11-24 |
+
+Gridworkz is the single operator and signs the architecture-owner and all three
+gate roles.

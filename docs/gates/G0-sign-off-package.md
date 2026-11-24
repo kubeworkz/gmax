@@ -1,23 +1,22 @@
 # G0 sign-off package — Foundation (M2)
 
-- Status: **DRAFT FOR SIGNATURE — G0 is not met; WP-101 is not authorized.**
+- Status: **SIGNED — GO-WITH-WAIVERS (W1, W2), 2026-11-24. G0 is not recorded
+  as met without waivers; WP-101 is not authorized.**
 - Gate: G0, plan section 10. Gate pack: `docs/gates/G0-gate-pack.md`,
-  SHA-256 `9e8fea9f9d735e35121020fb99cd7830b740448af49d0b4d44c21c591ed1314e`
-  (working tree at `a79c92f`).
+  SHA-256 `e00417751147e5baeca6b0ac6de0aadee0119fd912401e6b375e92599412a5b5` (signed in PR #8).
 - Evidence pin: gate pack reviewed commit `2649fe8cf81b574fa1f3c8f5bb30c7c84d0c2dc8`.
 - Plan: v0.9, `sha256:7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`.
 - Architecture baseline: `dft-atpg-platform-architecture-grx930-g100.md` at blob
   `d9ae07254b87e5b3b5e2b41672613ac8fee340c9`.
 - Package date: 2026-11-24.
-- Prepared for: DFT lead (chair), architect, verification lead, and architecture
-  owner for W1/W2.
-- Decision requested: **GO-WITH-WAIVERS (W1, W2), conditional.** No decision in
-  this package is effective until the signatures in sections 2–4 are recorded.
+- Signed by: Gridworkz (single operator) for the DFT lead (chair), architect,
+  verification lead and architecture owner.
+- Decision recorded: **GO-WITH-WAIVERS (W1, W2), signed 2026-11-24.**
 
-This is the circulation copy for the remaining G0 signatures and for the two
-intake items that block WP-101. It does not amend the gate pack, close G0-D04 or
-G0-D05, declare G0 met, or authorize WP-101. The gate pack remains **DRAFT** until
-the signed pages are attached and its status is changed by the chair.
+This is the signed copy for the G0 record and for the two intake items that block
+WP-101. The signatures are recorded in the gate pack. The package does not close
+G0-D04 or G0-D05, declare G0 met without waivers, or authorize WP-101; a separate
+written start authorization is still required.
 
 ## 1. Evidence snapshot
 
@@ -28,9 +27,9 @@ them.
 |---|---|---|
 | G0.1 ISCAS'85 c432/c499 | Met: 100% of testable faults on both | Satisfied |
 | G0.2 SAT smoke | Met: one SAT and one UNSAT case, MiniSat agrees | Satisfied |
-| G0.3 Determinism | Coverage leg met; pattern leg deferred by W1 | **Waiver W1 pending** |
+| G0.3 Determinism | Coverage leg met; pattern leg deferred by W1 | **Waived — W1 signed 2026-11-24** |
 | G0.4 Commit gate | Met: ten required checks, branch protection enforced | Satisfied |
-| G0.5 Reproducibility | ATPG-run scope met; ingest/profile/library manifest scope deferred by W2 | **Waiver W2 pending** |
+| G0.5 Reproducibility | ATPG-run scope met; ingest/profile/library manifest scope deferred by W2 | **Waived — W2 signed 2026-11-24** |
 | G0.6 ADRs | Met: ADR-009, ADR-010, ADR-011 accepted | Satisfied |
 | G0.7 Simulation agreement | Met: 64-lane and scalar agree on every c432 net | Satisfied |
 
@@ -47,7 +46,7 @@ CI and retained evidence:
   and `sat_smoke.json` differ by absolute paths and tool identities; the pack
   records that caveat rather than treating them as byte-identical.
 
-## 2. Signature request R1 — W1 (G0.3 pattern leg)
+## 2. Signature record R1 — W1 (G0.3 pattern leg)
 
 | Field | Value |
 |---|---|
@@ -60,7 +59,7 @@ CI and retained evidence:
 | Expiry | WP-106 merge, and no later than the G1 gate (proposed hard date 2027-04-30) |
 | Recorded in | `docs/gates/G0-gate-pack.md` section 5 and plan section 10, G0.3 |
 
-Requested approval text:
+Approved text:
 
 > I approve waiver W1 for G0.3. I confirm the scope and written risk acceptance
 > recorded in G0 gate pack section 5 and accept that the pattern-hash leg is
@@ -68,12 +67,12 @@ Requested approval text:
 
 | Approver | Name | Decision (approve / deny) | Signature | Date |
 |---|---|---|---|---|
-| Architecture owner (ARCH) | | | | |
+| Architecture owner (ARCH) | Gridworkz | Approve | `/s/ Gridworkz` | 2026-11-24 |
 
 Approval of W1 is one precondition of the G0 decision. It is not the gate
 decision and does not by itself change any criterion status.
 
-## 3. Signature request R2 — W2 (G0.5 manifest scope)
+## 3. Signature record R2 — W2 (G0.5 manifest scope)
 
 | Field | Value |
 |---|---|
@@ -86,7 +85,7 @@ decision and does not by itself change any criterion status.
 | Expiry | WP-111 bring-up, and no later than the G1 gate (proposed hard date 2027-04-30) |
 | Recorded in | `docs/gates/G0-gate-pack.md` section 5 and plan section 10, G0.5 |
 
-Requested approval text:
+Approved text:
 
 > I approve waiver W2 for G0.5. I confirm the scope and written risk acceptance
 > recorded in G0 gate pack section 5 and accept that ingest, profile and library
@@ -95,39 +94,36 @@ Requested approval text:
 
 | Approver | Name | Decision (approve / deny) | Signature | Date |
 |---|---|---|---|---|
-| Architecture owner (ARCH) | | | | |
+| Architecture owner (ARCH) | Gridworkz | Approve | `/s/ Gridworkz` | 2026-11-24 |
 
 Approval of W2 is one precondition of the G0 decision. It is not the gate
 decision and does not by itself change any criterion status.
 
-## 4. Signature request R3 — G0 gate decision
+## 4. Signature record R3 — G0 gate decision
 
-The chair requests a one-page decision from the three G0 signatories. The only
-recommendation supported by the current evidence is **GO-WITH-WAIVERS (W1, W2),
-conditional**; **GO** is not available while G0.3's pattern leg and G0.5's broader
-manifest scope are unproven. **STOP** remains available if the signatories do not
-accept the waivers or the open intake.
+The chair recorded the one-page decision for the three G0 signatories. The
+decision is **GO-WITH-WAIVERS (W1, W2)**; **GO** was not available while G0.3's
+pattern leg and G0.5's broader manifest scope were unproven, and **STOP** was not
+selected.
 
-Requested decision statement:
+Recorded decision statement:
 
-> G0 decision: **GO-WITH-WAIVERS (W1, W2)**, conditional. The evidence is the G0
+> G0 decision: **GO-WITH-WAIVERS (W1, W2)**, signed 2026-11-24 by Gridworkz for
+> the DFT lead, architect and verification lead roles. The evidence is the G0
 > gate pack pinned at `2649fe8`; G0.1, G0.2, G0.4, G0.6 and G0.7 are met; G0.3 is
 > met on the coverage leg with its pattern leg waived by W1; G0.5 is met for
-> ATPG runs with the remaining manifest scope waived by W2. This decision is
-> effective only when W1 and W2 are signed by the architecture owner and this
-> page is signed by the DFT lead, architect and verification lead. It does not
-> itself authorize WP-101; a separate written start authorization is required
-> after TBD-03 and a qualifying library are accepted.
+> ATPG runs with the remaining manifest scope waived by W2. The decision is
+> effective 2026-11-24. It does not authorize WP-101; a separate written start
+> authorization is required after TBD-03 and a qualifying library are accepted.
 
 | Role | Name | Decision (GO-WITH-WAIVERS / GO / STOP) | Signature | Date |
 |---|---|---|---|---|
-| DFT lead (chair) | | | | |
-| Architect | | | | |
-| Verification lead | | | | |
+| DFT lead (chair) | Gridworkz | GO-WITH-WAIVERS (W1, W2) | `/s/ Gridworkz` | 2026-11-24 |
+| Architect | Gridworkz | GO-WITH-WAIVERS (W1, W2) | `/s/ Gridworkz` | 2026-11-24 |
+| Verification lead | Gridworkz | GO-WITH-WAIVERS (W1, W2) | `/s/ Gridworkz` | 2026-11-24 |
 
-If signed, the decision changes the gate pack's decision status only after the
-chair records these signatures in the pack. It does not close G0-D04 or G0-D05,
-and it does not start WP-101.
+The decision and signatures are recorded in the gate pack. They do not close
+G0-D04 or G0-D05, and they do not start WP-101.
 
 ## 5. Intake request R4 — TBD-03 scan spec
 
@@ -282,15 +278,15 @@ completed without one. This package therefore treats the G100 library set as a
 start condition for real insertion, not for the narrow library-independent
 slice.
 
-WP-101 may start only when every "yes" below is recorded in a written start
-authorization. The gate decision requested in section 4 does not supply that
+WP-101 may start only when every condition below is satisfied and recorded in a
+written start authorization. The signed gate decision does not supply that
 authorization.
 
 | Condition | Required before formal WP-101 start? | Recorded in |
 |---|---|---|
-| G0 decision signed by DFT lead, architect and verification lead | Yes | Gate pack section 7 |
-| W1 signed by the architecture owner | Yes | Gate pack section 5 |
-| W2 signed by the architecture owner | Yes | Gate pack section 5 |
+| G0 decision signed by DFT lead, architect and verification lead | Signed 2026-11-24 | Gate pack section 7 |
+| W1 signed by the architecture owner | Signed 2026-11-24 | Gate pack section 5 |
+| W2 signed by the architecture owner | Signed 2026-11-24 | Gate pack section 5 |
 | TBD-03 scan spec accepted and hashed | Yes; plan section 13 makes it a WP-101 start input | Gate pack G0-D04 closure |
 | G100 netlist, Liberty set and scan mapping accepted | Yes for real insertion and G1.3; no for a library-independent slice only if the gate decision explicitly records a written intake risk acceptance | Gate pack G0-D05 / intake record |
 | grx930 netlist and Liberty set accepted | No for the first G100 insertion trial; yes before G0-D05 closes and the grx930 profile freezes | Intake record |
@@ -309,11 +305,11 @@ for TBD-03 and the G100 library set.
 
 ## 8. Recording and effect
 
-- W1 and W2 are signed on the tables in sections 2 and 3 and attached to the gate
-  pack. The architecture owner's signature is the approval required by plan
-  section 15 for a narrowed criterion.
-- The gate decision is signed on the table in section 4. The chair records the
-  signed page in the gate pack; only then may the pack's decision status change.
+- W1 and W2 were signed on the tables in sections 2 and 3 on 2026-11-24 by
+  Gridworkz, the single operator. That signature is the approval required by plan
+  section 15 for a narrowed criterion, and it is recorded in the gate pack.
+- The gate decision was signed on the table in section 4 and recorded in the gate
+  pack on 2026-11-24.
 - TBD-03 acceptance is recorded with the file path, SHA-256 and the signatures in
   section 5.2; that closes G0-D04.
 - The library package is recorded with per-file SHA-256 and the signatures in
@@ -321,5 +317,6 @@ for TBD-03 and the G100 library set.
 - A WP-101 start authorization is a separate dated record. It is not implied by
   any signature in this package.
 
-**Current effect: G0 remains unmet, W1 and W2 remain unapproved, G0-D04 and
-G0-D05 remain open, and WP-101 has not started.**
+**Current effect: the G0 decision is signed GO-WITH-WAIVERS (W1, W2). G0 is not
+recorded as met without waivers; G0-D04 and G0-D05 remain open, and WP-101 has
+not started.**
