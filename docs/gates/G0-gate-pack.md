@@ -2,7 +2,7 @@
 
 - Status: **DRAFT — decision pending signatures.** G0 is not yet declared met.
 - Phase: P0, gate G0 (plan section 10).
-- Reviewed commit: `ac84fbdb42ae83482b1a095882aaa540fde62aae`.
+- Reviewed commit: `1c4572d8530ece4f6318aa05931f9de47ccbe543`.
 - Plan: v0.9, `sha256:7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`.
 - Review date: 2026-11-24.
 - Chair: DFT lead (signature below).
@@ -14,25 +14,25 @@ test hashes and the CI run identity below no longer describe it.
 
 | # | Criterion | Threshold | Status | Evidence | Hash / run |
 |---|---|---|---|---|---|
-| G0.1 | c432 and c499 end-to-end from CLI | 100% of testable faults on both | **Met** | `tests/process/iscas85.cmake`; CI step "run G0.1 ISCAS'85 coverage gate" | test `sha256:35cc69d6…`; run `45440639492`, job `138610464419`; `cli.iscas85` passed 33.64 s |
+| G0.1 | c432 and c499 end-to-end from CLI | 100% of testable faults on both | **Met** | `tests/process/iscas85.cmake`; CI step "run G0.1 ISCAS'85 coverage gate" | test `sha256:35cc69d6…`; run `45454925112`, job `138661665180`; `cli.iscas85` passed |
 | G0.2 | SAT smoke | ≥1 SAT and ≥1 UNSAT on c432; MiniSat agrees | **Met** | `tests/process/sat_smoke.cmake`, `sat_smoke.py`; `cross_check` (Yosys 0.71) and `minisat_check` (2.2.1) | test `sha256:dfe7e4a7…`, `sha256:6a85ea4f…`; same run, step "run G0.2 SAT smoke gate", success |
 | G0.3 | Determinism | 1-thread and N-thread pattern/coverage hashes identical | **Waived — coverage leg met, pattern leg deferred** (W1) | `tests/process/threads.cmake`: 1 vs 4 workers, byte-identical `coverage.json`, manifests differ only `options.threads` | test `sha256:4b84fd78…`; same run, step "run G0.3 thread determinism gate", success |
-| G0.4 | Commit gate | Debug/release, unit tests, sanitizer smoke, format/lint block a merge | **Met** | `.github/workflows/ci.yml` runs all ten jobs; `main` branch protection requires every one, strict and enforced for admins (verified 2026-11-24); PR #1 reported `blocked` then `clean`; red run `45326575526`, green run `45436627671` | config `sha256:f833eea1…`; protection snapshot `docs/gates/G0-branch-protection.json` `sha256:c5525d0c…` (`protected: true`, 10 contexts, `enforce_admins: true`) |
+| G0.4 | Commit gate | Debug/release, unit tests, sanitizer smoke, format/lint block a merge | **Met** | `.github/workflows/ci.yml` runs all ten jobs on push to `main` and once per pull-request head; `main` branch protection requires every one, strict and enforced for admins (verified 2026-11-24); PR #1 reported `blocked` then `clean`; PR #3 produced one suite; red run `45326575526`, green run `45436627671` | config `sha256:883b61dc…`; protection snapshot `docs/gates/G0-branch-protection.json` `sha256:c5525d0c…` (`protected: true`, 10 contexts, `enforce_admins: true`) |
 | G0.5 | Reproducibility | Every run emits a complete manifest | **Waived — ATPG-run scope** (W2) | `run_atpg` writes `manifest.json`; `cli.iscas85` asserts schema, netlist/fault/coverage/stage hashes and byte-identical repeat | `src/core/report/report.cpp` `sha256:e707e6f4…`; `report.h` `sha256:e8cd354b…`; `src/shell/commands.cpp` `sha256:b522df83…` |
 | G0.6 | ADRs | 009–011 accepted | **Met** | `docs/adr/ADR-009-sat-integration.md`, `ADR-010-pattern-ir.md`, `ADR-011-deterministic-threading.md`, all `Accepted` | `sha256:9c15584c…`, `sha256:a97521ab…`, `sha256:57e5549e…` |
 | G0.7 | Simulation agreement | 64-lane matches scalar on every net of c432 | **Met** | `tests/differential/fault_diff.cpp`, `tests/process/fault_diff.cmake`; 350 nets, 700 raw faults, 256 patterns, **691 detected**, detection and first-pattern agreement | `sha256:e71178b0…`, `sha256:8dfe0c03…`; same run, step "run G0.7 fault-simulation differential gate", success |
 
-The pinned-tool job (`G0 pinned-tool gates`, job `138610464419`) ran all four
+The pinned-tool job (`G0 pinned-tool gates`, job `138661665180`) ran all four
 G0.1/G0.2/G0.3/G0.7 steps successfully on the reviewed commit. Its Yosys is the
 pinned 0.71 build and its MiniSat is the pinned 2.2.1 build.
 
 ## 2. Evidence artifacts, by path and hash
 
-Tracked evidence sources at `ac84fbd`:
+Tracked evidence sources at `1c4572d`:
 
 | Path | SHA-256 |
 |---|---|
-| `.github/workflows/ci.yml` | `f833eea130b183de9e79fab632c3a4a79d9511af1c053c34cc5dae586afa3d00` |
+| `.github/workflows/ci.yml` | `883b61dc0a14d5671843cd0ed196886cd029ec8a2189fe0bfe9d89b2c2eb1512` |
 | `docs/gates/G0-branch-protection.json` | `c5525d0cc59d8ad5c0450925f1cb377bf929035dd2e28eb162842c773afc6e8d` |
 | `tests/process/iscas85.cmake` | `35cc69d675f72f6cdbb5e909b60e9fed5ae0720062a6b1dd026128d3519729e8` |
 | `tests/process/sat_smoke.cmake` | `dfe7e4a713162dffbf6b5d6af8ecac9761dd97964b225847627ee1139f962ece` |
@@ -68,13 +68,16 @@ reports.
 
 CI evidence identities:
 
-- Pinned-tool gates: run `45440639492`, job `138610464419` — all four steps
-  success; `cli.iscas85` passed 33.64 s.
+- Pinned-tool gates: run `45454925112`, job `138661665180` — all four steps
+  success, including `cli.iscas85`.
 - G0.4 red run: `45326575526` on `824d632` (Windows `NOMINMAX` failure).
 - G0.4 green run: `45436627671` on `fa90c6b`, all ten jobs success.
 - G0.4 pull-request verification: PR #1 was `mergeable_state: blocked` while
   the last macOS check was queued, then `clean` once all 21 check runs passed;
   merged as `645474b`.
+- G0.4 trigger policy: push workflows run only on `main`; feature branches are
+  validated once by `pull_request`. PR #3 produced one workflow run and 11 check
+  runs (ten jobs plus GitGuardian) instead of 21, and merged as `1c4572d`.
 - G0.4 enforcement: `main` protected 2026-11-24; required contexts `format`,
   `G0 pinned-tool gates`, `ubuntu-latest Debug`, `ubuntu-latest Release`,
   `windows-latest Debug`, `windows-latest Release`, `macos-latest Debug`,
@@ -83,17 +86,15 @@ CI evidence identities:
   Verified by `GET /repos/kubeworkz/gmax/branches/main` (`protected: true`) and
   the protection endpoint (10 contexts). Snapshot:
   `docs/gates/G0-branch-protection.json`.
-- Head run at the reviewed commit `ac84fbd`: `45440639492` concluded **failure**.
-  Both macOS jobs were cancelled after 15 minutes without starting (runner
-  acquisition); the other eight jobs, including the G0 gate job, passed. The
-  last fully green run is still `45436627671` on `fa90c6b` (G0-D03).
+- Head run at the reviewed commit `1c4572d`: `45454925112` concluded **success**;
+  all ten jobs passed. The macOS Debug job waited about ten minutes for a runner,
+  then completed successfully (G0-D03 closed).
 
 ## 3. Open defects
 
 | ID | Defect | Severity | Owner | Blocks |
 |---|---|---|---|---|
 | G0-D02 | Process tests delete their report artifacts, so the pack cannot attach `coverage.json` / `manifest.json` / `sat_smoke.json` by path and hash | Medium | VER + FE | Gate pack item 2 |
-| G0-D03 | The reviewed commit's run is red: both macOS jobs were cancelled after 15 minutes without starting (runner acquisition) | Low | FE | Final green-matrix line |
 | G0-D04 | TBD-03 scan spec (chains, clocks, SE) is open | High (for WP-101) | DFT | Starting WP-101 |
 | G0-D05 | TBD-01/TBD-02 libraries with `test_cell` are absent; the repo carries no Liberty library, only parser fixtures | High (for WP-101 completion) | Design + DFT | Real-library insertion and G1.3 equivalence |
 
@@ -106,8 +107,8 @@ checks were queued, `clean` once all 21 check runs passed, then merged.
 
 No Critical defect is open. G0.1/G0.2/G0.3/G0.7 regressions are caught by the
 pinned-tool job; G0.4 enforcement now lives in repository configuration, and
-the remaining gate defects are evidence retention (G0-D02), the red head run
-(G0-D03) and intake (G0-D04, G0-D05).
+the remaining gate defects are evidence retention (G0-D02) and intake (G0-D04,
+G0-D05).
 
 ## 4. Parity ledger
 
@@ -157,18 +158,18 @@ faults 168 SA1 (SAT) and 51 SA0 (UNSAT).
 ## 7. Decision
 
 **Recommendation: GO-WITH-WAIVERS (W1, W2), conditional.** It becomes effective
-only when the following hold; item 1 is already closed:
+only when the following hold; items 1 and 4 are already closed:
 
 1. G0-D01 — **closed 2026-11-24**: `main` requires all ten CI checks (strict,
    admins enforced); the protection snapshot is hashed in section 2.
 2. W1 and W2 are signed by the architecture owner with dates and expiries.
 3. G0-D02 is closed: a gate run retains the report artifacts under a stable path,
    with their SHA-256 recorded in this pack.
-4. G0-D03 is cleared: the reviewed commit's run is fully green, or the pack is
-   re-pinned to the last fully green commit (`fa90c6b`, run `45436627671`).
+4. G0-D03 — **closed 2026-11-24**: run `45454925112` on the reviewed commit
+   `1c4572d` passed all ten jobs; the pack is re-pinned to it.
 5. The decision below is signed by the DFT lead, architect and verification lead.
 
-Until the remaining four hold, **G0 is not met and WP-101 is not authorized to start.**
+Until the remaining three hold, **G0 is not met and WP-101 is not authorized to start.**
 The PM signature is not required at G0; it is required at the release gate.
 
 ### What blocks starting WP-101
