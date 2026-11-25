@@ -15,6 +15,20 @@
   verification lead and architecture owner.
 - Decision recorded: **GO-WITH-WAIVERS (W1, W2), signed 2026-11-24.**
 
+> **Note, 2026-11-25 — the pins above describe the signed baseline, not the
+> current documents.** Plan v0.9
+> (`7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`) and
+> architecture blob `d9ae07254b87e5b3b5e2b41672613ac8fee340c9` are the revisions
+> signed on 2026-11-24, and `cc37d5792533389cb25f7529f7efc3db5b06eb1c0300d130dcbc5a2dee2f73e3`
+> is the gate pack at `3942c65`. Plan v0.10
+> (`sha256:1c86d3f7c89f7da257b2251410740ea9cfd908e94e06dfd1baeac09369f7fc51`) and
+> architecture blob `5aaa25e4bd010aea5e2ff4f7ce084e46401f9b8b` supersede them,
+> with no scope, package, gate, effort or capacity figure changed: revision
+> v0.10 only re-words TBD-10 as a WP-111/G1 input rather than a WP-101-stage
+> condition. The signed decision, the waivers, the intake requests and their
+> acceptance criteria are unchanged; this note is a pointer, and nothing it
+> touches is re-signed.
+
 This is the signed copy for the G0 record and for the two intake items that block
 WP-101. The signatures are recorded in the gate pack. The package does not close
 G0-D04 or G0-D05, declare G0 met without waivers, or authorize WP-101; a separate

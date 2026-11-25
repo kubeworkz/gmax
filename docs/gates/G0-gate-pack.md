@@ -12,6 +12,21 @@
 Evidence is pinned to the reviewed commit. A later commit reopens the pack: the
 test hashes and the CI run identity below no longer describe it.
 
+> **Note, 2026-11-25 — the pins above are the signed baseline, not the current
+> documents.** Plan v0.9 (`7862006e8ff8a3a54218a37c2f990e749cc8674da09ef9c74d1d83c746b06bef`)
+> and architecture blob `d9ae07254b87e5b3b5e2b41672613ac8fee340c9` identify the
+> revisions this pack was reviewed and signed against. Plan v0.10
+> (`sha256:1c86d3f7c89f7da257b2251410740ea9cfd908e94e06dfd1baeac09369f7fc51`) and
+> architecture blob `5aaa25e4bd010aea5e2ff4f7ce084e46401f9b8b` supersede them.
+> That revision changed no scope, package, gate, effort or capacity figure; it
+> re-worded TBD-10 (the G100 bring-up block) as a WP-111/G1 input instead of a
+> WP-101-stage condition. The decision, waivers, criterion table and evidence
+> hashes in this pack are unchanged and remain the signed G0 record: this note
+> adds a pointer and rewrites nothing. Because the note changes the pack's
+> bytes, `cc37d5792533389cb25f7529f7efc3db5b06eb1c0300d130dcbc5a2dee2f73e3` is
+> the hash of the pack at `3942c65`, the revision the signatures cover, and
+> will not match a later checkout.
+
 ## 1. Gate criterion table
 
 | # | Criterion | Threshold | Status | Evidence | Hash / run |
