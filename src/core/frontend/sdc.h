@@ -49,6 +49,15 @@ struct SdcClockGroup {
     std::uint32_t line = 0;
 };
 
+// ADR-012 section 4: a set_clock_groups member names a clock, so membership is
+// checked against the declared clock names without a netlist. A member that
+// names no declared clock, and a clock that appears in more than one -group of
+// the same command, are reported; the set is kept whole.
+struct SdcClockGroupIssues {
+    std::vector<std::string> unknown;
+    std::vector<std::string> conflicting;
+};
+
 struct SdcFalsePath {
     std::vector<std::string> from;
     std::vector<std::string> through;
@@ -101,6 +110,11 @@ struct SdcConstraints {
     const SdcClock* find_clock(std::string_view name) const;
     const SdcCaseAnalysis* find_case(std::string_view object) const;
 };
+
+// Sorted and deduplicated: a member is reported once per command however often
+// the source repeats it.
+SdcClockGroupIssues sdc_clock_group_issues(const SdcConstraints& constraints,
+                                           const SdcClockGroup& group);
 
 struct SdcResult {
     bool ok = false;

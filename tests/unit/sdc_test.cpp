@@ -271,6 +271,88 @@ void test_braced_continuations() {
     }
 }
 
+// ADR-012 section 4: set_clock_groups members name clocks, so membership is
+// checked against the declared clock names once the whole file is read. An
+// unknown member and a clock in two -groups of one command warn; neither
+// refuses the file nor drops the member from the retained set.
+void test_clock_group_membership() {
+    constexpr std::string_view kGood = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_b]
+set_clock_groups -asynchronous -group {clk_a} -group {clk_b}
+)SDC";
+    const frontend::SdcResult good = frontend::read_sdc(kGood, "groups-good.sdc");
+    expect(good.ok, "groups of declared clocks parse");
+    expect(good.diagnostics.empty(), "groups of declared clocks warn about nothing");
+    if (good.constraints.clock_groups.size() == 1) {
+        const frontend::SdcClockGroupIssues issues =
+            frontend::sdc_clock_group_issues(good.constraints, good.constraints.clock_groups[0]);
+        expect(issues.unknown.empty() && issues.conflicting.empty(),
+               "a command naming declared clocks has no membership issue");
+    }
+
+    constexpr std::string_view kUnknown = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_b]
+set_clock_groups -asynchronous -group {clk_a clk_typo} -group {clk_b}
+)SDC";
+    const frontend::SdcResult unknown = frontend::read_sdc(kUnknown, "groups-unknown.sdc");
+    expect(unknown.ok, "an unknown group member does not refuse the file");
+    expect(error_count(unknown) == 0, "an unknown group member is not an error");
+    expect(unknown.diagnostics.size() == 1, "one unknown member produces one warning");
+    if (unknown.diagnostics.size() == 1) {
+        expect(unknown.diagnostics[0].code == frontend::DiagnosticCode::SdcClockGroupUnknownMember,
+               "the finding has the unknown-member code");
+        expect(contains(unknown.diagnostics[0].message, "clk_typo"),
+               "the warning names the unknown member");
+        expect(unknown.diagnostics[0].object == "clk_typo",
+               "the warning carries the member as its object");
+        expect(unknown.diagnostics[0].source.line == 4, "the warning keeps the command line");
+    }
+    if (unknown.constraints.clock_groups.size() == 1) {
+        expect(unknown.constraints.clock_groups[0].groups[0] ==
+                   std::vector<std::string>{"clk_a", "clk_typo"},
+               "the unknown member stays in the recorded group");
+    }
+
+    constexpr std::string_view kConflict = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_b]
+set_clock_groups -asynchronous -group {clk_a} -group {clk_a clk_b}
+)SDC";
+    const frontend::SdcResult conflict = frontend::read_sdc(kConflict, "groups-conflict.sdc");
+    expect(conflict.ok, "a clock in two groups does not refuse the file");
+    expect(conflict.diagnostics.size() == 1, "one conflicting clock produces one warning");
+    if (conflict.diagnostics.size() == 1) {
+        expect(conflict.diagnostics[0].code ==
+                   frontend::DiagnosticCode::SdcClockGroupConflictingMember,
+               "the finding has the conflicting-member code");
+        expect(contains(conflict.diagnostics[0].message, "more than one -group"),
+               "the warning says the clock is in two groups");
+        expect(conflict.diagnostics[0].object == "clk_a",
+               "the warning carries the conflicting clock");
+    }
+
+    // One command can carry both findings. A member repeated across groups is
+    // reported once, and the issue lists come back sorted.
+    constexpr std::string_view kBoth = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+set_clock_groups -asynchronous -group {clk_a clk_zz} -group {clk_a clk_zz} -group {clk_zz}
+)SDC";
+    const frontend::SdcResult both = frontend::read_sdc(kBoth, "groups-both.sdc");
+    expect(both.ok, "mixed membership findings do not refuse the file");
+    expect(both.diagnostics.size() == 3,
+           "one unknown member and two conflicting clocks produce three warnings");
+    if (both.constraints.clock_groups.size() == 1) {
+        const frontend::SdcClockGroupIssues issues =
+            frontend::sdc_clock_group_issues(both.constraints, both.constraints.clock_groups[0]);
+        expect(issues.unknown == std::vector<std::string>{"clk_zz"},
+               "the unknown list names the member once");
+        expect(issues.conflicting == std::vector<std::string>{"clk_a", "clk_zz"},
+               "the conflicting list is sorted and deduplicated");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -281,6 +363,7 @@ int main() {
     test_negative_delays();
     test_crlf_continuations();
     test_braced_continuations();
+    test_clock_group_membership();
     if (failures != 0) {
         std::cerr << failures << " SDC test(s) failed" << std::endl;
         return 1;

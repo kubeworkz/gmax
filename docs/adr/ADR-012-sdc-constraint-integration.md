@@ -192,7 +192,12 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    not resolve to a top-level input port is reported at attachment and kept in
    the set rather than refused, and the attachment summary counts the declared
    clocks that actually clock a state-holding gate; neither changes a fault
-   outcome.
+   outcome. Members of a `set_clock_groups` command are checked against the
+   declared clock names once the file is read, because a group may precede the
+   clock it names: a member that names no declared clock, and a clock placed in
+   more than one `-group` of the same command, are reported as warnings and as
+   summary lines. The member is kept in the group and the set is retained
+   whole, so neither finding changes the constraints status or hash.
 
 3. **`set_input_delay`, `set_output_delay`, `set_driving_cell` and `set_load`
    are persisted and validated but are not evaluated.** They are timing and

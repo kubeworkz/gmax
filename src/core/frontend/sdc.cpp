@@ -1,5 +1,6 @@
 #include "core/frontend/sdc.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cmath>
@@ -375,6 +376,26 @@ std::vector<std::string> resolve_token(const Token& token, std::vector<Diagnosti
                     query, source, token.line);
     }
     return split_list(strip_outer(rest));
+}
+
+// A group is validated after the whole file is read, not as the command is
+// parsed: SDC does not require a clock declaration to precede the group that
+// names it.
+void validate_clock_groups(const SdcConstraints& constraints, std::vector<Diagnostic>& diagnostics,
+                           const std::string_view source) {
+    for (const SdcClockGroup& group : constraints.clock_groups) {
+        const SdcClockGroupIssues issues = sdc_clock_group_issues(constraints, group);
+        for (const std::string& member : issues.unknown) {
+            add_warning(diagnostics, DiagnosticCode::SdcClockGroupUnknownMember,
+                        "clock group member '" + member + "' is not a declared clock", member,
+                        source, group.line);
+        }
+        for (const std::string& member : issues.conflicting) {
+            add_warning(diagnostics, DiagnosticCode::SdcClockGroupConflictingMember,
+                        "clock '" + member + "' is a member of more than one -group", member,
+                        source, group.line);
+        }
+    }
 }
 
 bool parse_double(const std::string& text, double& value) {
@@ -1107,6 +1128,38 @@ const SdcCaseAnalysis* SdcConstraints::find_case(const std::string_view object) 
     return nullptr;
 }
 
+SdcClockGroupIssues sdc_clock_group_issues(const SdcConstraints& constraints,
+                                           const SdcClockGroup& group) {
+    SdcClockGroupIssues issues;
+    std::vector<std::pair<std::string, std::size_t>> placed;
+    for (std::size_t index = 0; index < group.groups.size(); ++index) {
+        for (const std::string& member : group.groups[index]) {
+            if (constraints.find_clock(member) == nullptr &&
+                std::find(issues.unknown.begin(), issues.unknown.end(), member) ==
+                    issues.unknown.end()) {
+                issues.unknown.push_back(member);
+            }
+            const auto found =
+                std::find_if(placed.begin(), placed.end(),
+                             [&member](const std::pair<std::string, std::size_t>& entry) {
+                                 return entry.first == member;
+                             });
+            if (found == placed.end()) {
+                placed.emplace_back(member, index);
+            } else if (found->second != index &&
+                       std::find(issues.conflicting.begin(), issues.conflicting.end(), member) ==
+                           issues.conflicting.end()) {
+                // A clock in two -groups of one command would be on both sides of
+                // the relationship, which no relationship kind can mean.
+                issues.conflicting.push_back(member);
+            }
+        }
+    }
+    std::sort(issues.unknown.begin(), issues.unknown.end());
+    std::sort(issues.conflicting.begin(), issues.conflicting.end());
+    return issues;
+}
+
 SdcResult read_sdc(const std::string_view text, const std::string_view source) {
     SdcResult result;
     Lexer lexer(text, source, result.diagnostics);
@@ -1118,6 +1171,10 @@ SdcResult read_sdc(const std::string_view text, const std::string_view source) {
     for (const Command& command : commands) {
         static_cast<void>(parser.parse(command));
     }
+    // Membership is reported, not refused: clock groups are retained but not
+    // enforced (ADR-012 section 4), so a finding here is a warning that leaves
+    // the status and the hash alone.
+    validate_clock_groups(result.constraints, result.diagnostics, source);
     result.ok = !has_errors(result.diagnostics);
     return result;
 }
