@@ -76,6 +76,18 @@ add_test(NAME cli.sdc-attach
     -DGMAX_REPORTS_DIR=${GMAX_REPORTS_DIR}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_attach.cmake)
 
+# ADR-012 section 4: clocks are resolved against the netlist and reported, not
+# enforced. A clock on a top-level input is silent, one on any other net warns,
+# and the summary counts the declared clocks that actually clock a flop. Both
+# fixtures are written by C++ helpers, so this test needs no Yosys.
+add_test(NAME cli.sdc-clocks
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DCLOCK_FIXTURE_BINARY=$<TARGET_FILE:clock_domain_fixture>
+    -DFAULT_FIXTURE_BINARY=$<TARGET_FILE:fault_cli_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-clocks
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_clocks.cmake)
+
 # G0.3 / ADR-011: c432 run with one worker thread and with four must write
 # identical coverage and manifests that differ only in the recorded count. The
 # test shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made

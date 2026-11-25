@@ -244,4 +244,76 @@ bool enforceable_case_target(const std::string_view name, const FlatNetlist& fla
     return false;
 }
 
+bool enforceable_clock_source(const std::string_view name, const FlatNetlist& flat,
+                              const StringTable& strings) {
+    for (NetId net = 0; net < flat.net_count(); ++net) {
+        if (strings.at(flat.name_id[net]) == name) {
+            // ADR-012 section 4: a clock is enforceable on a top-level input
+            // port, the same rule case analysis follows. It is not an error
+            // anywhere else because clocks change no fault outcome.
+            return flat.driver[net] == kPrimaryInput;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+bool state_holding(const GateType type) {
+    return type == GateType::Dff || type == GateType::Dlat || type == GateType::ScanCell;
+}
+
+}  // namespace
+
+ClockDomains clock_domains(const Constraints& constraints, const FlatNetlist& flat,
+                           const StringTable& strings) {
+    // A declared clock names the object it drives, so that net is the domain
+    // key. Two names on one net are one domain.
+    std::vector<NetId> declared;
+    declared.reserve(constraints.clocks.size());
+    for (const ConstraintClock& clock : constraints.clocks) {
+        if (clock.source.empty()) {
+            continue;
+        }
+        for (NetId net = 0; net < flat.net_count(); ++net) {
+            if (strings.at(flat.name_id[net]) == clock.source) {
+                declared.push_back(net);
+                break;
+            }
+        }
+    }
+    std::sort(declared.begin(), declared.end());
+    declared.erase(std::unique(declared.begin(), declared.end()), declared.end());
+    if (declared.empty()) {
+        return ClockDomains{};
+    }
+
+    ClockDomains domains;
+    std::vector<bool> claimed(declared.size(), false);
+    for (std::uint32_t gate = 0; gate < flat.gate_count(); ++gate) {
+        if (!state_holding(flat.type[gate])) {
+            continue;
+        }
+        // A DFF's and a DLAT's second fanin is the clock or gate input
+        // (design.h); enable, clear and preset follow it, so position 1 is the
+        // only one this reads.
+        const std::uint32_t begin = flat.fanin_begin[gate];
+        if (begin + 1 >= flat.fanin_begin[gate + 1]) {
+            continue;
+        }
+        const NetId clock_net = flat.fanins[begin + 1];
+        const auto found = std::lower_bound(declared.begin(), declared.end(), clock_net);
+        if (found == declared.end() || *found != clock_net) {
+            continue;
+        }
+        const std::size_t index = static_cast<std::size_t>(found - declared.begin());
+        if (!claimed[index]) {
+            claimed[index] = true;
+            ++domains.domains;
+        }
+        ++domains.flops;
+    }
+    return domains;
+}
+
 }  // namespace gmax::db

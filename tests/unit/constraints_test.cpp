@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/atpg/podem.h"
@@ -195,6 +196,81 @@ void test_schema_round_trip() {
            "the reloaded constraints have the same hash");
 }
 
+// ADR-012 section 4: clocks are resolved and reported, not enforced. A clock is
+// enforceable only on a top-level input port, and the domain count follows the
+// flops a declared clock actually clocks rather than the declarations alone.
+void test_clock_sources_and_domains() {
+    db::Gate ff_a;
+    ff_a.type = db::GateType::Dff;
+    ff_a.name = "ff_a";
+    ff_a.fanins = {"d_a", "clk_a"};
+    ff_a.out = "ra";
+    db::Gate ff_b;
+    ff_b.type = db::GateType::Dff;
+    ff_b.name = "ff_b";
+    ff_b.fanins = {"d_b", "clk_b"};
+    ff_b.out = "rb";
+    db::Gate g_a;
+    g_a.type = db::GateType::Buf;
+    g_a.name = "g_a";
+    g_a.fanins = {"ra"};
+    g_a.out = "q_a";
+    db::Gate g_b;
+    g_b.type = db::GateType::Buf;
+    g_b.name = "g_b";
+    g_b.fanins = {"rb"};
+    g_b.out = "q_b";
+
+    db::Module top;
+    top.name = "top";
+    top.inputs = {"clk_a", "clk_b", "d_a", "d_b"};
+    top.outputs = {"q_a", "q_b"};
+    top.gates = {ff_a, ff_b, g_a, g_b};
+
+    db::Design design;
+    design.top = "top";
+    design.modules = {top};
+
+    db::DesignDb database;
+    database.design() = std::move(design);
+    expect(database.flatten().ok(), "the two-clock design flattens");
+
+    const db::FlatNetlist& flat = database.flat();
+    const db::StringTable& strings = database.strings();
+    expect(db::enforceable_clock_source("clk_a", flat, strings),
+           "a clock on a top-level input is enforceable");
+    expect(!db::enforceable_clock_source("ra", flat, strings),
+           "a clock on a flop output is not enforceable");
+    expect(!db::enforceable_clock_source("absent", flat, strings),
+           "a clock naming no net is not enforceable");
+
+    db::ConstraintClock clk_a;
+    clk_a.name = "clk_a";
+    clk_a.source = "clk_a";
+    db::Constraints one;
+    one.clocks = {clk_a};
+    const db::ClockDomains first = db::clock_domains(one, flat, strings);
+    expect(first.domains == 1 && first.flops == 1, "one declared clock clocks one flop");
+
+    db::ConstraintClock clk_b;
+    clk_b.name = "clk_b";
+    clk_b.source = "clk_b";
+    db::Constraints both = one;
+    both.clocks.push_back(clk_b);
+    const db::ClockDomains two = db::clock_domains(both, flat, strings);
+    expect(two.domains == 2 && two.flops == 2, "two declared clocks clock two flops");
+
+    // A clock on the flop output binds a net no state-holding gate samples, so
+    // it adds no domain even though it remains part of the set.
+    db::ConstraintClock clk_ra;
+    clk_ra.name = "clk_ra";
+    clk_ra.source = "ra";
+    db::Constraints misplaced = one;
+    misplaced.clocks.push_back(clk_ra);
+    const db::ClockDomains reported = db::clock_domains(misplaced, flat, strings);
+    expect(reported.domains == 1 && reported.flops == 1, "a clock on a non-input binds no domain");
+}
+
 // ADR-012 section 4: a case value is a hard assignment applied before the fault
 // is activated. y = ~a with y stuck-at 1 activates only when a = 1, so a case
 // value of 0 makes the fault untestable without touching the unconstrained
@@ -283,6 +359,7 @@ int main() {
     test_hash_is_order_independent();
     test_incomplete_sets();
     test_status_and_absent();
+    test_clock_sources_and_domains();
     test_schema_round_trip();
     test_podem_applies_case_analysis();
     test_sat_applies_case_analysis();

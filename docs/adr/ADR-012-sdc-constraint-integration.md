@@ -188,7 +188,11 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    stuck-at fault outcomes.** They are retained for clock-domain reporting,
    scan DRC, and the later multi-clock capture engine. `run_atpg` records them
    and reports `capture_constraints: not-enforced`; it must not claim that
-   clock groups or false paths changed the coverage.
+   clock groups or false paths changed the coverage. A clock whose source does
+   not resolve to a top-level input port is reported at attachment and kept in
+   the set rather than refused, and the attachment summary counts the declared
+   clocks that actually clock a state-holding gate; neither changes a fault
+   outcome.
 
 3. **`set_input_delay`, `set_output_delay`, `set_driving_cell` and `set_load`
    are persisted and validated but are not evaluated.** They are timing and

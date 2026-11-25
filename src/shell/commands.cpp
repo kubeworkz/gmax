@@ -822,6 +822,8 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
     }
 
     db::Constraints attached = frontend::to_constraints(constraints, result.diagnostics);
+    db::ClockDomains domains;
+    bool have_domains = false;
 
     if (!design_option.empty()) {
         std::error_code equivalent_error;
@@ -858,7 +860,10 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
         }
         // Clock sources are the other object references this engine resolves;
         // every remaining record is retained for reporting and scan DRC, not
-        // enforced, so its names are carried without resolution.
+        // enforced, so its names are carried without resolution. A clock that
+        // resolves somewhere other than a top-level input port is reported and
+        // kept: clocks change no fault outcome, so refusing the set would say
+        // more than the engine can back up.
         for (const db::ConstraintClock& clock : attached.clocks) {
             if (clock.source.empty()) {
                 continue;
@@ -869,9 +874,14 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
                     << "' does not resolve unambiguously\n";
                 return ExitCode::Design;
             }
+            if (database.flat().driver[net] != db::kPrimaryInput) {
+                err << "gmax: clock source '" << clock.source << "' is not a top-level input\n";
+            }
         }
 
         database.constraints() = attached;
+        domains = db::clock_domains(attached, database.flat(), database.strings());
+        have_domains = true;
         const db::Status saved = database.save(output_option);
         if (!saved.ok()) {
             err << "gmax: cannot write '" << output_option << "': " << saved.message() << '\n';
@@ -883,6 +893,12 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
     out << "constraints status: " << db::constraints_status_name(db::constraints_status(attached))
         << '\n';
     out << "constraints hash: " << report::hex32(db::constraints_hash(attached)) << '\n';
+    if (have_domains) {
+        // The declared clocks that actually clock a state-holding gate. The
+        // report-only form has no netlist to count against, so it omits the
+        // line rather than printing a zero it did not measure.
+        out << "clock domains: " << domains.domains << " (" << domains.flops << " flops)\n";
+    }
     return ExitCode::Success;
 }
 

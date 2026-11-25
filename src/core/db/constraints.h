@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -164,5 +165,27 @@ struct CaseAssignment {
 // later slice.
 bool enforceable_case_target(std::string_view name, const FlatNetlist& flat,
                              const StringTable& strings);
+
+// True when a clock's source object resolves to a top-level input port. Clocks
+// are not applied to fault outcomes yet (ADR-012 section 4), so a clock whose
+// source is elsewhere is still recorded and hashed; the attachment warns about
+// it instead of refusing the set.
+bool enforceable_clock_source(std::string_view name, const FlatNetlist& flat,
+                              const StringTable& strings);
+
+// The clock-domain view of a design: state-holding gates grouped by the clock
+// net they sample. `domains` counts the distinct clock nets that a declared
+// clock claims and that clock at least one such gate; `flops` counts the gates
+// in those domains. A domain no clock declares is not counted, so the number
+// describes what the SDC actually binds rather than what the netlist contains.
+struct ClockDomains {
+    std::size_t domains = 0;
+    std::size_t flops = 0;
+
+    friend bool operator==(const ClockDomains&, const ClockDomains&) = default;
+};
+
+ClockDomains clock_domains(const Constraints& constraints, const FlatNetlist& flat,
+                           const StringTable& strings);
 
 }  // namespace gmax::db
