@@ -7,6 +7,7 @@
 #include <span>
 #include <vector>
 
+#include "core/db/constraints.h"
 #include "core/db/flat.h"
 #include "core/sim/fault.h"
 
@@ -66,10 +67,14 @@ struct SatFaultResult {
 // an encoding mistake cannot silently inflate coverage. `max_time_ms` is the
 // caller's remaining per-fault wall-clock budget; zero disables it. A timeout
 // returns Unknown rather than an unproven Detected or Untestable result.
+// `constraints` are resolved case-analysis values, asserted as unit clauses on
+// both miter copies (ADR-012 section 4), so a value that contradicts the defect
+// makes the miter UNSAT, which is reported as Untestable.
 SatFaultResult check_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
                            std::span<const db::NetId> observables,
                            std::size_t max_conflicts = 1000000, std::uint64_t max_time_ms = 0,
-                           SatNow now = nullptr);
+                           SatNow now = nullptr,
+                           std::span<const db::CaseAssignment> constraints = {});
 
 // The deterministic in-tree CDCL implementation used by the P0 smoke path.
 // Production adapters for CaDiCaL and MiniSat implement the same interface.

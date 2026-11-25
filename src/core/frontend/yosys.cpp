@@ -9,6 +9,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,11 @@
 
 namespace gmax::frontend {
 namespace {
+
+// Yosys marks the names it generates with a leading '$'. Those aliases are
+// stable only for a given Yosys build, while a name that came from the Verilog
+// source is what a constraint or fault list can address.
+bool generated_name(const std::string_view name) { return !name.empty() && name.front() == '$'; }
 
 constexpr std::uint32_t kNoNet = std::numeric_limits<std::uint32_t>::max();
 
@@ -327,9 +333,18 @@ class Importer {
         if (name.empty()) {
             return;
         }
+        // One net can be known by several names: a port, a source wire and a
+        // Yosys-generated alias such as `$flatten$...`. Only the source name can
+        // be written in an SDC file or a fault list, and the generated aliases
+        // change with the Yosys build, so a source name outranks one at the same
+        // priority. Within a kind the smallest name keeps the choice
+        // deterministic.
+        const auto rank = [](const int priority, const std::string& name) {
+            return std::tuple{priority, generated_name(name), std::string_view(name)};
+        };
         const auto it = bit_names_.find(net);
-        if (it == bit_names_.end() || priority < it->second.priority ||
-            (priority == it->second.priority && name < it->second.name)) {
+        if (it == bit_names_.end() ||
+            rank(priority, name) < rank(it->second.priority, it->second.name)) {
             bit_names_[net] = NameChoice{priority, std::move(name)};
         }
     }

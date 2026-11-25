@@ -14,7 +14,7 @@ The implementation is **one C++20 command-line tool**, not a collection of unrel
 |---|---|---|
 | Netlist intake | `gmax read_verilog` | Runs the Yosys front end, flattens a gate-level Verilog design and writes a `.dfdb` database. |
 | Liberty reader | C++ library (`src/core/frontend/liberty`) | Parses the cell, pin, function, scan and timing subset needed by the platform. No standalone CLI command yet. |
-| SDC reader | `gmax read_sdc` | Parses the restricted SDC subset: clocks, generated clocks, clock groups, false paths, case analysis, input/output delays, driving cells and loads. Unsupported commands warn with command and line. |
+| SDC reader | `gmax read_sdc` | Parses the restricted SDC subset: clocks, generated clocks, clock groups, false paths, case analysis, input/output delays, driving cells and loads. Unsupported commands warn with command and line. `--design`/`--output` attaches the set to a `.dfdb`. |
 | Fault list | `gmax write_faults` | Builds the collapsed single-stuck-at fault list from a flattened `.dfdb`. |
 | ATPG engine | `gmax run_atpg` | Runs PODEM with a SAT closer over the collapsed fault list, with deterministic thread merging and coverage/manifest reports. |
 | Fault simulation | C++ library (`src/core/sim`) | 64-lane bit-parallel fault simulation with a scalar-reference differential test. No standalone CLI command yet. |
@@ -51,7 +51,9 @@ gmax read_verilog ───► design.dfdb
                               coverage.json + manifest.json
 ```
 
-`gmax read_sdc constraints.sdc` parses, validates and reports the constraint set as a separate side input. Wiring those constraints into the persisted design database and the ATPG run is follow-on work; `run_atpg` today consumes the flattened database and fault list only.
+`gmax read_sdc constraints.sdc` parses and reports the constraint set, and with `--design`/`--output` it attaches that set to the design database. An attached set is stored with the netlist: both reports carry its status and canonical hash, and `run_atpg` refuses to grade a design whose set is incomplete. A case-analysis set is applied: `run_atpg` pins those values in PODEM and in the SAT miter, so a fault those values block is decided untestable, and the reports name `case_analysis` in their enforced list.
+
+The constraint set is a side input, not another netlist: attaching it changes no flattening, so the netlist hash and an existing fault list stay valid.
 
 The current ATPG path starts from an already-flattened gate-level database. Scan insertion, stitching, DRC, pattern generation and STIL/WGL export are the next stages, not part of the current `run_atpg` command.
 
@@ -108,11 +110,76 @@ The bootstrap scripts are developer caches, not frozen dependencies; see [`third
 # Run PODEM with the SAT closer; reports go to reports/
 ./build/debug/gmax run_atpg design.dfdb design.faults 200 10000 reports/
 
-# Inspect the restricted SDC constraint set
+# Inspect the restricted SDC constraint set; the status and hash are printed
 ./build/debug/gmax read_sdc constraints.sdc
+
+# Attach the set to the design, then grade the attached copy
+./build/debug/gmax read_sdc constraints.sdc --design design.dfdb --output design-sdc.dfdb
+./build/debug/gmax run_atpg design-sdc.dfdb design.faults 200 10000 reports/
 ```
 
 `run_atpg` accepts optional per-fault backtrack and wall-clock limits, and `--threads N` for deterministic multi-threaded grading. It returns `4` (`ATPG incomplete`) if any fault aborts. Run `gmax help <command>` for the exact arguments.
+
+## Constraints
+
+`read_sdc` reports the parsed set and its identity. Report-only is the default, so inspecting a file never writes anything:
+
+```text
+sdc: constraints.sdc
+clocks: 1
+  clock clk period=10 source=clk
+case analysis: 1
+  case test_mode=1
+constraints status: complete
+constraints hash: 1a2b3c4d
+```
+
+To carry the set with the design, name the database to read and the database to write:
+
+```bash
+gmax read_sdc constraints.sdc --design design.dfdb --output design-sdc.dfdb
+```
+
+`--design` and `--output` are used together or not at all. The output must name a different file from the input: the command refuses to write over the database it read, so a typo cannot destroy a design. The database is loaded and validated before anything is written, and a parse or resolution error leaves no file behind (exit `2`).
+
+Attachment stores the set in the design database and changes nothing else — the flattened netlist, its `netlist_hash` and any fault list built from it stay valid. The constraint section is a minor-version extension of the file format:
+
+- a database with **no** constraints is written as `.dfdb` **1.3** and is byte-identical to what earlier versions wrote, so existing designs and stored evidence do not change;
+- an **attached** database is written as `.dfdb` **1.4**, whose only addition is the constraint section.
+
+Constraint objects are named the way the netlist names them: a top-level port, or an internal net by the name the Verilog source gave it, queried with `get_nets`:
+
+```tcl
+set_case_analysis 0 [get_nets N118]
+```
+
+The frontend keeps a source name in preference to a Yosys-generated alias for the same net, so an internal net can be addressed by the name it has in the design rather than by an implementation detail that changes with the Yosys version.
+
+While attaching, every constraint target is examined against the flattened design. A case value on a net that is not a top-level input port cannot be applied by the current engine, so the record is kept but the set is marked **incomplete** rather than dropped or silently ignored.
+
+### Status and hash
+
+| Status | Meaning |
+|---|---|
+| `absent` | The database carries no constraint set. |
+| `complete` | Every target can be applied, so the ATPG engines may grade the design. |
+| `incomplete` | A target cannot be applied, or the SDC used an unsupported construct. `run_atpg` refuses such a design with exit `2` and prints the reasons; there is no implicit "ignore the SDC" mode. |
+
+`constraints_hash` is a CRC32 over a canonical form of the set: records sorted by their primary keys, member lists and `-group` lists sorted, numbers in shortest round-trip decimal, and the source path, comments, whitespace, line numbers and warning text excluded. Two SDC files that describe the same set hash the same, so reformatting a file or moving it does not change its identity. The value sits beside `netlist_hash` and `fault_list_hash` and is never folded into them, so one netlist graded with and without constraints keeps one netlist identity.
+
+## Reports
+
+`run_atpg` with a report directory writes `coverage.json` (`gmax-coverage-2`) and `manifest.json` (`gmax-run-manifest-2`). Both carry a `constraints` block beside the hashes:
+
+```json
+"constraints":{"status":"complete","hash":"1a2b3c4d","algorithm":"crc32","enforced":["case_analysis"],"capture":"not-enforced"}
+```
+
+- `status` and `hash` report the set the run actually loaded, so a run can be reproduced from its report. An `absent` set reports `"hash":null` rather than a hash of nothing.
+- `enforced` lists the construct kinds the run applied. `case_analysis` appears when a complete set was resolved and handed to the engines; an absent set, an incomplete one, or one with no case values still reports `[]`, and that empty list is what tells a reader the attached set did not influence the result. The other construct kinds are parsed, persisted and reported but not consumed yet, so they never appear here.
+- `capture` stays `not-enforced` until the scan and multi-clock capture engines land.
+
+The manifest repeats the same status and hash under `constraints`. Its `path` field is currently empty because the source SDC file is not stored in the database; the ADR makes provenance optional and it is never part of the hash.
 
 ## Repository layout
 

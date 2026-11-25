@@ -6,12 +6,12 @@
 
 ## Context
 
-WP-110 adds `read_sdc` as a parser and reporter. It does not store the parsed
-constraints in the design database and `run_atpg` does not consume them. Before
-wiring the two together, four decisions need one owner: how constraints are
-attached to a database, what identity a constraint set has, what happens when
-the SDC reader cannot represent part of the input, and which constraints the
-current ATPG engine actually enforces.
+WP-110 adds `read_sdc` as a parser and reporter. Before this change it did not
+store the parsed constraints in the design database, and `run_atpg` did not
+consume them. Before wiring the two together, four decisions need one owner:
+how constraints are attached to a database, what identity a constraint set
+has, what happens when the SDC reader cannot represent part of the input, and
+which constraints the current ATPG engine actually enforces.
 
 The constraints cannot simply be made implicit. Architecture 7.3 requires
 unsupported SDC commands to be warnings with command and line information, and
@@ -188,7 +188,11 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    stuck-at fault outcomes.** They are retained for clock-domain reporting,
    scan DRC, and the later multi-clock capture engine. `run_atpg` records them
    and reports `capture_constraints: not-enforced`; it must not claim that
-   clock groups or false paths changed the coverage.
+   clock groups or false paths changed the coverage. A clock whose source does
+   not resolve to a top-level input port is reported at attachment and kept in
+   the set rather than refused, and the attachment summary counts the declared
+   clocks that actually clock a state-holding gate; neither changes a fault
+   outcome.
 
 3. **`set_input_delay`, `set_output_delay`, `set_driving_cell` and `set_load`
    are persisted and validated but are not evaluated.** They are timing and

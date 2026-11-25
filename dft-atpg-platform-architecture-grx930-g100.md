@@ -449,7 +449,7 @@ Validation: for every cell with ≤ 6 inputs, exhaustively evaluate its Liberty 
 
 ### 7.3 SDC
 
-A restricted Tcl interpreter executes SDC commands: `create_clock`, `create_generated_clock`, `set_clock_groups`, `set_false_path`, `set_case_analysis`, `set_input_delay`, `set_output_delay`, `set_driving_cell`, `set_load`. The engine stores clock domains, generated-clock relationships, and case analysis; it does not perform full timing analysis in v1.
+A restricted Tcl interpreter executes SDC commands: `create_clock`, `create_generated_clock`, `set_clock_groups`, `set_false_path`, `set_case_analysis`, `set_input_delay`, `set_output_delay`, `set_driving_cell`, `set_load`. The engine stores clock domains, generated-clock relationships, and case analysis; a complete case-analysis set on top-level input ports is applied as a hard pin value in both PODEM and the SAT miter, and the coverage report lists `case_analysis` in its enforced set. It does not perform full timing analysis in v1.
 
 SDC is used for: identifying capture/launch clocks, detecting clock-domain crossings for scan DRC, excluding false paths from capture checks, and constraining multi-clock ATPG. An SDC command outside the supported subset is a warning with a precise command and line number; unsupported constraints must never be silently dropped.
 

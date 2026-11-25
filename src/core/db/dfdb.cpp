@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -28,6 +29,10 @@ enum class Section : std::uint32_t {
     Async = 7,
     Enable = 8,
     ClockEdge = 9,
+    // 1.4 (ADR-012): the canonical constraint model. Optional in the sense that
+    // a database without attached constraints is still written as 1.3 and has
+    // no such section; a 1.4 file always carries one.
+    Constraints = 10,
 };
 
 Status fail(Error error, std::string message) { return Status::failure(error, std::move(message)); }
@@ -334,10 +339,91 @@ std::vector<std::uint8_t> build_meta(const FlatNetlist& flat, const StringTable&
     return writer.take();
 }
 
+// Doubles are stored as their bit pattern so a constraint survives the round
+// trip exactly; the canonical decimal form is a hash-input rule, not a storage
+// one. Names are written as plain text rather than interned, which keeps the
+// strings section byte-identical for a database that has no constraints.
+std::uint64_t double_bits(const double value) { return std::bit_cast<std::uint64_t>(value); }
+
+void write_names(Writer& writer, const std::vector<std::string>& names) {
+    writer.u32(static_cast<std::uint32_t>(names.size()));
+    for (const std::string& name : names) {
+        writer.text(name);
+    }
+}
+
+std::vector<std::uint8_t> build_constraints(const Constraints& constraints) {
+    Writer writer;
+    writer.u8(constraints.complete ? 1u : 0u);
+    write_names(writer, constraints.unsupported);
+
+    writer.u32(static_cast<std::uint32_t>(constraints.clocks.size()));
+    for (const ConstraintClock& clock : constraints.clocks) {
+        writer.text(clock.name);
+        writer.u64(double_bits(clock.period));
+        writer.u8(clock.has_waveform ? 1u : 0u);
+        writer.u64(double_bits(clock.rise));
+        writer.u64(double_bits(clock.fall));
+        writer.text(clock.source);
+        writer.u8(clock.generated ? 1u : 0u);
+        writer.text(clock.master_clock);
+        writer.text(clock.source_pin);
+        writer.u32(static_cast<std::uint32_t>(clock.divide_by));
+        writer.u32(static_cast<std::uint32_t>(clock.multiply_by));
+    }
+
+    writer.u32(static_cast<std::uint32_t>(constraints.clock_groups.size()));
+    for (const ConstraintClockGroup& group : constraints.clock_groups) {
+        writer.u8(static_cast<std::uint8_t>(group.kind));
+        writer.text(group.name);
+        writer.u32(static_cast<std::uint32_t>(group.groups.size()));
+        for (const std::vector<std::string>& members : group.groups) {
+            write_names(writer, members);
+        }
+    }
+
+    writer.u32(static_cast<std::uint32_t>(constraints.false_paths.size()));
+    for (const ConstraintFalsePath& path : constraints.false_paths) {
+        write_names(writer, path.from);
+        write_names(writer, path.through);
+        write_names(writer, path.to);
+    }
+
+    writer.u32(static_cast<std::uint32_t>(constraints.case_analysis.size()));
+    for (const ConstraintCaseAnalysis& item : constraints.case_analysis) {
+        writer.text(item.object);
+        writer.u8(item.value ? 1u : 0u);
+    }
+
+    writer.u32(static_cast<std::uint32_t>(constraints.delays.size()));
+    for (const ConstraintDelay& delay : constraints.delays) {
+        writer.u8(static_cast<std::uint8_t>(delay.kind));
+        writer.text(delay.object);
+        writer.text(delay.clock);
+        writer.u64(double_bits(delay.value));
+        writer.u8(delay.max ? 1u : 0u);
+        writer.u8(delay.min ? 1u : 0u);
+    }
+
+    writer.u32(static_cast<std::uint32_t>(constraints.driving_cells.size()));
+    for (const ConstraintDrivingCell& cell : constraints.driving_cells) {
+        writer.text(cell.object);
+        writer.text(cell.lib_cell);
+        writer.text(cell.pin);
+    }
+
+    writer.u32(static_cast<std::uint32_t>(constraints.loads.size()));
+    for (const ConstraintLoad& load : constraints.loads) {
+        writer.text(load.object);
+        writer.u64(double_bits(load.value));
+    }
+    return writer.take();
+}
+
 }  // namespace
 
 std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& flat,
-                                    const StringTable& strings) {
+                                    const StringTable& strings, const Constraints* constraints) {
     StringTable table = strings;
 
     // Hierarchy first: interning its names grows the table the strings section
@@ -356,13 +442,16 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     sections.emplace_back(Section::Async, std::move(async));
     sections.emplace_back(Section::Enable, std::move(enable));
     sections.emplace_back(Section::ClockEdge, std::move(clock_edge));
+    if (constraints != nullptr) {
+        sections.emplace_back(Section::Constraints, build_constraints(*constraints));
+    }
 
     Writer writer;
     for (const std::uint8_t byte : kMagic) {
         writer.u8(byte);
     }
     writer.u16(kSchemaMajor);
-    writer.u16(kSchemaMinor);
+    writer.u16(constraints != nullptr ? kSchemaMinor : kSchemaMinorWithoutConstraints);
     writer.u32(kEndianMarker);
     writer.u32(static_cast<std::uint32_t>(sections.size()));
 
@@ -783,6 +872,189 @@ Status parse_meta(Reader& reader, const FlatNetlist& flat, const StringTable& st
 
 namespace {
 
+Status read_names(Reader& reader, std::vector<std::string>& out) {
+    const std::uint32_t count = reader.u32();
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "constraints section ends inside a list count");
+    }
+    if (count > reader.remaining() / 4) {
+        return fail(Error::BadPayload, "a constraints list declares more names than it can hold");
+    }
+    out.clear();
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        out.push_back(reader.text());
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "constraints section ends inside a name");
+        }
+    }
+    return Status{};
+}
+
+Status parse_constraints(Reader& reader, Constraints& constraints) {
+    constraints = Constraints{};
+    constraints.present = true;
+    constraints.complete = reader.u8() != 0;
+    if (!reader.ok()) {
+        return fail(Error::TruncatedFile, "constraints section ends inside its status flag");
+    }
+    Status status = read_names(reader, constraints.unsupported);
+    if (!status) {
+        return status;
+    }
+
+    const std::uint32_t clock_count = reader.u32();
+    if (!reader.ok() || clock_count > reader.remaining() / 4) {
+        return fail(Error::BadPayload, "constraints section declares more clocks than it can hold");
+    }
+    constraints.clocks.reserve(clock_count);
+    for (std::uint32_t i = 0; i < clock_count; ++i) {
+        ConstraintClock clock;
+        clock.name = reader.text();
+        clock.period = std::bit_cast<double>(reader.u64());
+        clock.has_waveform = reader.u8() != 0;
+        clock.rise = std::bit_cast<double>(reader.u64());
+        clock.fall = std::bit_cast<double>(reader.u64());
+        clock.source = reader.text();
+        clock.generated = reader.u8() != 0;
+        clock.master_clock = reader.text();
+        clock.source_pin = reader.text();
+        clock.divide_by = static_cast<int>(reader.u32());
+        clock.multiply_by = static_cast<int>(reader.u32());
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "constraints section ends inside a clock");
+        }
+        constraints.clocks.push_back(std::move(clock));
+    }
+
+    const std::uint32_t group_count = reader.u32();
+    if (!reader.ok() || group_count > reader.remaining() / 4) {
+        return fail(Error::BadPayload,
+                    "constraints section declares more clock groups than it can hold");
+    }
+    constraints.clock_groups.reserve(group_count);
+    for (std::uint32_t i = 0; i < group_count; ++i) {
+        ConstraintClockGroup group;
+        const std::uint8_t kind = reader.u8();
+        if (kind > static_cast<std::uint8_t>(ClockGroupKind::PhysicallyExclusive)) {
+            return fail(Error::BadPayload, "constraints section has an unknown clock-group kind");
+        }
+        group.kind = static_cast<ClockGroupKind>(kind);
+        group.name = reader.text();
+        const std::uint32_t members = reader.u32();
+        if (!reader.ok() || members > reader.remaining() / 4) {
+            return fail(Error::BadPayload, "a clock group declares more members than it can hold");
+        }
+        group.groups.resize(members);
+        for (std::vector<std::string>& names : group.groups) {
+            status = read_names(reader, names);
+            if (!status) {
+                return status;
+            }
+        }
+        constraints.clock_groups.push_back(std::move(group));
+    }
+
+    const std::uint32_t path_count = reader.u32();
+    if (!reader.ok() || path_count > reader.remaining() / 12) {
+        return fail(Error::BadPayload,
+                    "constraints section declares more false paths than it can hold");
+    }
+    constraints.false_paths.reserve(path_count);
+    for (std::uint32_t i = 0; i < path_count; ++i) {
+        ConstraintFalsePath path;
+        status = read_names(reader, path.from);
+        if (!status) {
+            return status;
+        }
+        status = read_names(reader, path.through);
+        if (!status) {
+            return status;
+        }
+        status = read_names(reader, path.to);
+        if (!status) {
+            return status;
+        }
+        constraints.false_paths.push_back(std::move(path));
+    }
+
+    const std::uint32_t case_count = reader.u32();
+    if (!reader.ok() || case_count > reader.remaining() / 4) {
+        return fail(Error::BadPayload,
+                    "constraints section declares more case values than it can hold");
+    }
+    constraints.case_analysis.reserve(case_count);
+    for (std::uint32_t i = 0; i < case_count; ++i) {
+        ConstraintCaseAnalysis item;
+        item.object = reader.text();
+        item.value = reader.u8() != 0;
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "constraints section ends inside a case value");
+        }
+        constraints.case_analysis.push_back(std::move(item));
+    }
+
+    const std::uint32_t delay_count = reader.u32();
+    if (!reader.ok() || delay_count > reader.remaining() / 4) {
+        return fail(Error::BadPayload, "constraints section declares more delays than it can hold");
+    }
+    constraints.delays.reserve(delay_count);
+    for (std::uint32_t i = 0; i < delay_count; ++i) {
+        ConstraintDelay delay;
+        const std::uint8_t kind = reader.u8();
+        if (kind > static_cast<std::uint8_t>(DelayKind::Output)) {
+            return fail(Error::BadPayload, "constraints section has an unknown delay kind");
+        }
+        delay.kind = static_cast<DelayKind>(kind);
+        delay.object = reader.text();
+        delay.clock = reader.text();
+        delay.value = std::bit_cast<double>(reader.u64());
+        delay.max = reader.u8() != 0;
+        delay.min = reader.u8() != 0;
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "constraints section ends inside a delay");
+        }
+        constraints.delays.push_back(std::move(delay));
+    }
+
+    const std::uint32_t cell_count = reader.u32();
+    if (!reader.ok() || cell_count > reader.remaining() / 12) {
+        return fail(Error::BadPayload,
+                    "constraints section declares more driving cells than it can hold");
+    }
+    constraints.driving_cells.reserve(cell_count);
+    for (std::uint32_t i = 0; i < cell_count; ++i) {
+        ConstraintDrivingCell cell;
+        cell.object = reader.text();
+        cell.lib_cell = reader.text();
+        cell.pin = reader.text();
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "constraints section ends inside a driving cell");
+        }
+        constraints.driving_cells.push_back(std::move(cell));
+    }
+
+    const std::uint32_t load_count = reader.u32();
+    if (!reader.ok() || load_count > reader.remaining() / 12) {
+        return fail(Error::BadPayload, "constraints section declares more loads than it can hold");
+    }
+    constraints.loads.reserve(load_count);
+    for (std::uint32_t i = 0; i < load_count; ++i) {
+        ConstraintLoad load;
+        load.object = reader.text();
+        load.value = std::bit_cast<double>(reader.u64());
+        if (!reader.ok()) {
+            return fail(Error::TruncatedFile, "constraints section ends inside a load");
+        }
+        constraints.loads.push_back(std::move(load));
+    }
+
+    if (!reader.at_end()) {
+        return fail(Error::BadPayload, "constraints section has trailing bytes");
+    }
+    return Status{};
+}
+
 const char* section_name(const Section section) {
     switch (section) {
     case Section::Strings:
@@ -803,6 +1075,8 @@ const char* section_name(const Section section) {
         return "enable";
     case Section::ClockEdge:
         return "clock-edge";
+    case Section::Constraints:
+        return "constraints";
     }
     return "unknown";
 }
@@ -920,7 +1194,7 @@ Status validate_flat(const FlatNetlist& flat, const StringTable& strings) {
 }  // namespace
 
 Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& flat,
-             StringTable& strings) {
+             StringTable& strings, Constraints* constraints) {
     if (bytes.size() < kHeaderBytes) {
         return fail(Error::TruncatedFile, "file is shorter than a .dfdb header");
     }
@@ -1038,6 +1312,7 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         case Section::Async:
         case Section::Enable:
         case Section::ClockEdge:
+        case Section::Constraints:
             break;
         default:
             return fail(Error::UnknownSection,
@@ -1114,6 +1389,16 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         const Status status = parse_clock_edge(section, design, flat);
         if (!status) {
             return status;
+        }
+    }
+    if (constraints != nullptr) {
+        constraints->present = false;
+        if (const Entry* entry = find(Section::Constraints); entry != nullptr) {
+            Reader section = open(*entry);
+            const Status status = parse_constraints(section, *constraints);
+            if (!status) {
+                return status;
+            }
         }
     }
     {

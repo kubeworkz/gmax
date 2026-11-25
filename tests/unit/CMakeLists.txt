@@ -84,6 +84,16 @@ target_link_libraries(fault_cli_fixture PRIVATE gmax_core)
 gmax_set_warnings(fault_cli_fixture)
 gmax_set_sanitizers(fault_cli_fixture)
 
+# No test of its own: the sdc_clocks process test runs this fixture so its
+# sequential design does not have to pass through Yosys.
+add_executable(clock_domain_fixture
+  clock_domain_fixture.cpp)
+
+target_link_libraries(clock_domain_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(clock_domain_fixture)
+gmax_set_sanitizers(clock_domain_fixture)
+
 add_executable(fault_list_test
   fault_list_test.cpp)
 
@@ -165,3 +175,13 @@ gmax_set_warnings(sdc_cli_test)
 gmax_set_sanitizers(sdc_cli_test)
 
 add_test(NAME sdc_cli COMMAND sdc_cli_test)
+
+add_executable(constraints_test
+  constraints_test.cpp)
+
+target_link_libraries(constraints_test PRIVATE gmax_core)
+
+gmax_set_warnings(constraints_test)
+gmax_set_sanitizers(constraints_test)
+
+add_test(NAME constraints COMMAND constraints_test)

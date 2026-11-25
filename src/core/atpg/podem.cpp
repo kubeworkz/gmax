@@ -91,9 +91,11 @@ struct Consumers {
 class PodemSearch {
   public:
     PodemSearch(const db::FlatNetlist& netlist, const sim::Fault& fault,
-                const std::span<const db::NetId> observables, const PodemBudget budget)
+                const std::span<const db::NetId> observables, const PodemBudget budget,
+                const std::span<const db::CaseAssignment> constraints)
         : netlist_(netlist), fault_(fault), observables_(observables.begin(), observables.end()),
-          budget_(budget), engine_(netlist), defect_(activation_value(fault.stuck)) {
+          constraints_(constraints.begin(), constraints.end()), budget_(budget), engine_(netlist),
+          defect_(activation_value(fault.stuck)) {
         valid_ = fault_.net < netlist_.net_count() && consumers_.build(netlist_);
         observable_.assign(netlist_.net_count(), 0);
         for (const db::NetId net : observables_) {
@@ -114,7 +116,31 @@ class PodemSearch {
         if (!engine_.reset().ok()) {
             return result;
         }
+        // ADR-012 section 4: a case value is a hard assignment made before the
+        // fault is activated. The values are assigned but not propagated yet:
+        // implying here would decide the fault site from the case value alone and
+        // then make activation look like a conflict, which would report a
+        // detectable fault as untestable. The fault is forced first and the one
+        // implication that follows carries both the case values and the fault,
+        // so the engine arbitrates between them. The first checkpoint is taken
+        // inside search(), after this prologue, so backtracking can never drop a
+        // case value.
+        for (const db::CaseAssignment& constraint : constraints_) {
+            if (constraint.net >= netlist_.net_count()) {
+                return result;
+            }
+            const Logic5 value = constraint.value ? Logic5::One : Logic5::Zero;
+            if (!engine_.assign(constraint.net, value).ok()) {
+                return result;
+            }
+        }
         if (!engine_.force_fault(fault_.net, defect_).ok()) {
+            // A case value on the fault site that contradicts the defect conflicts
+            // with activation, which ADR-012 calls untestable under constraints
+            // rather than aborted.
+            if (!constraints_.empty()) {
+                result.status = PodemStatus::Untestable;
+            }
             return result;
         }
         if (!engine_.imply().ok()) {
@@ -779,6 +805,7 @@ class PodemSearch {
     const db::FlatNetlist& netlist_;
     const sim::Fault& fault_;
     std::vector<db::NetId> observables_;
+    std::vector<db::CaseAssignment> constraints_;
     const PodemBudget budget_;
     ImplicationEngine engine_;
     Consumers consumers_;
@@ -806,8 +833,9 @@ std::string_view podem_status_name(const PodemStatus status) {
 }
 
 PodemResult run_podem(const db::FlatNetlist& netlist, const sim::Fault& fault,
-                      const std::span<const db::NetId> observables, const PodemBudget budget) {
-    PodemSearch search(netlist, fault, observables, budget);
+                      const std::span<const db::NetId> observables, const PodemBudget budget,
+                      const std::span<const db::CaseAssignment> constraints) {
+    PodemSearch search(netlist, fault, observables, budget, constraints);
     return search.run();
 }
 

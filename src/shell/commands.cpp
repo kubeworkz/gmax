@@ -21,12 +21,14 @@
 #include "core/atpg/fault_list.h"
 #include "core/atpg/podem.h"
 #include "core/atpg/sat.h"
+#include "core/db/constraints.h"
 #include "core/db/crc32.h"
 #include "core/db/db.h"
 #include "core/db/design.h"
 #include "core/db/status.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/sdc.h"
+#include "core/frontend/sdc_constraints.h"
 #include "core/frontend/yosys.h"
 #include "core/report/report.h"
 #include "core/sim/fault.h"
@@ -246,6 +248,44 @@ ExitCode write_faults_handler(const Invocation& invocation, std::ostream& out, s
     return ExitCode::Success;
 }
 
+// Resolves a constraint object name to the one net that carries it. False means
+// no such net or more than one, which the attachment step reports as an
+// unresolved or ambiguous reference (ADR-012 section 3).
+bool resolve_net(const db::DesignDb& database, const std::string_view name, db::NetId& out) {
+    const db::FlatNetlist& flat = database.flat();
+    const db::StringTable& strings = database.strings();
+    bool found = false;
+    for (db::NetId net = 0; net < flat.net_count(); ++net) {
+        if (strings.at(flat.name_id[net]) != name) {
+            continue;
+        }
+        if (found) {
+            return false;
+        }
+        out = net;
+        found = true;
+    }
+    return found;
+}
+
+// Resolves the attached case values to nets (ADR-012 section 4). Returns an empty
+// string on success, otherwise a message naming the target that cannot be
+// enforced: a set that cannot be applied must not be graded as if it had been.
+std::string resolve_case_assignments(const db::DesignDb& database,
+                                     std::vector<db::CaseAssignment>& out) {
+    for (const db::ConstraintCaseAnalysis& item : database.constraints().case_analysis) {
+        db::NetId net = db::kInvalidId;
+        if (!resolve_net(database, item.object, net)) {
+            return "case-analysis object '" + item.object + "' does not resolve to a net";
+        }
+        if (database.flat().driver[net] != db::kPrimaryInput) {
+            return "case-analysis object '" + item.object + "' is not a primary input";
+        }
+        out.push_back({net, item.value});
+    }
+    return {};
+}
+
 struct FaultGrade {
     atpg::PodemStatus status = atpg::PodemStatus::Aborted;
     std::size_t decisions = 0;
@@ -258,9 +298,11 @@ struct FaultGrade {
 // write into disjoint fault-indexed slots.
 FaultGrade grade_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
                        const std::span<const db::NetId> observables,
-                       const atpg::PodemBudget& budget) {
+                       const atpg::PodemBudget& budget,
+                       const std::span<const db::CaseAssignment> constraints) {
     const auto fault_start = std::chrono::steady_clock::now();
-    const atpg::PodemResult result = atpg::run_podem(netlist, fault, observables, budget);
+    const atpg::PodemResult result =
+        atpg::run_podem(netlist, fault, observables, budget, constraints);
     FaultGrade grade;
     grade.status = result.status;
     grade.decisions = result.decisions;
@@ -289,8 +331,8 @@ FaultGrade grade_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
             }
         }
         if (sat_time_available) {
-            const atpg::SatFaultResult proof =
-                atpg::check_fault(netlist, fault, observables, 1000000, remaining_time_ms);
+            const atpg::SatFaultResult proof = atpg::check_fault(
+                netlist, fault, observables, 1000000, remaining_time_ms, nullptr, constraints);
             if (proof.status == atpg::SatFaultStatus::Detected) {
                 grade.status = atpg::PodemStatus::Detected;
                 grade.sat_fallback = true;
@@ -346,6 +388,33 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         return ExitCode::Design;
     }
 
+    // ADR-012 section 3: an incomplete set is never graded. The stored warnings
+    // are printed and the run stops as a design error before faults are read or
+    // any report is written. There is no implicit "ignore SDC" mode.
+    const db::ConstraintsStatus constraints_status = db::constraints_status(database.constraints());
+    std::uint32_t constraints_hash_value = 0;
+    if (constraints_status != db::ConstraintsStatus::Absent) {
+        constraints_hash_value = db::constraints_hash(database.constraints());
+    }
+    if (constraints_status == db::ConstraintsStatus::Incomplete) {
+        err << "gmax: design constraints are incomplete; refusing to grade\n";
+        for (const std::string& name : database.constraints().unsupported) {
+            err << "gmax:   unsupported construct: " << name << '\n';
+        }
+        return ExitCode::Design;
+    }
+
+    // The values are resolved once, before any grading work starts, so a target
+    // that cannot be enforced stops the run instead of being skipped silently.
+    std::vector<db::CaseAssignment> case_assignments;
+    if (constraints_status == db::ConstraintsStatus::Complete) {
+        const std::string resolve_error = resolve_case_assignments(database, case_assignments);
+        if (!resolve_error.empty()) {
+            err << "gmax: " << resolve_error << '\n';
+            return ExitCode::Design;
+        }
+    }
+
     std::string primary_output_error;
     const std::vector<db::NetId> observables = primary_outputs(database, primary_output_error);
     if (!primary_output_error.empty()) {
@@ -373,8 +442,8 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         const std::size_t end = std::min(begin + kFaultChunk, grade_count);
         for (std::size_t index = begin; index < end; ++index) {
             try {
-                grades[index] =
-                    grade_fault(database.flat(), faults.collapsed[index], observables, budget);
+                grades[index] = grade_fault(database.flat(), faults.collapsed[index], observables,
+                                            budget, case_assignments);
             } catch (...) {
                 grade_errors[index] = std::current_exception();
             }
@@ -486,11 +555,23 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     out << "coverage atpg: " << summary.detected << '/' << summary.collapsed << "\n";
     out << "netlist hash: " << report::hex32(faults.header.netlist_hash) << "\n";
     out << "fault-list hash: " << report::hex32(faults.header.fault_list_hash) << "\n";
+    out << "constraints status: " << db::constraints_status_name(constraints_status) << "\n";
+    if (constraints_status != db::ConstraintsStatus::Absent) {
+        out << "constraints hash: " << report::hex32(constraints_hash_value) << "\n";
+    }
 
     report::CoverageReport coverage;
     coverage.design = database.design().top;
     coverage.netlist_hash = faults.header.netlist_hash;
     coverage.fault_list_hash = faults.header.fault_list_hash;
+    coverage.constraints_status = constraints_status;
+    coverage.constraints_hash = constraints_hash_value;
+    // The enforced list names what the run actually used, so it is filled only
+    // when a complete set was resolved and handed to the engines. Capture
+    // constraints stay not-enforced.
+    if (!case_assignments.empty()) {
+        coverage.enforced.emplace_back("case_analysis");
+    }
     coverage.budget = budget;
     coverage.summary = summary;
     coverage.faults = std::move(outcomes);
@@ -518,6 +599,10 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         manifest.netlist_hash = faults.header.netlist_hash;
         manifest.fault_list_hash = faults.header.fault_list_hash;
         manifest.coverage_hash = db::crc32(coverage_text);
+        // ADR-012: constraints are a run input with their own identity. The SDC
+        // path is provenance only and is never part of the hash.
+        manifest.constraints_status = constraints_status;
+        manifest.constraints_hash = constraints_hash_value;
         manifest.gates = database.flat().gate_count();
         manifest.nets = database.flat().net_count();
         manifest.budget = budget;
@@ -719,6 +804,101 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
     out << "driving cells: " << constraints.driving_cells.size() << '\n';
     out << "loads: " << constraints.loads.size() << '\n';
     out << "warnings: " << warnings << '\n';
+
+    // ADR-012 decision 1: report-only stays the default. Attachment needs both
+    // --design and --output, and read_sdc never overwrites its input database.
+    std::string design_option;
+    std::string output_option;
+    for (const OptionValue& option : invocation.options) {
+        if (option.name == "design") {
+            design_option = option.value;
+        } else if (option.name == "output") {
+            output_option = option.value;
+        }
+    }
+    if (design_option.empty() != output_option.empty()) {
+        err << "gmax: read_sdc needs --design and --output together\n";
+        return ExitCode::Usage;
+    }
+
+    db::Constraints attached = frontend::to_constraints(constraints, result.diagnostics);
+    db::ClockDomains domains;
+    bool have_domains = false;
+
+    if (!design_option.empty()) {
+        std::error_code equivalent_error;
+        if (design_option == output_option ||
+            (std::filesystem::exists(design_option, equivalent_error) &&
+             std::filesystem::equivalent(design_option, output_option, equivalent_error))) {
+            err << "gmax: --output must differ from --design; read_sdc never overwrites its "
+                   "input database\n";
+            return ExitCode::Usage;
+        }
+
+        db::DesignDb database;
+        const db::Status loaded = db::DesignDb::load(design_option, database);
+        if (!loaded.ok()) {
+            err << "gmax: cannot load design '" << design_option << "': " << loaded.message()
+                << '\n';
+            return ExitCode::Design;
+        }
+
+        // A resolved case value is enforceable only on a net that is a top-level
+        // input port. An object that names nothing is an error; one that resolves
+        // to something else marks the whole set incomplete rather than being
+        // silently dropped while its supported companions are kept.
+        for (const db::ConstraintCaseAnalysis& item : attached.case_analysis) {
+            db::NetId net = db::kInvalidId;
+            if (!resolve_net(database, item.object, net)) {
+                err << "gmax: case-analysis object '" << item.object
+                    << "' does not resolve unambiguously\n";
+                return ExitCode::Design;
+            }
+            if (database.flat().driver[net] != db::kPrimaryInput) {
+                attached.complete = false;
+            }
+        }
+        // Clock sources are the other object references this engine resolves;
+        // every remaining record is retained for reporting and scan DRC, not
+        // enforced, so its names are carried without resolution. A clock that
+        // resolves somewhere other than a top-level input port is reported and
+        // kept: clocks change no fault outcome, so refusing the set would say
+        // more than the engine can back up.
+        for (const db::ConstraintClock& clock : attached.clocks) {
+            if (clock.source.empty()) {
+                continue;
+            }
+            db::NetId net = db::kInvalidId;
+            if (!resolve_net(database, clock.source, net)) {
+                err << "gmax: clock source '" << clock.source
+                    << "' does not resolve unambiguously\n";
+                return ExitCode::Design;
+            }
+            if (database.flat().driver[net] != db::kPrimaryInput) {
+                err << "gmax: clock source '" << clock.source << "' is not a top-level input\n";
+            }
+        }
+
+        database.constraints() = attached;
+        domains = db::clock_domains(attached, database.flat(), database.strings());
+        have_domains = true;
+        const db::Status saved = database.save(output_option);
+        if (!saved.ok()) {
+            err << "gmax: cannot write '" << output_option << "': " << saved.message() << '\n';
+            return ExitCode::Design;
+        }
+        out << "attached: " << output_option << '\n';
+    }
+
+    out << "constraints status: " << db::constraints_status_name(db::constraints_status(attached))
+        << '\n';
+    out << "constraints hash: " << report::hex32(db::constraints_hash(attached)) << '\n';
+    if (have_domains) {
+        // The declared clocks that actually clock a state-holding gate. The
+        // report-only form has no netlist to count against, so it omits the
+        // line rather than printing a zero it did not measure.
+        out << "clock domains: " << domains.domains << " (" << domains.flops << " flops)\n";
+    }
     return ExitCode::Success;
 }
 
@@ -740,9 +920,13 @@ bool register_commands(Cli& cli, std::string& error) {
     CommandSpec sdc_spec;
     sdc_spec.name = "read_sdc";
     sdc_spec.summary =
-        "parse a restricted SDC subset and report clocks, groups, case analysis and false paths";
+        "parse a restricted SDC subset; report it, or attach it to a design database";
     sdc_spec.positionals = {
         {"sdc", "SDC constraints file", true},
+    };
+    sdc_spec.options = {
+        {"design", "input.dfdb", "attach the parsed constraints to this design database"},
+        {"output", "output.dfdb", "write the attached database here (requires --design)"},
     };
     if (!cli.add_command(std::move(sdc_spec), read_sdc_handler, error)) {
         return false;

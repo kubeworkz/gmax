@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/atpg/logic5.h"
+#include "core/db/constraints.h"
 #include "core/db/flat.h"
 #include "core/sim/fault.h"
 
@@ -41,8 +42,11 @@ struct PodemResult {
 // Runs PODEM for one stuck-at fault. `observables` are the primary outputs or
 // scan-cell data inputs at which a defect may be detected. The fault site is
 // activated with force_fault(); the search then justifies the fault and finds
-// an X-path to an observable. The CLI layer is intentionally not involved.
+// an X-path to an observable. `constraints` are resolved case-analysis values,
+// applied as hard assignments before activation (ADR-012 section 4); the CLI
+// layer is intentionally not involved.
 PodemResult run_podem(const db::FlatNetlist& netlist, const sim::Fault& fault,
-                      std::span<const db::NetId> observables, PodemBudget budget = {});
+                      std::span<const db::NetId> observables, PodemBudget budget = {},
+                      std::span<const db::CaseAssignment> constraints = {});
 
 }  // namespace gmax::atpg

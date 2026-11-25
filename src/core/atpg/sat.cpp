@@ -437,9 +437,10 @@ bool is_source_or_state(const db::GateType type) {
 class FaultMiter {
   public:
     FaultMiter(const db::FlatNetlist& netlist, const sim::Fault& fault,
-               const std::span<const db::NetId> observables, ISatSolver& solver, const SatNow now)
+               const std::span<const db::NetId> observables, const SatNow now,
+               const std::span<const db::CaseAssignment> constraints, ISatSolver& solver)
         : netlist_(netlist), fault_(fault), observables_(observables.begin(), observables.end()),
-          solver_(solver), now_(now) {}
+          constraints_(constraints.begin(), constraints.end()), solver_(solver), now_(now) {}
 
     SatFaultResult run(const std::size_t max_conflicts, const std::uint64_t max_time_ms) {
         SatFaultResult result;
@@ -498,6 +499,24 @@ class FaultMiter {
                 continue;
             }
             add_equal(good_[net], faulty_[net]);
+        }
+
+        // ADR-012 section 4: a case value is a hard assignment in both circuits.
+        // Asserting it before the activation clause means a value that contradicts
+        // the defect leaves the miter UNSAT, which run() reports as Untestable
+        // rather than as an unclear answer.
+        for (const db::CaseAssignment& constraint : constraints_) {
+            if (constraint.net >= netlist_.net_count()) {
+                return false;
+            }
+            const int good_value =
+                constraint.value ? good_[constraint.net] : -good_[constraint.net];
+            const int faulty_value =
+                constraint.value ? faulty_[constraint.net] : -faulty_[constraint.net];
+            if (!solver_.add_clause({good_value}) || !solver_.add_clause({faulty_value})) {
+                timed_out_ = true;
+                return false;
+            }
         }
 
         if (!solver_.add_clause({fault_.stuck == sim::StuckValue::One ? faulty_[fault_.net]
@@ -662,6 +681,7 @@ class FaultMiter {
     const db::FlatNetlist& netlist_;
     const sim::Fault& fault_;
     std::vector<db::NetId> observables_;
+    const std::vector<db::CaseAssignment> constraints_;
     ISatSolver& solver_;
     std::vector<int> good_;
     std::vector<int> faulty_;
@@ -674,9 +694,10 @@ class FaultMiter {
 SatFaultResult check_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
                            const std::span<const db::NetId> observables,
                            const std::size_t max_conflicts, const std::uint64_t max_time_ms,
-                           const SatNow now) {
+                           const SatNow now,
+                           const std::span<const db::CaseAssignment> constraints) {
     const std::unique_ptr<ISatSolver> solver = make_internal_sat_solver();
-    FaultMiter miter(netlist, fault, observables, *solver, now);
+    FaultMiter miter(netlist, fault, observables, now, constraints, *solver);
     return miter.run(max_conflicts, max_time_ms);
 }
 

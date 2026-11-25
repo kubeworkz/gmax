@@ -113,6 +113,11 @@ jobs:
           GMAX_G0_1_GATE: "1"
           GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
         run: ctest --test-dir build/gate -R '^cli\.iscas85$' --no-tests=error --output-on-failure
+      - name: run G0.1 SDC attachment gate
+        env:
+          GMAX_G0_1_GATE: "1"
+          GMAX_YOSYS: ${{ github.workspace }}/.gmax-cache/yosys/0.71/bin/yosys
+        run: ctest --test-dir build/gate -R '^cli\.sdc-attach$' --no-tests=error --output-on-failure
       - name: run G0.2 SAT smoke gate
         env:
           GMAX_G0_2_GATE: "1"

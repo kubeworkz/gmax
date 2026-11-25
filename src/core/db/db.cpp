@@ -289,7 +289,8 @@ Status DesignDb::flatten() {
 }
 
 Status DesignDb::save(const std::string& path) const {
-    const std::vector<std::uint8_t> bytes = dfdb::serialize(design_, flat_, strings_);
+    const std::vector<std::uint8_t> bytes =
+        dfdb::serialize(design_, flat_, strings_, constraints_.present ? &constraints_ : nullptr);
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
         return Status::failure(Error::IoError, "cannot open '" + path + "' for writing");
@@ -321,7 +322,7 @@ Status DesignDb::load(const std::string& path, DesignDb& out) {
     if (!in) {
         return Status::failure(Error::IoError, "cannot read '" + path + "'");
     }
-    return dfdb::parse(bytes, out.design_, out.flat_, out.strings_);
+    return dfdb::parse(bytes, out.design_, out.flat_, out.strings_, &out.constraints_);
 }
 
 }  // namespace gmax::db

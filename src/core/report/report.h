@@ -8,6 +8,7 @@
 
 #include "core/atpg/podem.h"
 #include "core/atpg/sat.h"
+#include "core/db/constraints.h"
 #include "core/db/status.h"
 #include "core/sim/fault.h"
 
@@ -50,6 +51,13 @@ struct CoverageReport {
     std::string design;
     std::uint32_t netlist_hash = 0;
     std::uint32_t fault_list_hash = 0;
+    // ADR-012: constraints are reported as their own identity and status, never
+    // folded into the netlist or fault-list hashes. The enforced set is a list of
+    // construct names; it stays empty until the engines apply resolved values, so
+    // a report cannot claim enforcement that did not happen.
+    db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
+    std::uint32_t constraints_hash = 0;
+    std::vector<std::string> enforced;
     atpg::PodemBudget budget;
     CoverageSummary summary;
     std::vector<FaultOutcome> faults;
@@ -69,6 +77,11 @@ struct RunManifest {
     std::uint32_t netlist_hash = 0;
     std::uint32_t fault_list_hash = 0;
     std::uint32_t coverage_hash = 0;
+    // ADR-012: constraints are an input to the run, with their own hash and the
+    // provenance path of the SDC that produced them.
+    std::string constraints_path;
+    db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
+    std::uint32_t constraints_hash = 0;
     std::uint32_t gates = 0;
     std::uint32_t nets = 0;
     atpg::PodemBudget budget;
