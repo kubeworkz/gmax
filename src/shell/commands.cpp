@@ -782,6 +782,17 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
             out << ']';
         }
         out << '\n';
+        // ADR-012 section 4: the members are checked against the declared clock
+        // names. A finding is annotated here and counted in `warnings`; the
+        // member stays in the group and the set keeps its status.
+        const frontend::SdcClockGroupIssues issues =
+            frontend::sdc_clock_group_issues(constraints, group);
+        for (const std::string& member : issues.unknown) {
+            out << "  unknown member " << member << '\n';
+        }
+        for (const std::string& member : issues.conflicting) {
+            out << "  conflicting member " << member << '\n';
+        }
     }
     out << "case analysis: " << constraints.case_analysis.size() << '\n';
     for (const frontend::SdcCaseAnalysis& item : constraints.case_analysis) {

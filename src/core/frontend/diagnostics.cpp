@@ -46,6 +46,10 @@ std::string_view diagnostic_code_name(const DiagnosticCode code) {
         return "sdc-invalid-value";
     case DiagnosticCode::SdcDuplicateClock:
         return "sdc-duplicate-clock";
+    case DiagnosticCode::SdcClockGroupUnknownMember:
+        return "sdc-clock-group-unknown-member";
+    case DiagnosticCode::SdcClockGroupConflictingMember:
+        return "sdc-clock-group-conflicting-member";
     }
     return "unknown";
 }
