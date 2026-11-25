@@ -22,9 +22,7 @@ namespace {
 // Yosys marks the names it generates with a leading '$'. Those aliases are
 // stable only for a given Yosys build, while a name that came from the Verilog
 // source is what a constraint or fault list can address.
-bool generated_name(const std::string_view name) {
-    return !name.empty() && name.front() == '$';
-}
+bool generated_name(const std::string_view name) { return !name.empty() && name.front() == '$'; }
 
 constexpr std::uint32_t kNoNet = std::numeric_limits<std::uint32_t>::max();
 
