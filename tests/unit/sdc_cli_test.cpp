@@ -152,7 +152,7 @@ void test_attachment_options(const shell::Cli& cli) {
 // The attachment path against a real database: a case value on a top-level input
 // port is a target that can be applied, so the set stays complete; one on an
 // internal net is carried but marks the set incomplete (ADR-012 section 4).
-void write_inverter_db(const std::filesystem::path& path) {
+void build_inverter(gmax::db::DesignDb& database) {
     gmax::db::Design design;
     design.top = "top";
     gmax::db::Module module;
@@ -167,9 +167,13 @@ void write_inverter_db(const std::filesystem::path& path) {
     module.gates = {gate};
     design.modules = {module};
 
-    gmax::db::DesignDb database;
     database.design() = design;
     expect(database.flatten().ok(), "the attach fixture flattens");
+}
+
+void write_inverter_db(const std::filesystem::path& path) {
+    gmax::db::DesignDb database;
+    build_inverter(database);
     expect(database.save(path.string()).ok(), "the attach fixture saves");
 }
 
@@ -213,6 +217,70 @@ void test_attach_to_design(const shell::Cli& cli) {
     }
 }
 
+// A stored set that claims to be complete but names a target this netlist cannot
+// enforce. Attachment refuses to produce one, so the fixture is hand-built: the
+// guard exists for a database that was edited or written by another tool after
+// the set was attached.
+void write_inverter_db_with_case(const std::filesystem::path& path,
+                                 const std::string& target) {
+    gmax::db::DesignDb database;
+    build_inverter(database);
+    gmax::db::Constraints& constraints = database.constraints();
+    constraints.present = true;
+    constraints.complete = true;
+    constraints.case_analysis = {{target, false}};
+    expect(database.save(path.string()).ok(), "the guard fixture saves");
+}
+
+// ADR-012 sections 3 and 4: a set that cannot be applied is never graded. Both
+// refusals happen before faults are read, so the fixture passes a faults path
+// that does not exist: a run that reached read_faults would report a different
+// error and prove the guard had not fired.
+void test_run_atpg_refuses_unenforceable_case(const shell::Cli& cli) {
+    const std::filesystem::path directory = std::filesystem::temp_directory_path();
+    const std::filesystem::path unresolved_design = directory / "gmax-atpg-guard-unresolved.dfdb";
+    const std::filesystem::path internal_design = directory / "gmax-atpg-guard-internal.dfdb";
+    const std::filesystem::path faults = directory / "gmax-atpg-guard.faults";
+    const std::filesystem::path unresolved_report = directory / "gmax-atpg-guard-a";
+    const std::filesystem::path internal_report = directory / "gmax-atpg-guard-b";
+
+    write_inverter_db_with_case(unresolved_design, "nope");
+    write_inverter_db_with_case(internal_design, "y");
+
+    const auto grade = [&](const std::filesystem::path& design,
+                          const std::filesystem::path& report) {
+        const std::vector<std::string> args = {"run_atpg", design.string(), faults.string(), "0",
+                                              "1",        report.string()};
+        return run(cli, args);
+    };
+
+    const RunResult unresolved = grade(unresolved_design, unresolved_report);
+    expect(unresolved.code == shell::ExitCode::Design,
+           "an unresolvable case target is a design error");
+    expect(contains(unresolved.err, "case-analysis object 'nope' does not resolve to a net"),
+           "the unresolvable target is named");
+    expect(!std::filesystem::exists(unresolved_report / "coverage.json"),
+           "a refused run writes no coverage report");
+    expect(!std::filesystem::exists(unresolved_report / "manifest.json"),
+           "a refused run writes no manifest");
+
+    const RunResult internal = grade(internal_design, internal_report);
+    expect(internal.code == shell::ExitCode::Design,
+           "a case target that is not a primary input is a design error");
+    expect(contains(internal.err, "case-analysis object 'y' is not a primary input"),
+           "the non-input target is named");
+    expect(!std::filesystem::exists(internal_report / "coverage.json"),
+           "the non-input refusal writes no coverage report");
+    expect(!std::filesystem::exists(internal_report / "manifest.json"),
+           "the non-input refusal writes no manifest");
+
+    std::error_code ignored;
+    for (const std::filesystem::path& path :
+         {unresolved_design, internal_design, unresolved_report, internal_report}) {
+        std::filesystem::remove_all(path, ignored);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -227,6 +295,7 @@ int main() {
     test_error_diagnostic(cli);
     test_attachment_options(cli);
     test_attach_to_design(cli);
+    test_run_atpg_refuses_unenforceable_case(cli);
 
     if (failures != 0) {
         std::cerr << failures << " SDC CLI check(s) failed" << std::endl;
