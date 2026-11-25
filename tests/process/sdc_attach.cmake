@@ -147,6 +147,28 @@ check_text("${manifest_text}"
     "\"constraints\":{\"path\":\"\",\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\"}"
     "c432 manifest constraints")
 
+# A target that cannot be applied must never be graded. N223 is an output port of
+# c432, so its net is driven by a gate instead of being a top-level input: the
+# attachment keeps the record but marks the set incomplete, and run_atpg must
+# refuse the design before it reads faults or writes a report.
+set(incomplete_sdc "${WORK_DIR}/c432-incomplete.sdc")
+set(incomplete_db "${WORK_DIR}/c432-incomplete.dfdb")
+set(incomplete_report "${WORK_DIR}/c432-incomplete-report")
+file(WRITE "${incomplete_sdc}" "set_case_analysis 0 [get_ports N223]\n")
+
+run_gmax(0 read_sdc "${incomplete_sdc}" --design "${design}" --output "${incomplete_db}")
+check_text("${GMAX_OUT}" "attached: ${incomplete_db}" "c432 incomplete attachment")
+check_text("${GMAX_OUT}" "case analysis: 1" "c432 incomplete attachment")
+check_text("${GMAX_OUT}" "constraints status: incomplete" "c432 incomplete attachment")
+
+run_gmax(2 run_atpg "${incomplete_db}" "${faults}" 100000 0 "${incomplete_report}")
+check_text("${GMAX_ERR}" "design constraints are incomplete" "c432 incomplete refusal")
+check_text("${GMAX_ERR}" "refusing to grade" "c432 incomplete refusal")
+check_absent("${GMAX_OUT}" "raw faults:" "c432 incomplete refusal")
+if(EXISTS "${incomplete_report}/coverage.json" OR EXISTS "${incomplete_report}/manifest.json")
+    message(FATAL_ERROR "run_atpg wrote reports for an incomplete constraint set")
+endif()
+
 file(MAKE_DIRECTORY "${GMAX_REPORTS_DIR}/sdc-attach")
 file(COPY "${coverage}" "${manifest}" DESTINATION "${GMAX_REPORTS_DIR}/sdc-attach")
 
