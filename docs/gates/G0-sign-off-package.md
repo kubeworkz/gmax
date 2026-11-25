@@ -280,9 +280,9 @@ completed without one. This package therefore treats the G100 library set as a
 start condition for real insertion, not for the narrow library-independent
 slice.
 
-WP-101 may start only when every condition below is satisfied and recorded in a
-written start authorization. The signed gate decision does not supply that
-authorization.
+WP-101 may start only when the required conditions below are satisfied and
+recorded in a written start authorization. The signed gate decision does not
+supply that authorization.
 
 | Condition | Required before formal WP-101 start? | Recorded in |
 |---|---|---|
@@ -292,11 +292,17 @@ authorization.
 | TBD-03 scan spec accepted and hashed | Yes; plan section 13 makes it a WP-101 start input | Gate pack G0-D04 closure |
 | G100 netlist, Liberty set and scan mapping accepted | Yes for real insertion and G1.3; no for a library-independent slice only if the gate decision explicitly records a written intake risk acceptance | Gate pack G0-D05 / intake record |
 | grx930 netlist and Liberty set accepted | No for the first G100 insertion trial; yes before G0-D05 closes and the grx930 profile freezes | Intake record |
-| G100 bring-up block (TBD-10) named | Not a formal WP-101 dependency; needed to make the TBD-03 scan spec and the G100 trial block-specific (plan lists TBD-10 against WP-111/G1) | Profile and TBD-03 |
 | TBD-06 capture procedure | No; blocks WP-201/G2.6 | TBD-06 record |
 | TBD-07 X-source policy | No; blocks WP-209. Black-box declarations still come with the netlist | TBD-07 record |
 | TBD-04 ATE platform and pin map | No; chain count may be provisional, but must be re-frozen before WP-211 | TBD-04 record |
 | Separate written WP-101 start authorization | Yes | Gate pack or a dated companion record |
+
+TBD-10, the G100 bring-up block, is not a separate WP-101 start condition; plan
+section 13 lists it against WP-111 and G1. It is needed only to make the TBD-03
+scan spec and the G100 trial block-specific: the TBD-03 chip, block and profile
+field names the block (or an explicitly labelled provisional substitute), and
+the G100 profile records it. TBD-10 is therefore recorded through TBD-03, not as
+a separate condition above.
 
 Until the required rows are satisfied, the only permissible WP-101 activity is
 the library-independent slice named in the gate pack — `test_cell` scan-cell
