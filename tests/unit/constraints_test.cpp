@@ -199,28 +199,18 @@ void test_schema_round_trip() {
 // is activated. y = ~a with y stuck-at 1 activates only when a = 1, so a case
 // value of 0 makes the fault untestable without touching the unconstrained
 // verdict.
-void test_podem_applies_case_analysis() {
-    db::FlatNetlist netlist;
-    db::StringTable strings;
-    strings.intern("a");
-    strings.intern("y");
+// The flattened inverter both engines grade: a -> NOT -> y, so net 0 is the
+// input and net 1 the output.
+void flatten_inverter(db::DesignDb& database) {
+    database.design() = make_inverter().design;
+    expect(database.flatten().ok(), "the inverter flattens for ATPG");
+    expect(database.flat().net_count() == 2, "the flattened inverter has two nets");
+}
 
-    netlist.type = {db::GateType::Not};
-    netlist.fanin_begin = {0, 1};
-    netlist.fanins = {0};
-    netlist.fanout_begin = {0, 1};
-    netlist.fanouts = {1};
-    netlist.out_net = {1};
-    netlist.flags = {0};
-    netlist.level = {1};
-    netlist.lib_cell = {db::kInvalidId};
-    netlist.clock_edge = {db::ClockEdge::Rising};
-    netlist.enable = {db::kInvalidId};
-    netlist.async_clear = {db::kInvalidId};
-    netlist.async_preset = {db::kInvalidId};
-    netlist.driver = {db::kPrimaryInput, 0};
-    netlist.name_id = {0, 1};
-    netlist.source_loc = {db::kInvalidId, db::kInvalidId};
+void test_podem_applies_case_analysis() {
+    db::DesignDb database;
+    flatten_inverter(database);
+    const db::FlatNetlist& netlist = database.flat();
 
     const std::vector<db::NetId> observables = {1};
     const gmax::sim::Fault fault{1, gmax::sim::StuckValue::One};
@@ -240,6 +230,27 @@ void test_podem_applies_case_analysis() {
         gmax::atpg::run_podem(netlist, fault, observables, gmax::atpg::PodemBudget{}, a_low);
     expect(again.status == constrained.status && again.decisions == constrained.decisions,
            "the constrained verdict and its counters are repeatable");
+}
+
+// The miter asserts the same values as unit clauses on both copies, so a case
+// value that blocks activation makes the query UNSAT instead of undecided.
+void test_sat_applies_case_analysis() {
+    db::DesignDb database;
+    flatten_inverter(database);
+    const db::FlatNetlist& netlist = database.flat();
+
+    const std::vector<db::NetId> observables = {1};
+    const gmax::sim::Fault fault{1, gmax::sim::StuckValue::One};
+
+    const gmax::atpg::SatFaultResult free = gmax::atpg::check_fault(netlist, fault, observables);
+    expect(free.status == gmax::atpg::SatFaultStatus::Detected,
+           "the unconstrained miter detects the inverter fault");
+
+    const std::vector<db::CaseAssignment> a_low = {{0, false}};
+    const gmax::atpg::SatFaultResult constrained =
+        gmax::atpg::check_fault(netlist, fault, observables, 1000000, 0, nullptr, a_low);
+    expect(constrained.status == gmax::atpg::SatFaultStatus::Untestable,
+           "the case value makes the miter UNSAT, which is untestable not unknown");
 }
 
 // ADR-012: constraints carry their own identity in the report, and this slice
@@ -274,6 +285,7 @@ int main() {
     test_status_and_absent();
     test_schema_round_trip();
     test_podem_applies_case_analysis();
+    test_sat_applies_case_analysis();
     test_report_claims_no_enforcement();
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed" << std::endl;
