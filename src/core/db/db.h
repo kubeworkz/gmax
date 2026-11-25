@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "core/db/constraints.h"
 #include "core/db/design.h"
 #include "core/db/flat.h"
 #include "core/db/status.h"
@@ -26,10 +27,18 @@ class DesignDb {
     const FlatNetlist& flat() const { return flat_; }
     const StringTable& strings() const { return strings_; }
 
+    // ADR-012: constraints are part of the database, not a side file. A loaded
+    // database always has a decision here; `present()` is false when the file
+    // carried no constraints section, which is the `absent` status.
+    const Constraints& constraints() const { return constraints_; }
+    Constraints& constraints() { return constraints_; }
+    bool has_constraints() const { return constraints_.present; }
+
   private:
     Design design_;
     FlatNetlist flat_;
     StringTable strings_;
+    Constraints constraints_;
 };
 
 }  // namespace gmax::db

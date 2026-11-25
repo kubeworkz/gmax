@@ -11,6 +11,9 @@
 #include <string_view>
 #include <vector>
 
+#include "core/db/db.h"
+#include "core/db/design.h"
+#include "core/db/ids.h"
 #include "shell/cli.h"
 #include "shell/commands.h"
 
@@ -48,6 +51,17 @@ RunResult run(const shell::Cli& cli, const std::vector<std::string>& args) {
     std::ostringstream err;
     const shell::ExitCode code = cli.run(std::span<const std::string>(args), out, err);
     return {code, out.str(), err.str()};
+}
+
+// Built step by step so the attachment arguments stay readable at any width.
+RunResult run_attach(const shell::Cli& cli, const std::filesystem::path& sdc,
+                     const std::filesystem::path& design, const std::filesystem::path& output) {
+    std::vector<std::string> args = {"read_sdc", sdc.string()};
+    args.push_back("--design");
+    args.push_back(design.string());
+    args.push_back("--output");
+    args.push_back(output.string());
+    return run(cli, args);
 }
 
 void test_valid_file(const shell::Cli& cli) {
@@ -106,6 +120,99 @@ void test_error_diagnostic(const shell::Cli& cli) {
     std::filesystem::remove(path, ignored);
 }
 
+// ADR-012: report-only stays the default and now prints the canonical hash and
+// status; attachment requires both options and never targets its own input.
+void test_attachment_options(const shell::Cli& cli) {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "gmax-sdc-cli-attach.sdc";
+    write_file(path, "create_clock -name clk -period 10 [get_ports clk]\n");
+
+    const RunResult report = run(cli, {"read_sdc", path.string()});
+    expect(report.code == shell::ExitCode::Success, "report-only read_sdc succeeds");
+    expect(contains(report.out, "constraints status: complete"),
+           "report-only prints the constraints status");
+    expect(contains(report.out, "constraints hash: "),
+           "report-only prints the canonical constraints hash");
+
+    const RunResult half = run(cli, {"read_sdc", path.string(), "--design", "a.dfdb"});
+    expect(half.code == shell::ExitCode::Usage, "--design without --output is a usage error");
+    expect(contains(half.err, "needs --design and --output together"),
+           "the paired-option error says what is missing");
+
+    const std::filesystem::path same_db = "same.dfdb";
+    const RunResult same = run_attach(cli, path, same_db, same_db);
+    expect(same.code == shell::ExitCode::Usage, "--output equal to --design is a usage error");
+    expect(contains(same.err, "never overwrites"),
+           "the collision error explains the no-overwrite rule");
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+// The attachment path against a real database: a case value on a top-level input
+// port is a target that can be applied, so the set stays complete; one on an
+// internal net is carried but marks the set incomplete (ADR-012 section 4).
+void write_inverter_db(const std::filesystem::path& path) {
+    gmax::db::Design design;
+    design.top = "top";
+    gmax::db::Module module;
+    module.name = "top";
+    module.inputs = {"a"};
+    module.outputs = {"y"};
+    gmax::db::Gate gate;
+    gate.type = gmax::db::GateType::Not;
+    gate.name = "g0";
+    gate.fanins = {"a"};
+    gate.out = "y";
+    module.gates = {gate};
+    design.modules = {module};
+
+    gmax::db::DesignDb database;
+    database.design() = design;
+    expect(database.flatten().ok(), "the attach fixture flattens");
+    expect(database.save(path.string()).ok(), "the attach fixture saves");
+}
+
+void test_attach_to_design(const shell::Cli& cli) {
+    const std::filesystem::path directory = std::filesystem::temp_directory_path();
+    const std::filesystem::path sdc = directory / "gmax-sdc-attach.sdc";
+    const std::filesystem::path input = directory / "gmax-sdc-attach-in.dfdb";
+    const std::filesystem::path output = directory / "gmax-sdc-attach-out.dfdb";
+    const std::filesystem::path internal = directory / "gmax-sdc-attach-internal.sdc";
+    const std::filesystem::path incomplete_out = directory / "gmax-sdc-attach-inc.dfdb";
+
+    write_file(sdc, "set_case_analysis 0 [get_ports a]\n");
+    write_inverter_db(input);
+
+    const RunResult result = run_attach(cli, sdc, input, output);
+    expect(result.code == shell::ExitCode::Success, "read_sdc attaches to a design");
+    expect(contains(result.out, "attached: "), "read_sdc reports the attachment");
+    expect(contains(result.out, "constraints status: complete"),
+           "a case value on a top-level input port is complete");
+
+    gmax::db::DesignDb loaded;
+    expect(gmax::db::DesignDb::load(output.string(), loaded).ok(), "the attached database loads");
+    expect(loaded.has_constraints(), "the attached database carries constraints");
+    expect(loaded.constraints().case_analysis.size() == 1, "the case value survived attachment");
+    expect(loaded.constraints().case_analysis[0].object == "a", "the case object is the port name");
+
+    gmax::db::DesignDb unchanged;
+    expect(gmax::db::DesignDb::load(input.string(), unchanged).ok(),
+           "the input database still loads");
+    expect(!unchanged.has_constraints(), "the input database is not overwritten");
+
+    write_file(internal, "set_case_analysis 0 [get_ports y]\n");
+    const RunResult incomplete = run_attach(cli, internal, input, incomplete_out);
+    expect(incomplete.code == shell::ExitCode::Success, "an unenforceable target still attaches");
+    expect(contains(incomplete.out, "constraints status: incomplete"),
+           "an internal target marks the set incomplete rather than being dropped");
+
+    std::error_code ignored;
+    for (const std::filesystem::path& path : {sdc, input, output, internal, incomplete_out}) {
+        std::filesystem::remove(path, ignored);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -118,6 +225,8 @@ int main() {
 
     test_valid_file(cli);
     test_error_diagnostic(cli);
+    test_attachment_options(cli);
+    test_attach_to_design(cli);
 
     if (failures != 0) {
         std::cerr << failures << " SDC CLI check(s) failed" << std::endl;

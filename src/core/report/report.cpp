@@ -85,10 +85,30 @@ std::string hex32(const std::uint32_t value) {
 std::string coverage_json(const CoverageReport& report) {
     const CoverageSummary& summary = report.summary;
     std::ostringstream out;
-    out << "{\"schema\":\"gmax-coverage-1\"";
+    out << "{\"schema\":\"gmax-coverage-2\"";
     out << ",\"design\":" << json_string(report.design);
     out << ",\"netlist_hash\":\"" << hex32(report.netlist_hash) << '"';
     out << ",\"fault_list_hash\":\"" << hex32(report.fault_list_hash) << '"';
+    // ADR-012: a separate identity and status. An absent set reports a null
+    // hash rather than a hash of nothing. The enforced list is empty in this
+    // slice because no engine applies resolved values yet, and
+    // capture_constraints stays not-enforced until the scan/multi-clock engine
+    // lands (ADR-012 section 4).
+    out << ",\"constraints\":{\"status\":\""
+        << db::constraints_status_name(report.constraints_status) << "\",\"hash\":";
+    if (report.constraints_status == db::ConstraintsStatus::Absent) {
+        out << "null";
+    } else {
+        out << '"' << hex32(report.constraints_hash) << '"';
+    }
+    out << ",\"algorithm\":\"crc32\",\"enforced\":[";
+    for (std::size_t index = 0; index < report.enforced.size(); ++index) {
+        if (index != 0) {
+            out << ',';
+        }
+        out << json_string(report.enforced[index]);
+    }
+    out << "],\"capture\":\"not-enforced\"}";
     out << ",\"counts\":{\"raw\":" << summary.raw << ",\"collapsed\":" << summary.collapsed
         << ",\"detected\":" << summary.detected << ",\"untestable\":" << summary.untestable
         << ",\"aborted\":" << summary.aborted << ",\"raw_detected\":" << summary.raw_detected
@@ -126,7 +146,7 @@ std::string coverage_json(const CoverageReport& report) {
 std::string manifest_json(const RunManifest& manifest) {
     const CoverageSummary& summary = manifest.summary;
     std::ostringstream out;
-    out << "{\"schema\":\"gmax-run-manifest-1\"";
+    out << "{\"schema\":\"gmax-run-manifest-2\"";
     out << ",\"tool\":{\"name\":\"gmax\",\"version\":" << json_string(manifest.tool_version) << '}';
     out << ",\"command\":\"run_atpg\"";
     out << ",\"design\":{\"name\":" << json_string(manifest.design)
@@ -136,7 +156,16 @@ std::string manifest_json(const RunManifest& manifest) {
         << hex32(manifest.netlist_hash) << "\",\"algorithm\":\"crc32\"}";
     out << ",\"fault_list\":{\"path\":" << json_string(manifest.faults_path) << ",\"hash\":\""
         << hex32(manifest.fault_list_hash) << "\",\"algorithm\":\"crc32\""
-        << ",\"raw_count\":" << summary.raw << ",\"collapsed_count\":" << summary.collapsed << "}}";
+        << ",\"raw_count\":" << summary.raw << ",\"collapsed_count\":" << summary.collapsed << "}";
+    out << ",\"constraints\":{\"path\":" << json_string(manifest.constraints_path)
+        << ",\"status\":\"" << db::constraints_status_name(manifest.constraints_status)
+        << "\",\"hash\":";
+    if (manifest.constraints_status == db::ConstraintsStatus::Absent) {
+        out << "null";
+    } else {
+        out << '"' << hex32(manifest.constraints_hash) << '"';
+    }
+    out << ",\"algorithm\":\"crc32\"}}";
     out << ",\"coverage\":{\"path\":" << json_string(manifest.coverage_path) << ",\"hash\":\""
         << hex32(manifest.coverage_hash) << "\",\"algorithm\":\"crc32\"}";
     out << ",\"options\":{\"max_backtracks\":" << manifest.budget.max_backtracks

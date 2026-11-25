@@ -165,3 +165,13 @@ gmax_set_warnings(sdc_cli_test)
 gmax_set_sanitizers(sdc_cli_test)
 
 add_test(NAME sdc_cli COMMAND sdc_cli_test)
+
+add_executable(constraints_test
+  constraints_test.cpp)
+
+target_link_libraries(constraints_test PRIVATE gmax_core)
+
+gmax_set_warnings(constraints_test)
+gmax_set_sanitizers(constraints_test)
+
+add_test(NAME constraints COMMAND constraints_test)

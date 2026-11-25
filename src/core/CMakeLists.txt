@@ -6,6 +6,7 @@ add_library(gmax_core STATIC
   atpg/logic5.cpp
   atpg/podem.cpp
   atpg/sat.cpp
+  db/constraints.cpp
   db/crc32.cpp
   db/db.cpp
   db/dfdb.cpp
@@ -16,6 +17,7 @@ add_library(gmax_core STATIC
   frontend/json.cpp
   frontend/liberty.cpp
   frontend/sdc.cpp
+  frontend/sdc_constraints.cpp
   frontend/yosys.cpp
   frontend/yosys_recipe.cpp
   report/report.cpp
