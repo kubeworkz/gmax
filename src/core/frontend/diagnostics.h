@@ -28,6 +28,11 @@ enum class DiagnosticCode : std::uint8_t {
     UnsupportedConstant,
     CellCountMismatch,
     IoError,
+    SdcSyntax,
+    SdcUnsupportedCommand,
+    SdcUnsupportedOption,
+    SdcInvalidValue,
+    SdcDuplicateClock,
 };
 
 std::string_view diagnostic_code_name(DiagnosticCode code);
