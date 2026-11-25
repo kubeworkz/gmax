@@ -411,8 +411,8 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         const std::size_t end = std::min(begin + kFaultChunk, grade_count);
         for (std::size_t index = begin; index < end; ++index) {
             try {
-                grades[index] = grade_fault(database.flat(), faults.collapsed[index], observables,
-                                            budget);
+                grades[index] =
+                    grade_fault(database.flat(), faults.collapsed[index], observables, budget);
             } catch (...) {
                 grade_errors[index] = std::current_exception();
             }
