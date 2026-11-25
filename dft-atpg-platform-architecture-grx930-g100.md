@@ -1428,7 +1428,7 @@ Items marked **Decision** are the same decisions tracked in section 20.1; this r
 | TBD-07 | X-source inventory and policy | Decision/Input | DFT | M2 | Coverage/masks |
 | TBD-08 | TMAX version and golden runs | Decision/Input | DFT | M1 | Parity |
 | TBD-09 | Build-vs-buy decision | Decision | Executive | M0 | Staffing |
-| TBD-10 | First G100 bring-up block | Decision | DFT | M0 | P1 |
+| TBD-10 | First G100 bring-up block | Decision | DFT | M0 | P1 bring-up (WP-111), G1 |
 | TBD-11 | Legal/license review | Review | Legal | M0 | Distribution |
 | TBD-12 | Physical data (DEF/LEF) | Input | Design | M6 | Physical-aware stitching |
 
