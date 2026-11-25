@@ -268,6 +268,24 @@ bool resolve_net(const db::DesignDb& database, const std::string_view name, db::
     return found;
 }
 
+// Resolves the attached case values to nets (ADR-012 section 4). Returns an empty
+// string on success, otherwise a message naming the target that cannot be
+// enforced: a set that cannot be applied must not be graded as if it had been.
+std::string resolve_case_assignments(const db::DesignDb& database,
+                                     std::vector<db::CaseAssignment>& out) {
+    for (const db::ConstraintCaseAnalysis& item : database.constraints().case_analysis) {
+        db::NetId net = db::kInvalidId;
+        if (!resolve_net(database, item.object, net)) {
+            return "case-analysis object '" + item.object + "' does not resolve to a net";
+        }
+        if (database.flat().driver[net] != db::kPrimaryInput) {
+            return "case-analysis object '" + item.object + "' is not a primary input";
+        }
+        out.push_back({net, item.value});
+    }
+    return {};
+}
+
 struct FaultGrade {
     atpg::PodemStatus status = atpg::PodemStatus::Aborted;
     std::size_t decisions = 0;
@@ -280,9 +298,11 @@ struct FaultGrade {
 // write into disjoint fault-indexed slots.
 FaultGrade grade_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
                        const std::span<const db::NetId> observables,
-                       const atpg::PodemBudget& budget) {
+                       const atpg::PodemBudget& budget,
+                       const std::span<const db::CaseAssignment> constraints) {
     const auto fault_start = std::chrono::steady_clock::now();
-    const atpg::PodemResult result = atpg::run_podem(netlist, fault, observables, budget);
+    const atpg::PodemResult result =
+        atpg::run_podem(netlist, fault, observables, budget, constraints);
     FaultGrade grade;
     grade.status = result.status;
     grade.decisions = result.decisions;
@@ -312,7 +332,8 @@ FaultGrade grade_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
         }
         if (sat_time_available) {
             const atpg::SatFaultResult proof =
-                atpg::check_fault(netlist, fault, observables, 1000000, remaining_time_ms);
+                atpg::check_fault(netlist, fault, observables, 1000000, remaining_time_ms, nullptr,
+                                  constraints);
             if (proof.status == atpg::SatFaultStatus::Detected) {
                 grade.status = atpg::PodemStatus::Detected;
                 grade.sat_fallback = true;
@@ -384,6 +405,17 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         return ExitCode::Design;
     }
 
+    // The values are resolved once, before any grading work starts, so a target
+    // that cannot be enforced stops the run instead of being skipped silently.
+    std::vector<db::CaseAssignment> case_assignments;
+    if (constraints_status == db::ConstraintsStatus::Complete) {
+        const std::string resolve_error = resolve_case_assignments(database, case_assignments);
+        if (!resolve_error.empty()) {
+            err << "gmax: " << resolve_error << '\n';
+            return ExitCode::Design;
+        }
+    }
+
     std::string primary_output_error;
     const std::vector<db::NetId> observables = primary_outputs(database, primary_output_error);
     if (!primary_output_error.empty()) {
@@ -411,8 +443,8 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         const std::size_t end = std::min(begin + kFaultChunk, grade_count);
         for (std::size_t index = begin; index < end; ++index) {
             try {
-                grades[index] =
-                    grade_fault(database.flat(), faults.collapsed[index], observables, budget);
+                grades[index] = grade_fault(database.flat(), faults.collapsed[index], observables,
+                                            budget, case_assignments);
             } catch (...) {
                 grade_errors[index] = std::current_exception();
             }
@@ -535,9 +567,12 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     coverage.fault_list_hash = faults.header.fault_list_hash;
     coverage.constraints_status = constraints_status;
     coverage.constraints_hash = constraints_hash_value;
-    // ADR-012 case-analysis enforcement is not part of this slice, so the report
-    // never claims an enforced construct; the field stays an empty list until the
-    // engines apply the resolved values.
+    // The enforced list names what the run actually used, so it is filled only
+    // when a complete set was resolved and handed to the engines. Capture
+    // constraints stay not-enforced.
+    if (!case_assignments.empty()) {
+        coverage.enforced.emplace_back("case_analysis");
+    }
     coverage.budget = budget;
     coverage.summary = summary;
     coverage.faults = std::move(outcomes);
