@@ -221,8 +221,7 @@ void test_attach_to_design(const shell::Cli& cli) {
 // enforce. Attachment refuses to produce one, so the fixture is hand-built: the
 // guard exists for a database that was edited or written by another tool after
 // the set was attached.
-void write_inverter_db_with_case(const std::filesystem::path& path,
-                                 const std::string& target) {
+void write_inverter_db_with_case(const std::filesystem::path& path, const std::string& target) {
     gmax::db::DesignDb database;
     build_inverter(database);
     gmax::db::Constraints& constraints = database.constraints();
@@ -248,9 +247,11 @@ void test_run_atpg_refuses_unenforceable_case(const shell::Cli& cli) {
     write_inverter_db_with_case(internal_design, "y");
 
     const auto grade = [&](const std::filesystem::path& design,
-                          const std::filesystem::path& report) {
-        const std::vector<std::string> args = {"run_atpg", design.string(), faults.string(), "0",
-                                              "1",        report.string()};
+                           const std::filesystem::path& report) {
+        std::vector<std::string> args = {"run_atpg", design.string(), faults.string()};
+        args.push_back("0");
+        args.push_back("1");
+        args.push_back(report.string());
         return run(cli, args);
     };
 
