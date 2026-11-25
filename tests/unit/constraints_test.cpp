@@ -205,9 +205,9 @@ void test_report_claims_no_enforcement() {
     const std::string json = gmax::report::coverage_json(report);
     expect(json.find("\"schema\":\"gmax-coverage-2\"") != std::string::npos,
            "the coverage schema is the constraint-aware one");
-    const std::string constraints_object =
-        "\"constraints\":{\"status\":\"complete\",\"hash\":\"" +
-        gmax::report::hex32(0x1234abcdu) + "\"";
+    std::string constraints_object = "\"constraints\":{\"status\":\"complete\",\"hash\":\"";
+    constraints_object += gmax::report::hex32(0x1234abcdu);
+    constraints_object += '"';
     expect(json.find(constraints_object) != std::string::npos,
            "a complete set reports its canonical hash");
     expect(json.find("\"enforced\":[]") != std::string::npos,
