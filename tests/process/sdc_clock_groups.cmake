@@ -93,6 +93,21 @@ check_absent("${GMAX_OUT}" "unknown member" "conflicting member")
 check_text("${GMAX_ERR}" "clock 'clk_a' is a member of more than one -group"
     "conflicting member")
 
+# A member names a clock, not the port or pin it is defined on. core_clk is
+# declared on clk_a, so naming clk_a puts a port on one side of the relationship;
+# the warning says that rather than only calling the member unknown.
+set(source_sdc "${WORK_DIR}/groups-source.sdc")
+file(WRITE "${source_sdc}"
+    "create_clock -name core_clk -period 10 [get_ports clk_a]\n"
+    "create_clock -name clk_b -period 20 [get_ports clk_b]\n"
+    "set_clock_groups -asynchronous -group {clk_a} -group {core_clk clk_b}\n")
+
+run_gmax(0 read_sdc "${source_sdc}")
+check_text("${GMAX_OUT}" "constraints status: complete" "source member")
+check_text("${GMAX_OUT}" "warnings: 1" "source member")
+check_text("${GMAX_OUT}" "unknown member clk_a" "source member")
+check_text("${GMAX_ERR}" "clock group member 'clk_a' is not a declared clock (it is a clock source; set_clock_groups takes clock names)" "source member")
+
 # Both findings in one command are independent, so they are reported together.
 set(mixed_sdc "${WORK_DIR}/groups-mixed.sdc")
 file(WRITE "${mixed_sdc}"

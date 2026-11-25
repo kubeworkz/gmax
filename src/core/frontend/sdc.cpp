@@ -378,6 +378,18 @@ std::vector<std::string> resolve_token(const Token& token, std::vector<Diagnosti
     return split_list(strip_outer(rest));
 }
 
+// A member names a clock, not the port or pin that clock is defined on. One
+// source can carry more than one clock, so the source is not a key that picks a
+// single member; the declared name is.
+bool is_clock_source(const SdcConstraints& constraints, const std::string_view name) {
+    for (const SdcClock& clock : constraints.clocks) {
+        if (clock.source == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // A group is validated after the whole file is read, not as the command is
 // parsed: SDC does not require a clock declaration to precede the group that
 // names it.
@@ -386,9 +398,15 @@ void validate_clock_groups(const SdcConstraints& constraints, std::vector<Diagno
     for (const SdcClockGroup& group : constraints.clock_groups) {
         const SdcClockGroupIssues issues = sdc_clock_group_issues(constraints, group);
         for (const std::string& member : issues.unknown) {
-            add_warning(diagnostics, DiagnosticCode::SdcClockGroupUnknownMember,
-                        "clock group member '" + member + "' is not a declared clock", member,
-                        source, group.line);
+            std::string message = "clock group member '" + member + "' is not a declared clock";
+            if (is_clock_source(constraints, member)) {
+                // The source form is the one a reader is most likely to write by
+                // mistake, so the warning names the reason rather than only the
+                // member.
+                message += " (it is a clock source; set_clock_groups takes clock names)";
+            }
+            add_warning(diagnostics, DiagnosticCode::SdcClockGroupUnknownMember, std::move(message),
+                        member, source, group.line);
         }
         for (const std::string& member : issues.conflicting) {
             add_warning(diagnostics, DiagnosticCode::SdcClockGroupConflictingMember,

@@ -333,6 +333,42 @@ set_clock_groups -asynchronous -group {clk_a} -group {clk_a clk_b}
                "the warning carries the conflicting clock");
     }
 
+    // A member names a clock, not the port it was defined on. A clock declared
+    // with -name leaves its source a port, so the two forms are not the same
+    // member and the warning says why.
+    constexpr std::string_view kSource = R"SDC(
+create_clock -name core_clk -period 10 [get_ports clk]
+set_clock_groups -asynchronous -group {clk} -group {core_clk}
+)SDC";
+    const frontend::SdcResult source = frontend::read_sdc(kSource, "groups-source.sdc");
+    expect(source.ok, "a source-only group member does not refuse the file");
+    expect(source.diagnostics.size() == 1, "only the source-only member is reported");
+    if (source.diagnostics.size() == 1) {
+        expect(source.diagnostics[0].code == frontend::DiagnosticCode::SdcClockGroupUnknownMember,
+               "a source object is not a clock name");
+        expect(source.diagnostics[0].object == "clk", "the warning names the source member");
+        expect(contains(source.diagnostics[0].message, "it is a clock source"),
+               "the warning says the member is a clock source");
+    }
+    if (source.constraints.clock_groups.size() == 1) {
+        const frontend::SdcClockGroupIssues issues = frontend::sdc_clock_group_issues(
+            source.constraints, source.constraints.clock_groups[0]);
+        expect(issues.unknown == std::vector<std::string>{"clk"} && issues.conflicting.empty(),
+               "the declared name is a member and the source is not");
+    }
+
+    // Without -name the clock is named after its source, so the common one-word
+    // form needs no separate rule.
+    constexpr std::string_view kDefaultName = R"SDC(
+create_clock -period 10 [get_ports clk]
+create_clock -name core_clk -period 20 [get_ports clk_2]
+set_clock_groups -asynchronous -group {clk} -group {core_clk}
+)SDC";
+    const frontend::SdcResult unnamed = frontend::read_sdc(kDefaultName, "groups-default-name.sdc");
+    expect(unnamed.ok, "the default-name form parses");
+    expect(unnamed.diagnostics.empty(),
+           "a clock without -name is a member under the name of its source");
+
     // One command can carry both findings. A member repeated across groups is
     // reported once, and the issue lists come back sorted.
     constexpr std::string_view kBoth = R"SDC(

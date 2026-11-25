@@ -199,6 +199,14 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    summary lines. The member is kept in the group and the set is retained
    whole, so neither finding changes the constraints status or hash.
 
+   A member must name a clock, never the object that clock is defined on:
+   `create_clock -period 10 [get_ports clk]` declares a clock named `clk`, but
+   `create_clock -name core_clk -period 10 [get_ports clk]` declares `core_clk`
+   and leaves `clk` a port. Matching a source would not be a safe substitute,
+   because one source can carry more than one clock, so the declared name is the
+   only key that identifies a single member. A member that names a source is
+   reported as unknown, and the warning says the object is a clock source.
+
 3. **`set_input_delay`, `set_output_delay`, `set_driving_cell` and `set_load`
    are persisted and validated but are not evaluated.** They are timing and
    load annotations; v1 ATPG does not perform timing analysis. Their presence
