@@ -147,6 +147,14 @@ Attachment stores the set in the design database and changes nothing else — th
 - a database with **no** constraints is written as `.dfdb` **1.3** and is byte-identical to what earlier versions wrote, so existing designs and stored evidence do not change;
 - an **attached** database is written as `.dfdb` **1.4**, whose only addition is the constraint section.
 
+Constraint objects are named the way the netlist names them: a top-level port, or an internal net by the name the Verilog source gave it, queried with `get_nets`:
+
+```tcl
+set_case_analysis 0 [get_nets N118]
+```
+
+The frontend keeps a source name in preference to a Yosys-generated alias for the same net, so an internal net can be addressed by the name it has in the design rather than by an implementation detail that changes with the Yosys version.
+
 While attaching, every constraint target is examined against the flattened design. A case value on a net that is not a top-level input port cannot be applied by the current engine, so the record is kept but the set is marked **incomplete** rather than dropped or silently ignored.
 
 ### Status and hash

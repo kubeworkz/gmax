@@ -147,17 +147,20 @@ check_text("${manifest_text}"
     "\"constraints\":{\"path\":\"\",\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\"}"
     "c432 manifest constraints")
 
-# A target that cannot be applied must never be graded. N223 is an output port of
-# c432, so its net is driven by a gate instead of being a top-level input: the
-# attachment keeps the record but marks the set incomplete, and run_atpg must
-# refuse the design before it reads faults or writes a report.
+# A target that cannot be applied must never be graded. N118 is an internal net
+# of c432 (the output of NOT1_1, feeding NAND2_19), addressed by the name the
+# Verilog declares rather than by a Yosys alias, so it is driven by a gate
+# instead of being a top-level input: the attachment keeps the record but marks
+# the set incomplete, and run_atpg must refuse the design before it reads faults
+# or writes a report.
 set(incomplete_sdc "${WORK_DIR}/c432-incomplete.sdc")
 set(incomplete_db "${WORK_DIR}/c432-incomplete.dfdb")
 set(incomplete_report "${WORK_DIR}/c432-incomplete-report")
-file(WRITE "${incomplete_sdc}" "set_case_analysis 0 [get_ports N223]\n")
+file(WRITE "${incomplete_sdc}" "set_case_analysis 0 [get_nets N118]\n")
 
 run_gmax(0 read_sdc "${incomplete_sdc}" --design "${design}" --output "${incomplete_db}")
 check_text("${GMAX_OUT}" "attached: ${incomplete_db}" "c432 incomplete attachment")
+check_text("${GMAX_OUT}" "case N118=0" "c432 incomplete attachment")
 check_text("${GMAX_OUT}" "case analysis: 1" "c432 incomplete attachment")
 check_text("${GMAX_OUT}" "constraints status: incomplete" "c432 incomplete attachment")
 

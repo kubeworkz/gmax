@@ -226,6 +226,36 @@ void test_smoke() {
            "the primitive count sees one AND2");
 }
 
+// ADR-012 addressing: one net can carry both the Verilog name and a Yosys alias
+// such as `$flatten$...`. An SDC file or a fault list can only name the former,
+// so the source name must win even though '$' sorts before letters.
+void test_source_name_beats_generated_alias() {
+    const std::string json = design_json(
+        {{"a", port_json("input", {2})},
+         {"b", port_json("input", {3})},
+         {"y", port_json("output", {5})}},
+        {{"$and$1", cell_json("$and", width_params(1, 1, 1),
+                              object({{"A", bits({2})}, {"B", bits({3})}, {"Y", bits({4})}}))},
+         {"$and$2", cell_json("$and", width_params(1, 1, 1),
+                              object({{"A", bits({4})}, {"B", bits({4})}, {"Y", bits({5})}}))}},
+        {{"$flatten$n4", object({{"bits", bits({4})}, {"hide_name", "0"}})},
+         {"n4", object({{"bits", bits({4})}, {"hide_name", "0"}})}});
+    const auto result = gmax::frontend::import_yosys_json(json, "top");
+    expect(result.ok, "a design with an aliased internal net imports");
+    if (!result.ok || result.design.modules.empty()) {
+        print_diagnostics(result.diagnostics, "net name preference");
+        return;
+    }
+    bool named_source = false;
+    bool named_alias = false;
+    for (const auto& gate : result.design.modules[0].gates) {
+        named_source = named_source || gate.out == "n4";
+        named_alias = named_alias || gate.out == "$flatten$n4";
+    }
+    expect(named_source, "an internal net keeps the name its source gave it");
+    expect(!named_alias, "a generated alias does not become the net name");
+}
+
 void test_mux() {
     const std::string json = design_json(
         {{"a", port_json("input", {2})},
@@ -1298,6 +1328,7 @@ void test_live_unresolved(const std::string& yosys) {
 
 int main() {
     test_smoke();
+    test_source_name_beats_generated_alias();
     test_mux();
     test_bus_and();
     test_dff();
