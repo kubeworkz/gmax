@@ -51,7 +51,7 @@ gmax read_verilog ───► design.dfdb
                               coverage.json + manifest.json
 ```
 
-`gmax read_sdc constraints.sdc` parses and reports the constraint set, and with `--design`/`--output` it attaches that set to the design database. An attached set is stored with the netlist: both reports carry its status and canonical hash, and `run_atpg` refuses to grade a design whose set is incomplete. Applying the constraints inside the ATPG engines is follow-on work, so the reports list an empty enforced set today.
+`gmax read_sdc constraints.sdc` parses and reports the constraint set, and with `--design`/`--output` it attaches that set to the design database. An attached set is stored with the netlist: both reports carry its status and canonical hash, and `run_atpg` refuses to grade a design whose set is incomplete. A case-analysis set is applied: `run_atpg` pins those values in PODEM and in the SAT miter, so a fault those values block is decided untestable, and the reports name `case_analysis` in their enforced list.
 
 The constraint set is a side input, not another netlist: attaching it changes no flattening, so the netlist hash and an existing fault list stay valid.
 
@@ -172,11 +172,11 @@ While attaching, every constraint target is examined against the flattened desig
 `run_atpg` with a report directory writes `coverage.json` (`gmax-coverage-2`) and `manifest.json` (`gmax-run-manifest-2`). Both carry a `constraints` block beside the hashes:
 
 ```json
-"constraints":{"status":"complete","hash":"1a2b3c4d","algorithm":"crc32","enforced":[],"capture":"not-enforced"}
+"constraints":{"status":"complete","hash":"1a2b3c4d","algorithm":"crc32","enforced":["case_analysis"],"capture":"not-enforced"}
 ```
 
 - `status` and `hash` report the set the run actually loaded, so a run can be reproduced from its report. An `absent` set reports `"hash":null` rather than a hash of nothing.
-- `enforced` lists the construct kinds the run applied. **It is empty for every run today**: constraints are parsed, persisted and reported, but the PODEM and SAT engines do not consume them yet, so no report may claim otherwise. Case analysis is the construct that will appear here first, and an empty list is what tells a reader the attached set did not influence the result.
+- `enforced` lists the construct kinds the run applied. `case_analysis` appears when a complete set was resolved and handed to the engines; an absent set, an incomplete one, or one with no case values still reports `[]`, and that empty list is what tells a reader the attached set did not influence the result. The other construct kinds are parsed, persisted and reported but not consumed yet, so they never appear here.
 - `capture` stays `not-enforced` until the scan and multi-clock capture engines land.
 
 The manifest repeats the same status and hash under `constraints`. Its `path` field is currently empty because the source SDC file is not stored in the database; the ADR makes provenance optional and it is never part of the hash.

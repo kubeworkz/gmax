@@ -331,9 +331,8 @@ FaultGrade grade_fault(const db::FlatNetlist& netlist, const sim::Fault& fault,
             }
         }
         if (sat_time_available) {
-            const atpg::SatFaultResult proof =
-                atpg::check_fault(netlist, fault, observables, 1000000, remaining_time_ms, nullptr,
-                                  constraints);
+            const atpg::SatFaultResult proof = atpg::check_fault(
+                netlist, fault, observables, 1000000, remaining_time_ms, nullptr, constraints);
             if (proof.status == atpg::SatFaultStatus::Detected) {
                 grade.status = atpg::PodemStatus::Detected;
                 grade.sat_fallback = true;

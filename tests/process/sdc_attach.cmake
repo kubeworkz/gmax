@@ -121,11 +121,11 @@ endif()
 check_text("${GMAX_OUT}" "netlist hash: 413dd789" "c432 ATPG")
 check_text("${GMAX_OUT}" "constraints status: complete" "c432 ATPG")
 check_text("${GMAX_OUT}" "constraints hash: ${constraints_hash}" "c432 ATPG")
-# Case analysis is persisted but not applied, so grading is the same as the
-# unconstrained c432 run. This assertion is what will have to change when
-# enforcement lands.
-check_text("${GMAX_OUT}" "detected: 479" "c432 ATPG")
-check_text("${GMAX_OUT}" "untestable: 5" "c432 ATPG")
+# The attached set pins N1=1 and N4=0, and the engines apply both, so the 30
+# faults whose activation or propagation those values block are decided
+# untestable instead of detected. The unconstrained c432 numbers stay 479/5.
+check_text("${GMAX_OUT}" "detected: 449" "c432 ATPG")
+check_text("${GMAX_OUT}" "untestable: 35" "c432 ATPG")
 check_text("${GMAX_OUT}" "aborted: 0" "c432 ATPG")
 
 set(coverage "${report}/coverage.json")
@@ -137,9 +137,8 @@ endif()
 file(READ "${coverage}" coverage_text)
 check_text("${coverage_text}" "\"netlist_hash\":\"413dd789\"" "c432 coverage netlist hash")
 check_text("${coverage_text}"
-    "\"constraints\":{\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"enforced\":[],\"capture\":\"not-enforced\"}"
+    "\"constraints\":{\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"enforced\":[\"case_analysis\"],\"capture\":\"not-enforced\"}"
     "c432 coverage constraints")
-check_absent("${coverage_text}" "\"enforced\":[\"case_analysis\"]" "c432 coverage enforced set")
 check_absent("${coverage_text}" "\"status\":\"absent\"" "c432 coverage constraints status")
 
 file(READ "${manifest}" manifest_text)
