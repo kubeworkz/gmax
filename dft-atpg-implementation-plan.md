@@ -1,10 +1,10 @@
 # Implementation Plan — DFT/ATPG Platform (grx930 & G100)
 
-**Status:** Draft v0.9 for review — supersedes v0.8, which recorded the G0.3 thread-determinism evidence.
-**Date:** 2026-11-24
-**Revision:** v0.9, 2026-11-24 — Recorded the G0.7 differential evidence: `sim.fault-diff` compares the 64-lane fault simulator with the scalar reference on the raw stuck-at list of every c432 net over 256 deterministic patterns, failing on any detection or first-pattern disagreement. No scope, package, gate, effort or capacity figure changed.
+**Status:** Draft v0.11 for review — supersedes v0.10, which aligned the TBD-10 bring-up statements.
+**Date:** 2026-11-25
+**Revision:** v0.11, 2026-11-25 — Aligned architecture 7.3 with the shipped ADR-012 behaviour: a complete case-analysis set on top-level input ports is applied as a hard pin value in PODEM and the SAT miter, and the coverage report lists `case_analysis` in its enforced set. No scope, package, gate, effort or capacity figure changed.
 **Owner:** Architect / tech lead (plan), DFT lead (gates), PM (tracking).
-**Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at blob `5aaa25e4bd010aea5e2ff4f7ce084e46401f9b8b`, the TBD-10 scope-alignment revision, landed in the same commit as plan v0.10.
+**Baseline:** `dft-atpg-platform-architecture-grx930-g100.md` at blob `ac4affbc4897251bf0a8a946795239708ce7654b`, the ADR-012 enforcement-alignment revision, landed in the same commit as plan v0.11.
 **Companion documents:** `transition-parity-protocol-p2.md` (P2 transition protocol, M9 pattern baseline), `diagnosis-benchmark-p3.md` (`D-DIAG-01` / `D-DIAG-RESULT-01`).
 
 ---
@@ -710,6 +710,7 @@ The plan's baseline is the architecture blob recorded at the top of this documen
 
 | Rev | Date | What moved | Plan hash |
 |---|---|---|---|
+| v0.11 | 2026-11-25 | Aligned architecture 7.3 with the ADR-012 behaviour that already shipped: the engine no longer only stores case analysis — a complete set on top-level input ports is applied as a hard pin value in PODEM and the SAT miter, and the coverage report lists `case_analysis` in its enforced set. Re-pinned the baseline blob and recomputed the plan hash. No scope, package, gate, effort or capacity figure changed. | `sha256:c3783d0c62527341bd18f4323cdbcb054d415d93630d5eb8739ef341ee13a800` |
 | v0.10 | 2026-11-25 | Aligned the last two statements that still made the G100 bring-up block (TBD-10) a WP-101-stage condition: section 16 now says WP-111's G100 bring-up starts late when the block profile is not frozen, with section 14's benchmark-rung fallback, instead of "P1 starts late"; and architecture Appendix C records TBD-10 as blocking P1 bring-up (WP-111) and G1 instead of "P1", matching section 13. Re-pinned the baseline blob and recomputed the plan hash. No scope, package, gate, effort or capacity figure changed. | `sha256:1c86d3f7c89f7da257b2251410740ea9cfd908e94e06dfd1baeac09369f7fc51` |
 | v0.9 | 2026-11-24 | Recorded the G0.7 differential evidence: `sim.fault-diff` runs the 64-lane fault simulator and the scalar reference over the 700 raw stuck-at faults on all 350 c432 nets for 256 deterministic patterns, requiring identical detection sets and first detecting patterns. No scope, package, gate, effort or capacity figure changed. | `sha256:c6034b93e654744a83321ff222cc03261284c37bde62499983aa6c4cd51d5429` |
 | v0.8 | 2026-11-24 | Recorded the G0.3 evidence: `run_atpg --threads N` grades fixed 64-fault chunks and merges by fault ID (ADR-011), defaulting to one thread; the `cli.threads` gate compares 1-thread and 4-thread c432 coverage byte for byte and manifests with only `options.threads` differing. No scope, package, gate, effort or capacity figure changed. | `sha256:4d916157563c26d86961a18ee05afa245062e16926d95d5c084b64a56f1134c3` |

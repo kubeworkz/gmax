@@ -1,8 +1,8 @@
 # ADR-012: the attachment path against a real Yosys netlist rather than a
 # hand-built .dfdb. c432 is ingested by read_verilog, an SDC is attached with
 # read_sdc --design/--output, and the attached database is graded. The coverage
-# report must carry the constraints identity and, because case-analysis
-# enforcement is not implemented yet, an empty enforced list. The same set
+# report must carry the constraints identity, with case_analysis listed as
+# enforced because PODEM and the SAT miter apply the values. The same set
 # written in a different order and spacing must hash the same, so the canonical
 # form is checked against the pinned frontend.
 #

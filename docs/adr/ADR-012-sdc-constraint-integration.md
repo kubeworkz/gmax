@@ -6,12 +6,12 @@
 
 ## Context
 
-WP-110 adds `read_sdc` as a parser and reporter. It does not store the parsed
-constraints in the design database and `run_atpg` does not consume them. Before
-wiring the two together, four decisions need one owner: how constraints are
-attached to a database, what identity a constraint set has, what happens when
-the SDC reader cannot represent part of the input, and which constraints the
-current ATPG engine actually enforces.
+WP-110 adds `read_sdc` as a parser and reporter. Before this change it did not
+store the parsed constraints in the design database, and `run_atpg` did not
+consume them. Before wiring the two together, four decisions need one owner:
+how constraints are attached to a database, what identity a constraint set
+has, what happens when the SDC reader cannot represent part of the input, and
+which constraints the current ATPG engine actually enforces.
 
 The constraints cannot simply be made implicit. Architecture 7.3 requires
 unsupported SDC commands to be warnings with command and line information, and
