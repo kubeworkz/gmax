@@ -147,6 +147,15 @@ std::uint32_t constraints_hash(const Constraints& constraints);
 // normalized to "0". This is the numeric encoding the hash contract fixes.
 std::string canonical_decimal(double value);
 
+// One case-analysis value after resolution: the assignment PODEM applies before
+// it activates the fault (ADR-012 section 4). Only nets that resolve to a
+// top-level input port are ever represented here; the attachment step validates
+// that and marks the set incomplete rather than dropping the target silently.
+struct CaseAssignment {
+    NetId net = kInvalidId;
+    bool value = false;
+};
+
 // True when a constraint object name resolves to a net a case value could be
 // applied to: a top-level input port, which includes clock and reset inputs
 // (ADR-012 section 4, decision 1). A set containing any other target is stored

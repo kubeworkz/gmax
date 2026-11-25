@@ -195,6 +195,53 @@ void test_schema_round_trip() {
            "the reloaded constraints have the same hash");
 }
 
+// ADR-012 section 4: a case value is a hard assignment applied before the fault
+// is activated. y = ~a with y stuck-at 1 activates only when a = 1, so a case
+// value of 0 makes the fault untestable without touching the unconstrained
+// verdict.
+void test_podem_applies_case_analysis() {
+    db::FlatNetlist netlist;
+    db::StringTable strings;
+    strings.intern("a");
+    strings.intern("y");
+
+    netlist.type = {db::GateType::Not};
+    netlist.fanin_begin = {0, 1};
+    netlist.fanins = {0};
+    netlist.fanout_begin = {0, 1};
+    netlist.fanouts = {1};
+    netlist.out_net = {1};
+    netlist.flags = {0};
+    netlist.level = {1};
+    netlist.lib_cell = {db::kInvalidId};
+    netlist.clock_edge = {db::ClockEdge::Rising};
+    netlist.enable = {db::kInvalidId};
+    netlist.async_clear = {db::kInvalidId};
+    netlist.async_preset = {db::kInvalidId};
+    netlist.driver = {db::kPrimaryInput, 0};
+    netlist.name_id = {0, 1};
+    netlist.source_loc = {db::kInvalidId, db::kInvalidId};
+
+    const std::vector<db::NetId> observables = {1};
+    const gmax::sim::Fault fault{1, gmax::sim::StuckValue::One};
+
+    const gmax::atpg::PodemResult free =
+        gmax::atpg::run_podem(netlist, fault, observables, gmax::atpg::PodemBudget{});
+    expect(free.status == gmax::atpg::PodemStatus::Detected,
+           "the unconstrained inverter fault is detected");
+
+    const std::vector<db::CaseAssignment> a_low = {{0, false}};
+    const gmax::atpg::PodemResult constrained =
+        gmax::atpg::run_podem(netlist, fault, observables, gmax::atpg::PodemBudget{}, a_low);
+    expect(constrained.status == gmax::atpg::PodemStatus::Untestable,
+           "a case value that blocks activation is untestable, not aborted");
+
+    const gmax::atpg::PodemResult again =
+        gmax::atpg::run_podem(netlist, fault, observables, gmax::atpg::PodemBudget{}, a_low);
+    expect(again.status == constrained.status && again.decisions == constrained.decisions,
+           "the constrained verdict and its counters are repeatable");
+}
+
 // ADR-012: constraints carry their own identity in the report, and this slice
 // claims no enforced construct until the engines apply the resolved values.
 void test_report_claims_no_enforcement() {
@@ -226,6 +273,7 @@ int main() {
     test_incomplete_sets();
     test_status_and_absent();
     test_schema_round_trip();
+    test_podem_applies_case_analysis();
     test_report_claims_no_enforcement();
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed" << std::endl;
