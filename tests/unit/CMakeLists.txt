@@ -185,3 +185,13 @@ gmax_set_warnings(constraints_test)
 gmax_set_sanitizers(constraints_test)
 
 add_test(NAME constraints COMMAND constraints_test)
+
+add_executable(capture_test
+  capture_test.cpp)
+
+target_link_libraries(capture_test PRIVATE gmax_core)
+
+gmax_set_warnings(capture_test)
+gmax_set_sanitizers(capture_test)
+
+add_test(NAME capture COMMAND capture_test)

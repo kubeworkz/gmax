@@ -11,6 +11,7 @@ add_library(gmax_core STATIC
   db/db.cpp
   db/dfdb.cpp
   db/string_table.cpp
+  dft/capture.cpp
   frontend/decompose.cpp
   frontend/diagnostics.cpp
   frontend/expr.cpp
