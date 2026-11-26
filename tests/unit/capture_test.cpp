@@ -178,7 +178,7 @@ void test_canonical_payload() {
     const dft::CaptureProcedure procedure = dft::resolve_capture_procedure(constraints);
     const std::string payload = dft::canonical_capture_payload(procedure);
 
-    expect(payload.rfind("gmax-capture-1\n", 0) == 0, "payload carries its own version");
+    expect(payload.rfind("gmax-capture-2\n", 0) == 0, "payload carries its own version");
     expect(payload.find("sequential") != std::string::npos, "payload names the kind");
     expect(payload.find("clk_a") != std::string::npos, "payload names the clocks");
     expect(payload.find("derived") == std::string::npos, "provenance is excluded from the payload");
@@ -211,6 +211,19 @@ void test_canonical_payload() {
     written.cycles[0].groups[0].timing.clocks = {"clk_a", "zeta"};
     expect(dft::canonical_capture_payload(renamed) == dft::canonical_capture_payload(written),
            "a group's clock list is written sorted");
+
+    // A group label is diagnostics, not procedure: two procedures that differ
+    // only in the label must hash the same, and the text must never be written.
+    dft::CaptureProcedure labelled = procedure;
+    labelled.cycles[0].groups[0].name = "fast_domain";
+    dft::CaptureProcedure relabelled = procedure;
+    relabelled.cycles[0].groups[0].name = "slow_domain";
+    expect(dft::canonical_capture_payload(labelled) == dft::canonical_capture_payload(relabelled),
+           "a group label is not payload");
+    expect(dft::capture_hash(labelled) == dft::capture_hash(procedure),
+           "a group label is not hashed");
+    expect(dft::canonical_capture_payload(labelled).find("fast_domain") == std::string::npos,
+           "the label text never reaches the payload");
 }
 
 void test_constraints_hash_unchanged() {

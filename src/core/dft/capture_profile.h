@@ -29,8 +29,9 @@ namespace gmax::dft {
 //   }
 //
 // `kind` is `simultaneous`, `grouped` or `sequential`. `cycles` is ordered and
-// each cycle's `groups` is ordered, because order is procedure. `name` is the
-// set_clock_groups group name and is optional. `edge` is optional per group, but
+// each cycle's `groups` is ordered, because order is procedure. `name` is an
+// optional diagnostic label and is not part of the procedure identity. `edge` is
+// optional per group, but
 // a cycle gives it for every group or for none: when it gives none, the
 // deterministic default layout of section 3 applies. Unknown keys are ignored so
 // that a newer profile does not fail an older reader.

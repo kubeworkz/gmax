@@ -193,6 +193,23 @@ void test_grouped() {
     } else {
         expect(false, "the default layout has two groups to place");
     }
+
+    // A group label is diagnostics, not identity: the same procedure written
+    // without labels keeps its hash (TBD-06 draft).
+    const dft::CaptureProfileResult unnamed = read(R"({
+      "capture": {"kind": "grouped", "cycles": [{"groups": [
+        {"clocks": ["clk_a"], "edge": 0},
+        {"clocks": ["clk_b"], "edge": 20}
+      ]}]}
+    })",
+                                                   constraints);
+    expect(unnamed.ok, "the same procedure without labels parses");
+    expect(unnamed.procedure.cycles.size() == 1 && unnamed.procedure.cycles[0].groups.size() == 2,
+           "the unlabelled procedure keeps its groups");
+    expect(unnamed.procedure.cycles[0].groups[0].name.empty(),
+           "an unlabelled group keeps an empty name");
+    expect(dft::capture_hash(unnamed.procedure) == dft::capture_hash(result.procedure),
+           "a group label is not part of the capture hash");
 }
 
 void test_grouped_errors() {

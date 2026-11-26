@@ -41,8 +41,10 @@ struct CaptureTimingSet {
 };
 
 struct CaptureGroup {
-    // The set_clock_groups group name, or empty when the engine derived the
-    // group from the clocks alone.
+    // A diagnostic label for the group, empty when the profile gives none and
+    // never set on an engine-derived group. It is provenance, not procedure:
+    // section 6 hashes the clocks and their times, so two procedures that differ
+    // only in this label share one capture hash.
     std::string name;
     CaptureTimingSet timing;
 
@@ -69,7 +71,8 @@ struct CaptureProcedure {
 // The canonical payload the capture hash is computed over (ADR-013 section 6):
 // cycles in order, groups in cycle order, clocks sorted bytewise within a group,
 // and one decimal encoding. Source paths, comments, whitespace, line and column
-// numbers, database IDs and the `derived` flag are excluded by construction.
+// numbers, database IDs, the `derived` flag and a group's diagnostic label are
+// excluded by construction.
 std::string canonical_capture_payload(const CaptureProcedure& procedure);
 
 // CRC32 of the canonical payload, printed as eight hex digits like the other

@@ -69,7 +69,9 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
     // the clock list inside a timing set is sorted, here rather than at
     // construction, because a group is a set and the bytes must not depend on
     // how the procedure was built.
-    std::string out = "gmax-capture-1\n";
+    // Version 2 drops the group label: section 6 excludes provenance, and a
+    // label is a diagnostic rather than part of the procedure.
+    std::string out = "gmax-capture-2\n";
     append(out, "kind");
     out.append(capture_kind_name(procedure.kind));
     out.push_back('\n');
@@ -89,7 +91,6 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
             append(line, "group");
             append_number(line, c);
             append_number(line, g);
-            append(line, group.name);
             append_number(line, group.timing.edge);
             append_number(line, group.timing.period);
             // The waveform flag is always written, so a group's field count
