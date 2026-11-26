@@ -263,7 +263,8 @@ transition faults. Its enforcement scope is therefore limited and explicit:
 Enforcement of clock groups and false paths is deferred to the scan/multi-clock
 capture work (architecture 9.7, WP-201). That work must amend this ADR or add a
 successor ADR before claiming constrained capture coverage; it cannot change
-the meaning of `constraints_hash` silently.
+the meaning of `constraints_hash` silently. ADR-013 is that successor and
+records the capture decisions.
 
 ## Consequences
 
