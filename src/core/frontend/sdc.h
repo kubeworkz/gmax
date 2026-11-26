@@ -59,12 +59,18 @@ struct SdcClockGroupIssues {
 };
 
 // ADR-012 section 4: a generated clock's -master_clock names a declared clock,
-// and the -source must lead to that clock. A master that names no clock, and a
-// master the -source does not lead to, are reported; the clock keeps its
-// recorded master.
+// and the -source must lead to that clock. A master that names no clock, a
+// master the -source does not lead to, a -source carrying more than one clock
+// with no -master_clock, and a master chain that closes on itself are reported;
+// the clock keeps its recorded master.
 struct SdcGeneratedClockIssues {
     std::vector<std::string> unknown;
     std::vector<std::string> conflicting;
+    // Sorted clocks the -source carries when -master_clock is absent; more than
+    // one leaves the implicit link ambiguous.
+    std::vector<std::string> ambiguous;
+    // A -master_clock chain that repeats, rendered as "a -> b -> a".
+    std::vector<std::string> cycles;
 };
 
 struct SdcFalsePath {
@@ -125,8 +131,8 @@ struct SdcConstraints {
 SdcClockGroupIssues sdc_clock_group_issues(const SdcConstraints& constraints,
                                            const SdcClockGroup& group);
 
-// Empty for a primary clock or one with no -master_clock: the -source alone is
-// the link.
+// Empty for a primary clock. Without -master_clock the -source alone is the
+// link, so it must carry exactly one clock.
 SdcGeneratedClockIssues sdc_generated_clock_issues(const SdcConstraints& constraints,
                                                    const SdcClock& clock);
 

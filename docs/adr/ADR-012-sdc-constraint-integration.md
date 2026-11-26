@@ -207,6 +207,27 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    generated clock keeps its recorded master, so none of these findings changes
    the constraints status or hash.
 
+   A generated clock that omits `-master_clock` links through its `-source` alone, so
+   that object must carry exactly one declared clock. When two or more clocks
+   are defined on it, the implicit link is ambiguous: the command names no
+   master and nothing in the file says which clock the generated clock derives
+   from. The finding is a warning that lists the clocks on the source and a
+   summary line on the generated clock, and the clock is kept with an empty
+   master, so neither the status nor the hash changes. Naming the master with
+   `-master_clock` resolves the same file without a finding. The model keeps the
+   resolved object name, so `-source [get_clocks clk_a]` and `-source [get_ports clk_a]`
+   read alike when a clock is named `clk_a`: a shared object is reported either way,
+   and naming the master clears the finding.
+
+   A `-master_clock` chain is followed through generated clocks as well, because
+   a generated clock is a master like any other. A chain that closes on itself
+   leaves every clock in the loop without a primary root, and is reported as a
+   cycle with its repeating path; a clock that only leads into such a loop is
+   reported with the same warning. The direct self-link is the one-hop form and
+   keeps its conflicting-master report. Cycles, like the other findings here,
+   are warnings: the clocks stay in the set, and the domain count and hash are
+   unchanged.
+
    A member must name a clock, never the object that clock is defined on:
    `create_clock -period 10 [get_ports clk]` declares a clock named `clk`, but
    `create_clock -name core_clk -period 10 [get_ports clk]` declares `core_clk`

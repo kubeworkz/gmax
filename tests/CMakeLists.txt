@@ -110,6 +110,18 @@ add_test(NAME cli.sdc-generated-clocks
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-generated-clocks
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_generated_clocks.cmake)
 
+# ADR-012 section 4: an implicit -source must carry exactly one clock, and a
+# -master_clock chain must reach a primary clock. Both findings warn in the
+# summary without changing the set's status; like the master checks they need
+# no Yosys, and the attachment case proves the warnings change neither the
+# status nor the domain count.
+add_test(NAME cli.sdc-generated-clock-chains
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DCLOCK_FIXTURE_BINARY=$<TARGET_FILE:clock_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-generated-clock-chains
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_generated_clock_chains.cmake)
+
 # G0.3 / ADR-011: c432 run with one worker thread and with four must write
 # identical coverage and manifests that differ only in the recorded count. The
 # test shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made
