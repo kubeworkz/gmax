@@ -58,6 +58,8 @@ std::string_view diagnostic_code_name(const DiagnosticCode code) {
         return "sdc-generated-clock-ambiguous-source";
     case DiagnosticCode::SdcGeneratedClockMasterCycle:
         return "sdc-generated-clock-master-cycle";
+    case DiagnosticCode::SdcFalsePathUnknownClock:
+        return "sdc-false-path-unknown-clock";
     }
     return "unknown";
 }

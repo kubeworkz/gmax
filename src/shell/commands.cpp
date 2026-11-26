@@ -917,6 +917,29 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
             }
         }
 
+        // A false path is retained, not enforced, so an endpoint that resolves
+        // nowhere is reported and the set is kept whole. Clock endpoints were
+        // checked against the declared names when the file was read; the rest
+        // name a port, pin or net, which only the design can resolve.
+        const auto report_unresolved = [&](const std::vector<std::string>& endpoints,
+                                           const std::string_view option) {
+            for (const std::string& endpoint : endpoints) {
+                if (constraints.find_clock(endpoint) != nullptr) {
+                    continue;
+                }
+                db::NetId net = db::kInvalidId;
+                if (!resolve_net(database, endpoint, net)) {
+                    err << "gmax: false path " << option << " '" << endpoint
+                        << "' does not resolve to a port, pin or net\n";
+                }
+            }
+        };
+        for (const frontend::SdcFalsePath& path : constraints.false_paths) {
+            report_unresolved(path.from, "-from");
+            report_unresolved(path.through, "-through");
+            report_unresolved(path.to, "-to");
+        }
+
         database.constraints() = attached;
         domains = db::clock_domains(attached, database.flat(), database.strings());
         have_domains = true;

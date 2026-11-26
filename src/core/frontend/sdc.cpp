@@ -378,6 +378,19 @@ std::vector<std::string> resolve_token(const Token& token, std::vector<Diagnosti
     return split_list(strip_outer(rest));
 }
 
+// A false-path endpoint may be a clock, a port, a pin or a net, so only a
+// get_clocks query says the endpoint is meant to be a clock. The parser keeps
+// the resolved names; this reads the query that produced them.
+bool token_queries_clocks(const Token& token) {
+    if (token.kind != Token::Kind::Subcommand) {
+        return false;
+    }
+    const std::string inner = trim(token.text);
+    const std::size_t split = inner.find_first_of(" \t\r\n");
+    const std::string query = split == std::string::npos ? inner : inner.substr(0, split);
+    return query == "get_clocks";
+}
+
 // A member names a clock, not the port or pin that clock is defined on. One
 // source can carry more than one clock, so the source is not a key that picks a
 // single member; the declared name is.
@@ -515,6 +528,34 @@ void validate_clock_groups(const SdcConstraints& constraints, std::vector<Diagno
                         "clock '" + member + "' is a member of more than one -group", member,
                         source, group.line);
         }
+    }
+}
+
+// A false-path endpoint may be a clock, a port, a pin or a net. Only the clock
+// form can be checked without a netlist, because the other three need the
+// design, which attachment resolves. The path is kept either way, so the set
+// stays complete and its hash is unchanged.
+void validate_false_paths(const SdcConstraints& constraints, std::vector<Diagnostic>& diagnostics,
+                          const std::string_view source) {
+    const auto check = [&](const SdcFalsePath& path, const std::string_view option,
+                           const std::vector<std::string>& clocks) {
+        for (const std::string& name : clocks) {
+            if (constraints.find_clock(name) != nullptr) {
+                continue;
+            }
+            std::string message = "false path " + std::string(option) + " names clock '" + name +
+                                  "', which is not a declared clock";
+            if (is_clock_source(constraints, name)) {
+                message += " (it is a clock source; the clock defined on it has another name)";
+            }
+            add_warning(diagnostics, DiagnosticCode::SdcFalsePathUnknownClock, std::move(message),
+                        name, source, path.line);
+        }
+    };
+    for (const SdcFalsePath& path : constraints.false_paths) {
+        check(path, "-from", path.from_clocks);
+        check(path, "-through", path.through_clocks);
+        check(path, "-to", path.to_clocks);
     }
 }
 
@@ -957,12 +998,22 @@ bool Parser::parse_set_false_path(const Command& command) {
             if (!many_objects(value, objects, "set_false_path " + token.text)) {
                 return false;
             }
+            const bool clocks = token_queries_clocks(value);
             if (token.text == "-from") {
                 path.from = std::move(objects);
+                if (clocks) {
+                    path.from_clocks = path.from;
+                }
             } else if (token.text == "-to") {
                 path.to = std::move(objects);
+                if (clocks) {
+                    path.to_clocks = path.to;
+                }
             } else {
                 path.through = std::move(objects);
+                if (clocks) {
+                    path.through_clocks = path.through;
+                }
             }
             continue;
         }
@@ -1337,6 +1388,7 @@ SdcResult read_sdc(const std::string_view text, const std::string_view source) {
     // warning that leaves the status and the hash alone.
     validate_generated_clocks(result.constraints, result.diagnostics, source);
     validate_clock_groups(result.constraints, result.diagnostics, source);
+    validate_false_paths(result.constraints, result.diagnostics, source);
     result.ok = !has_errors(result.diagnostics);
     return result;
 }
