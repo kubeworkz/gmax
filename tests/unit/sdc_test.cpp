@@ -391,8 +391,9 @@ set_clock_groups -asynchronous -group {clk_a clk_zz} -group {clk_a clk_zz} -grou
 
 // ADR-012 section 4: a generated clock's -master_clock names a declared clock
 // and must agree with the command's -source. An unknown master, a master the
-// -source does not lead to, and a clock that names itself are warnings: the
-// clock keeps its recorded master, so the status and hash are unchanged.
+// -source does not lead to, a clock that names itself, an implicit link whose
+// -source carries several clocks, and a master chain that repeats are warnings:
+// the clock keeps its recorded master, so the status and hash are unchanged.
 void test_generated_clock_masters() {
     constexpr std::string_view kLinked = R"SDC(
 create_clock -name clk_a -period 10 [get_ports clk_a]
@@ -536,6 +537,98 @@ create_generated_clock -name gen_b -source [get_ports clk_b] -master_clock clk_a
                "the conflicting master is reported for the second clock");
     }
     expect(mixed.constraints.clocks.size() == 4, "both generated clocks stay in the set");
+
+    // Two clocks on one object leave an implicit -source ambiguous: the source
+    // alone cannot say which clock is the master.
+    constexpr std::string_view kAmbiguous = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] [get_nets ra]
+)SDC";
+    const frontend::SdcResult ambiguous = frontend::read_sdc(kAmbiguous, "gen-ambiguous.sdc");
+    expect(ambiguous.ok, "an ambiguous source does not refuse the file");
+    expect(ambiguous.diagnostics.size() == 1, "one ambiguous source produces one warning");
+    if (ambiguous.diagnostics.size() == 1) {
+        const frontend::Diagnostic& diagnostic = ambiguous.diagnostics[0];
+        expect(diagnostic.code == frontend::DiagnosticCode::SdcGeneratedClockAmbiguousSource,
+               "the finding has the ambiguous-source code");
+        expect(diagnostic.object == "clk_a", "the warning carries the source as its object");
+        expect(contains(diagnostic.message, "(clk_a, clk_b)"),
+               "the warning names the clocks on the source in order");
+        expect(diagnostic.source.line == 4, "the warning keeps the command line");
+    }
+    if (const frontend::SdcClock* gen_a = ambiguous.constraints.find_clock("gen_a")) {
+        const frontend::SdcGeneratedClockIssues issues =
+            frontend::sdc_generated_clock_issues(ambiguous.constraints, *gen_a);
+        expect(issues.ambiguous == std::vector<std::string>{"clk_a", "clk_b"},
+               "the issue list names both clocks on the source");
+        expect(gen_a->master_clock.empty(), "an implicit master stays empty");
+    }
+
+    // Naming the master resolves the same source without a finding.
+    constexpr std::string_view kAmbiguousNamed = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_a]
+create_generated_clock -name gen_b -source [get_ports clk_a] -master_clock clk_b [get_nets ra]
+)SDC";
+    const frontend::SdcResult named =
+        frontend::read_sdc(kAmbiguousNamed, "gen-ambiguous-named.sdc");
+    expect(named.diagnostics.empty(), "an explicit master on a shared source is linked");
+
+    // Two generated clocks that name each other have no primary root.
+    constexpr std::string_view kCycle = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock gen_b [get_nets ra]
+create_generated_clock -name gen_b -source [get_nets ra] -master_clock gen_a [get_nets rb]
+)SDC";
+    const frontend::SdcResult cycle = frontend::read_sdc(kCycle, "gen-cycle.sdc");
+    expect(cycle.ok, "a master cycle does not refuse the file");
+    expect(cycle.diagnostics.size() == 2, "each clock of a two-hop cycle is reported once");
+    if (cycle.diagnostics.size() == 2) {
+        expect(cycle.diagnostics[0].code == frontend::DiagnosticCode::SdcGeneratedClockMasterCycle,
+               "the finding has the master-cycle code");
+        expect(cycle.diagnostics[0].object == "gen_a", "the first warning names its clock");
+        expect(contains(cycle.diagnostics[0].message, "has no root") &&
+                   contains(cycle.diagnostics[0].message, "gen_a -> gen_b -> gen_a"),
+               "the warning renders the path the clock repeats");
+        expect(cycle.diagnostics[1].object == "gen_b", "the second warning names its clock");
+        expect(contains(cycle.diagnostics[1].message, "gen_b -> gen_a -> gen_b"),
+               "each clock renders the path from itself");
+    }
+
+    // A longer loop is the same finding, and the path names every hop.
+    constexpr std::string_view kLongCycle = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock gen_c [get_nets ra]
+create_generated_clock -name gen_b -source [get_nets ra] -master_clock gen_a [get_nets rb]
+create_generated_clock -name gen_c -source [get_nets rb] -master_clock gen_b [get_nets rc]
+)SDC";
+    const frontend::SdcResult long_cycle = frontend::read_sdc(kLongCycle, "gen-long-cycle.sdc");
+    expect(long_cycle.diagnostics.size() == 3, "every clock of a three-hop cycle is reported");
+    if (long_cycle.diagnostics.size() == 3) {
+        expect(contains(long_cycle.diagnostics[0].message, "gen_a -> gen_c -> gen_b -> gen_a"),
+               "a three-hop cycle renders its whole path");
+    }
+
+    // A clock that only leads into a cycle has no root either, and the warning
+    // names both the clock and the cycle it cannot leave.
+    constexpr std::string_view kIntoCycle = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock gen_b [get_nets ra]
+create_generated_clock -name gen_b -source [get_nets ra] -master_clock gen_a [get_nets rb]
+create_generated_clock -name gen_leaf -source [get_ports clk_a] -master_clock gen_a [get_nets rc]
+)SDC";
+    const frontend::SdcResult into_cycle = frontend::read_sdc(kIntoCycle, "gen-into-cycle.sdc");
+    expect(into_cycle.diagnostics.size() == 3, "a clock that leads into a cycle is reported too");
+    if (into_cycle.diagnostics.size() == 3) {
+        expect(into_cycle.diagnostics[2].object == "gen_leaf",
+               "the leaf is reported after the clocks of the cycle");
+        expect(contains(into_cycle.diagnostics[2].message, "gen_a -> gen_b -> gen_a"),
+               "the leaf names the cycle it cannot leave");
+        expect(contains(into_cycle.diagnostics[2].message, "gen_leaf") &&
+                   contains(into_cycle.diagnostics[2].message, "has no root"),
+               "the leaf warning is about the leaf's missing root");
+    }
 }
 
 }  // namespace

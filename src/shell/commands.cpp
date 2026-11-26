@@ -768,8 +768,9 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
         }
         out << '\n';
         // ADR-012 section 4: a generated clock's master is checked against the
-        // declared clocks and the clock's -source. A finding is annotated here
-        // and counted in `warnings`; the clock keeps its recorded master.
+        // declared clocks and the clock's -source, and an implicit link is
+        // checked for an ambiguous source. A finding is annotated here and
+        // counted in `warnings`; the clock keeps its recorded master.
         if (clock.generated) {
             const frontend::SdcGeneratedClockIssues issues =
                 frontend::sdc_generated_clock_issues(constraints, clock);
@@ -778,6 +779,19 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
             }
             for (const std::string& master : issues.conflicting) {
                 out << "  conflicting master " << master << '\n';
+            }
+            if (!issues.ambiguous.empty()) {
+                out << "  ambiguous source " << clock.source_pin << " (";
+                for (std::size_t i = 0; i < issues.ambiguous.size(); ++i) {
+                    if (i != 0) {
+                        out << ' ';
+                    }
+                    out << issues.ambiguous[i];
+                }
+                out << ")" << '\n';
+            }
+            for (const std::string& cycle : issues.cycles) {
+                out << "  master cycle " << cycle << '\n';
             }
         }
     }

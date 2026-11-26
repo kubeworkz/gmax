@@ -390,6 +390,56 @@ bool is_clock_source(const SdcConstraints& constraints, const std::string_view n
     return false;
 }
 
+// The clocks defined on one object. -master_clock identifies a clock by name,
+// so an object that carries more than one clock cannot answer for a link that
+// names none. Sorted, so the finding and the summary line read the same way.
+std::vector<std::string> clocks_on_source(const SdcConstraints& constraints,
+                                          const std::string_view source) {
+    std::vector<std::string> names;
+    for (const SdcClock& clock : constraints.clocks) {
+        if (clock.source == source) {
+            names.push_back(clock.name);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+// Follows -master_clock from the clock and returns the path that first repeats,
+// or an empty path when the chain reaches a clock with no master. A chain that
+// ends at an unknown master is the unknown-master finding, not a cycle.
+std::vector<std::string> master_cycle(const SdcConstraints& constraints, const SdcClock& clock) {
+    std::vector<std::string> path{clock.name};
+    const SdcClock* current = &clock;
+    while (!current->master_clock.empty()) {
+        const std::string& next = current->master_clock;
+        const auto repeat = std::find(path.begin(), path.end(), next);
+        if (repeat != path.end()) {
+            std::vector<std::string> cycle(repeat, path.end());
+            cycle.push_back(next);
+            return cycle;
+        }
+        const SdcClock* resolved = constraints.find_clock(next);
+        if (resolved == nullptr) {
+            return {};
+        }
+        path.push_back(next);
+        current = resolved;
+    }
+    return {};
+}
+
+std::string join_names(const std::vector<std::string>& names, const std::string_view separator) {
+    std::string text;
+    for (const std::string& name : names) {
+        if (!text.empty()) {
+            text += separator;
+        }
+        text += name;
+    }
+    return text;
+}
+
 // A master is validated after the whole file is read for the same reason a
 // group is: SDC does not require a declaration to precede its use.
 void validate_generated_clocks(const SdcConstraints& constraints,
@@ -424,6 +474,20 @@ void validate_generated_clocks(const SdcConstraints& constraints,
             }
             add_warning(diagnostics, DiagnosticCode::SdcGeneratedClockConflictingMaster,
                         std::move(message), master, source, clock.line);
+        }
+        if (!issues.ambiguous.empty()) {
+            std::string message = "generated clock '" + clock.name + "' takes -source '" +
+                                  clock.source_pin + "' but no -master_clock, and '" +
+                                  clock.source_pin + "' carries more than one clock (" +
+                                  join_names(issues.ambiguous, ", ") + ")";
+            add_warning(diagnostics, DiagnosticCode::SdcGeneratedClockAmbiguousSource,
+                        std::move(message), clock.source_pin, source, clock.line);
+        }
+        for (const std::string& cycle : issues.cycles) {
+            add_warning(diagnostics, DiagnosticCode::SdcGeneratedClockMasterCycle,
+                        "generated clock '" + clock.name + "' has no root: -master_clock cycle " +
+                            cycle,
+                        clock.name, source, clock.line);
         }
     }
 }
@@ -1219,7 +1283,16 @@ SdcClockGroupIssues sdc_clock_group_issues(const SdcConstraints& constraints,
 SdcGeneratedClockIssues sdc_generated_clock_issues(const SdcConstraints& constraints,
                                                    const SdcClock& clock) {
     SdcGeneratedClockIssues issues;
-    if (!clock.generated || clock.master_clock.empty()) {
+    if (!clock.generated) {
+        return issues;
+    }
+    if (clock.master_clock.empty()) {
+        // Without -master_clock the -source alone is the link, so it has to
+        // carry exactly one clock.
+        issues.ambiguous = clocks_on_source(constraints, clock.source_pin);
+        if (issues.ambiguous.size() < 2) {
+            issues.ambiguous.clear();
+        }
         return issues;
     }
     const SdcClock* master = constraints.find_clock(clock.master_clock);
@@ -1230,6 +1303,13 @@ SdcGeneratedClockIssues sdc_generated_clock_issues(const SdcConstraints& constra
     if (master->name == clock.name) {
         // A clock derived from itself has no root to derive from.
         issues.conflicting.push_back(clock.name);
+        return issues;
+    }
+    // A master that leads back into the chain has no root either, and the cycle
+    // explains the finding better than the link-sides mismatch it also causes.
+    const std::vector<std::string> cycle = master_cycle(constraints, clock);
+    if (!cycle.empty()) {
+        issues.cycles.push_back(join_names(cycle, " -> "));
         return issues;
     }
     // -source may name the object the master is defined on or the master clock
