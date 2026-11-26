@@ -195,3 +195,13 @@ gmax_set_warnings(capture_test)
 gmax_set_sanitizers(capture_test)
 
 add_test(NAME capture COMMAND capture_test)
+
+add_executable(capture_profile_test
+  capture_profile_test.cpp)
+
+target_link_libraries(capture_profile_test PRIVATE gmax_core)
+
+gmax_set_warnings(capture_profile_test)
+gmax_set_sanitizers(capture_profile_test)
+
+add_test(NAME capture_profile COMMAND capture_profile_test)
