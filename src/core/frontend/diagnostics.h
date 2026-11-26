@@ -35,6 +35,8 @@ enum class DiagnosticCode : std::uint8_t {
     SdcDuplicateClock,
     SdcClockGroupUnknownMember,
     SdcClockGroupConflictingMember,
+    SdcGeneratedClockUnknownMaster,
+    SdcGeneratedClockConflictingMaster,
 };
 
 std::string_view diagnostic_code_name(DiagnosticCode code);

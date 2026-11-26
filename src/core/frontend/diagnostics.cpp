@@ -50,6 +50,10 @@ std::string_view diagnostic_code_name(const DiagnosticCode code) {
         return "sdc-clock-group-unknown-member";
     case DiagnosticCode::SdcClockGroupConflictingMember:
         return "sdc-clock-group-conflicting-member";
+    case DiagnosticCode::SdcGeneratedClockUnknownMaster:
+        return "sdc-generated-clock-unknown-master";
+    case DiagnosticCode::SdcGeneratedClockConflictingMaster:
+        return "sdc-generated-clock-conflicting-master";
     }
     return "unknown";
 }

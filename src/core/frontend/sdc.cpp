@@ -390,6 +390,44 @@ bool is_clock_source(const SdcConstraints& constraints, const std::string_view n
     return false;
 }
 
+// A master is validated after the whole file is read for the same reason a
+// group is: SDC does not require a declaration to precede its use.
+void validate_generated_clocks(const SdcConstraints& constraints,
+                               std::vector<Diagnostic>& diagnostics,
+                               const std::string_view source) {
+    for (const SdcClock& clock : constraints.clocks) {
+        if (!clock.generated) {
+            continue;
+        }
+        const SdcGeneratedClockIssues issues = sdc_generated_clock_issues(constraints, clock);
+        for (const std::string& master : issues.unknown) {
+            std::string message = "generated clock '" + clock.name + "' takes -master_clock '" +
+                                  master + "', which is not a declared clock";
+            if (is_clock_source(constraints, master)) {
+                message +=
+                    " (it is a clock source; create_generated_clock -master_clock takes clock "
+                    "names)";
+            }
+            add_warning(diagnostics, DiagnosticCode::SdcGeneratedClockUnknownMaster,
+                        std::move(message), master, source, clock.line);
+        }
+        for (const std::string& master : issues.conflicting) {
+            std::string message;
+            if (master == clock.name) {
+                message = "generated clock '" + clock.name + "' names itself as its master";
+            } else {
+                const SdcClock* resolved = constraints.find_clock(master);
+                const std::string on = resolved == nullptr ? std::string{} : resolved->source;
+                message = "generated clock '" + clock.name + "' takes -source '" +
+                          clock.source_pin + "' but its master '" + master + "' is defined on '" +
+                          on + "'";
+            }
+            add_warning(diagnostics, DiagnosticCode::SdcGeneratedClockConflictingMaster,
+                        std::move(message), master, source, clock.line);
+        }
+    }
+}
+
 // A group is validated after the whole file is read, not as the command is
 // parsed: SDC does not require a clock declaration to precede the group that
 // names it.
@@ -1178,6 +1216,31 @@ SdcClockGroupIssues sdc_clock_group_issues(const SdcConstraints& constraints,
     return issues;
 }
 
+SdcGeneratedClockIssues sdc_generated_clock_issues(const SdcConstraints& constraints,
+                                                   const SdcClock& clock) {
+    SdcGeneratedClockIssues issues;
+    if (!clock.generated || clock.master_clock.empty()) {
+        return issues;
+    }
+    const SdcClock* master = constraints.find_clock(clock.master_clock);
+    if (master == nullptr) {
+        issues.unknown.push_back(clock.master_clock);
+        return issues;
+    }
+    if (master->name == clock.name) {
+        // A clock derived from itself has no root to derive from.
+        issues.conflicting.push_back(clock.name);
+        return issues;
+    }
+    // -source may name the object the master is defined on or the master clock
+    // object itself; either way the two ends describe the same link. A different
+    // object means the command names two links at once.
+    if (clock.source_pin != master->source && clock.source_pin != master->name) {
+        issues.conflicting.push_back(master->name);
+    }
+    return issues;
+}
+
 SdcResult read_sdc(const std::string_view text, const std::string_view source) {
     SdcResult result;
     Lexer lexer(text, source, result.diagnostics);
@@ -1189,9 +1252,10 @@ SdcResult read_sdc(const std::string_view text, const std::string_view source) {
     for (const Command& command : commands) {
         static_cast<void>(parser.parse(command));
     }
-    // Membership is reported, not refused: clock groups are retained but not
-    // enforced (ADR-012 section 4), so a finding here is a warning that leaves
-    // the status and the hash alone.
+    // Both checks are reported, not refused: generated clocks and clock groups
+    // are retained but not enforced (ADR-012 section 4), so a finding here is a
+    // warning that leaves the status and the hash alone.
+    validate_generated_clocks(result.constraints, result.diagnostics, source);
     validate_clock_groups(result.constraints, result.diagnostics, source);
     result.ok = !has_errors(result.diagnostics);
     return result;
