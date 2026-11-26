@@ -95,7 +95,8 @@ inside the cycle.
   out of the cycles; if no clock remains, the run is refused (section 4).
 - A gated clock whose test-mode bypass is not modelled, or an asynchronous reset
   the procedure does not drive, makes that domain untestable rather than
-  captured, as 9.7 requires. The run continues and the domain is reported.
+  captured, as 9.7 requires. The run continues, the domain is reported, and its
+  clock stays in the procedure (section 4).
 
 ### 4. Refusals
 
@@ -113,8 +114,15 @@ group or cycle:
    masked;
 3. a group whose clocks disagree on period or waveform;
 4. a clock that appears more than once in the procedure;
-5. no capture clock left after section 3's exclusions;
+5. no capture clock left after section 3's clock-level exclusion;
 6. a DFT003 error (section 5).
+
+Condition 5 counts only the clock-level exclusion in section 3. The domain-level
+one never refuses: an unmodelled gated-clock bypass or an undriven asynchronous
+reset keeps its clock in the procedure, reports the domain untestable, and the
+rest of the procedure runs. A run whose domains are all excluded that way is
+still `enforced`, because the procedure was applied and its faults are counted
+`untestable`, not refused: its procedure is well formed.
 
 A malformed procedure is condition 4 or an unreadable profile; it is not a new
 category.
@@ -207,6 +215,10 @@ unenforced: capture here is edge-based and does not evaluate delay annotations.
 - One refusal test per condition in section 4, each asserting exit code 2 and
   that no coverage or manifest is written; an incomplete set still fails with
   its own warnings first.
+- An exclusion test per granularity: a clock that clocks no state-holding
+  element is reported and dropped and refuses only when it empties the list; a
+  domain excluded by an unmodelled gated clock or an undriven reset is reported
+  untestable and the run completes with `enforced`.
 - Intermediate-state tests: a fully scanned domain runs; a masked domain counts
   its faults as masked and those faults stay inside `untestable`; with neither,
   the run is refused.
