@@ -767,6 +767,19 @@ ExitCode read_sdc_handler(const Invocation& invocation, std::ostream& out, std::
             }
         }
         out << '\n';
+        // ADR-012 section 4: a generated clock's master is checked against the
+        // declared clocks and the clock's -source. A finding is annotated here
+        // and counted in `warnings`; the clock keeps its recorded master.
+        if (clock.generated) {
+            const frontend::SdcGeneratedClockIssues issues =
+                frontend::sdc_generated_clock_issues(constraints, clock);
+            for (const std::string& master : issues.unknown) {
+                out << "  unknown master " << master << '\n';
+            }
+            for (const std::string& master : issues.conflicting) {
+                out << "  conflicting master " << master << '\n';
+            }
+        }
     }
     out << "clock groups: " << constraints.clock_groups.size() << '\n';
     for (const frontend::SdcClockGroup& group : constraints.clock_groups) {

@@ -199,6 +199,14 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    summary lines. The member is kept in the group and the set is retained
    whole, so neither finding changes the constraints status or hash.
 
+   A `create_generated_clock -master_clock` is checked the same way, and
+   against the command's `-source`. A master that names no declared clock, a
+   master the `-source` does not lead to (neither the object the master is
+   defined on nor the master clock object itself), and a clock that names
+   itself as its master are reported as warnings and summary lines. The
+   generated clock keeps its recorded master, so none of these findings changes
+   the constraints status or hash.
+
    A member must name a clock, never the object that clock is defined on:
    `create_clock -period 10 [get_ports clk]` declares a clock named `clk`, but
    `create_clock -name core_clk -period 10 [get_ports clk]` declares `core_clk`

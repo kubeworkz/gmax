@@ -58,6 +58,15 @@ struct SdcClockGroupIssues {
     std::vector<std::string> conflicting;
 };
 
+// ADR-012 section 4: a generated clock's -master_clock names a declared clock,
+// and the -source must lead to that clock. A master that names no clock, and a
+// master the -source does not lead to, are reported; the clock keeps its
+// recorded master.
+struct SdcGeneratedClockIssues {
+    std::vector<std::string> unknown;
+    std::vector<std::string> conflicting;
+};
+
 struct SdcFalsePath {
     std::vector<std::string> from;
     std::vector<std::string> through;
@@ -115,6 +124,11 @@ struct SdcConstraints {
 // the source repeats it.
 SdcClockGroupIssues sdc_clock_group_issues(const SdcConstraints& constraints,
                                            const SdcClockGroup& group);
+
+// Empty for a primary clock or one with no -master_clock: the -source alone is
+// the link.
+SdcGeneratedClockIssues sdc_generated_clock_issues(const SdcConstraints& constraints,
+                                                   const SdcClock& clock);
 
 struct SdcResult {
     bool ok = false;

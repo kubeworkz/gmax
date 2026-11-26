@@ -389,6 +389,155 @@ set_clock_groups -asynchronous -group {clk_a clk_zz} -group {clk_a clk_zz} -grou
     }
 }
 
+// ADR-012 section 4: a generated clock's -master_clock names a declared clock
+// and must agree with the command's -source. An unknown master, a master the
+// -source does not lead to, and a clock that names itself are warnings: the
+// clock keeps its recorded master, so the status and hash are unchanged.
+void test_generated_clock_masters() {
+    constexpr std::string_view kLinked = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_a [get_nets ra]
+)SDC";
+    const frontend::SdcResult linked = frontend::read_sdc(kLinked, "gen-linked.sdc");
+    expect(linked.ok, "a generated clock with a linked master parses");
+    expect(linked.diagnostics.empty(), "a linked master warns about nothing");
+    if (const frontend::SdcClock* gen_a = linked.constraints.find_clock("gen_a")) {
+        const frontend::SdcGeneratedClockIssues issues =
+            frontend::sdc_generated_clock_issues(linked.constraints, *gen_a);
+        expect(issues.unknown.empty() && issues.conflicting.empty(),
+               "a master defined on the -source has no issue");
+    }
+
+    // Without -master_clock the -source alone is the link.
+    constexpr std::string_view kImplicit = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] [get_nets ra]
+)SDC";
+    const frontend::SdcResult implicit = frontend::read_sdc(kImplicit, "gen-implicit.sdc");
+    expect(implicit.diagnostics.empty(), "an implicit single master warns about nothing");
+
+    // -source may name the master clock object rather than the object the master
+    // is defined on; the names differ but the link is the same.
+    constexpr std::string_view kClockObject = R"SDC(
+create_clock -name core_clk -period 10 [get_ports clk]
+create_generated_clock -name gen_core -source [get_clocks core_clk] -master_clock core_clk [get_nets ra]
+)SDC";
+    const frontend::SdcResult clock_object =
+        frontend::read_sdc(kClockObject, "gen-clock-object.sdc");
+    expect(clock_object.diagnostics.empty(), "a -source naming the master clock object is linked");
+
+    constexpr std::string_view kUnknown = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_typo [get_nets ra]
+)SDC";
+    const frontend::SdcResult unknown = frontend::read_sdc(kUnknown, "gen-unknown.sdc");
+    expect(unknown.ok, "an unknown master does not refuse the file");
+    expect(error_count(unknown) == 0, "an unknown master is not an error");
+    expect(unknown.diagnostics.size() == 1, "one unknown master produces one warning");
+    if (unknown.diagnostics.size() == 1) {
+        const frontend::Diagnostic& diagnostic = unknown.diagnostics[0];
+        expect(diagnostic.code == frontend::DiagnosticCode::SdcGeneratedClockUnknownMaster,
+               "the finding has the unknown-master code");
+        expect(contains(diagnostic.message, "clk_typo"), "the warning names the unknown master");
+        expect(contains(diagnostic.message, "gen_a"), "the warning names the generated clock");
+        expect(diagnostic.object == "clk_typo", "the warning carries the master as its object");
+        expect(diagnostic.source.line == 3, "the warning keeps the command line");
+    }
+    if (const frontend::SdcClock* gen_a = unknown.constraints.find_clock("gen_a")) {
+        expect(gen_a->master_clock == "clk_typo",
+               "the unknown master is kept on the generated clock");
+        const frontend::SdcGeneratedClockIssues issues =
+            frontend::sdc_generated_clock_issues(unknown.constraints, *gen_a);
+        expect(issues.unknown == std::vector<std::string>{"clk_typo"} && issues.conflicting.empty(),
+               "the issue list names the unknown master");
+    }
+
+    // A master that names a clock source is the mistake the group check already
+    // explains, so the message says the same thing.
+    constexpr std::string_view kSource = R"SDC(
+create_clock -name core_clk -period 10 [get_ports clk]
+create_generated_clock -name gen_core -source [get_ports clk] -master_clock clk [get_nets ra]
+)SDC";
+    const frontend::SdcResult source = frontend::read_sdc(kSource, "gen-source.sdc");
+    expect(source.diagnostics.size() == 1, "a source-only master is reported once");
+    if (source.diagnostics.size() == 1) {
+        expect(source.diagnostics[0].code ==
+                   frontend::DiagnosticCode::SdcGeneratedClockUnknownMaster,
+               "a source object is not a clock name");
+        expect(source.diagnostics[0].object == "clk", "the warning names the master");
+        expect(contains(source.diagnostics[0].message, "it is a clock source"),
+               "the warning says the master is a clock source");
+    }
+
+    // The master resolves, but it is defined on another object than -source, so
+    // the command names two links at once.
+    constexpr std::string_view kConflict = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_b]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_b [get_nets ra]
+)SDC";
+    const frontend::SdcResult conflict = frontend::read_sdc(kConflict, "gen-conflict.sdc");
+    expect(conflict.ok, "a conflicting master does not refuse the file");
+    expect(conflict.diagnostics.size() == 1, "one conflicting master produces one warning");
+    if (conflict.diagnostics.size() == 1) {
+        const frontend::Diagnostic& diagnostic = conflict.diagnostics[0];
+        expect(diagnostic.code == frontend::DiagnosticCode::SdcGeneratedClockConflictingMaster,
+               "the finding has the conflicting-master code");
+        expect(contains(diagnostic.message, "-source 'clk_a'") &&
+                   contains(diagnostic.message, "'clk_b' is defined on 'clk_b'"),
+               "the warning names both ends of the link");
+        expect(diagnostic.object == "clk_b", "the warning carries the master as its object");
+        expect(diagnostic.source.line == 4, "the warning keeps the command line");
+    }
+
+    // A clock that derives from itself has no root.
+    constexpr std::string_view kSelf = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock gen_a [get_nets ra]
+)SDC";
+    const frontend::SdcResult self = frontend::read_sdc(kSelf, "gen-self.sdc");
+    expect(self.diagnostics.size() == 1, "a self-linked clock is reported once");
+    if (self.diagnostics.size() == 1) {
+        expect(self.diagnostics[0].code ==
+                   frontend::DiagnosticCode::SdcGeneratedClockConflictingMaster,
+               "a self-link conflicts with the clock itself");
+        expect(contains(self.diagnostics[0].message, "names itself"),
+               "the warning says the clock names itself");
+    }
+
+    // A generated master is a clock like any other: the link is the object that
+    // master is defined on, not the object the primary clock came from.
+    constexpr std::string_view kChain = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_a [get_nets ra]
+create_generated_clock -name gen_b -source [get_nets ra] -master_clock gen_a [get_nets rb]
+)SDC";
+    const frontend::SdcResult chain = frontend::read_sdc(kChain, "gen-chain.sdc");
+    expect(chain.diagnostics.empty(), "a generated master links through its own source");
+
+    // Both findings in one file are independent, and clocks are reported in
+    // declaration order.
+    constexpr std::string_view kMixed = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_b]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_typo [get_nets ra]
+create_generated_clock -name gen_b -source [get_ports clk_b] -master_clock clk_a [get_nets rb]
+)SDC";
+    const frontend::SdcResult mixed = frontend::read_sdc(kMixed, "gen-mixed.sdc");
+    expect(mixed.diagnostics.size() == 2, "unknown and conflicting masters are independent");
+    if (mixed.diagnostics.size() == 2) {
+        expect(mixed.diagnostics[0].code ==
+                       frontend::DiagnosticCode::SdcGeneratedClockUnknownMaster &&
+                   mixed.diagnostics[0].object == "clk_typo",
+               "the unknown master is reported for the first clock");
+        expect(mixed.diagnostics[1].code ==
+                       frontend::DiagnosticCode::SdcGeneratedClockConflictingMaster &&
+                   mixed.diagnostics[1].object == "clk_a",
+               "the conflicting master is reported for the second clock");
+    }
+    expect(mixed.constraints.clocks.size() == 4, "both generated clocks stay in the set");
+}
+
 }  // namespace
 
 int main() {
@@ -400,6 +549,7 @@ int main() {
     test_crlf_continuations();
     test_braced_continuations();
     test_clock_group_membership();
+    test_generated_clock_masters();
     if (failures != 0) {
         std::cerr << failures << " SDC test(s) failed" << std::endl;
         return 1;

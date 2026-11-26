@@ -99,6 +99,17 @@ add_test(NAME cli.sdc-clock-groups
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-clock-groups
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_clock_groups.cmake)
 
+# ADR-012 section 4: a generated clock's -master_clock is resolved against the
+# declared clock names and checked against the command's -source. An unknown
+# master and a master the -source does not lead to warn in the summary without
+# changing the set's status; linkage needs no netlist, so this needs no Yosys.
+add_test(NAME cli.sdc-generated-clocks
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DCLOCK_FIXTURE_BINARY=$<TARGET_FILE:clock_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-generated-clocks
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_generated_clocks.cmake)
+
 # G0.3 / ADR-011: c432 run with one worker thread and with four must write
 # identical coverage and manifests that differ only in the recorded count. The
 # test shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made
