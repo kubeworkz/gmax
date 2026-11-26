@@ -575,6 +575,44 @@ create_generated_clock -name gen_b -source [get_ports clk_a] -master_clock clk_b
         frontend::read_sdc(kAmbiguousNamed, "gen-ambiguous-named.sdc");
     expect(named.diagnostics.empty(), "an explicit master on a shared source is linked");
 
+    // A generated clock is a clock on its source like any other: one of them is
+    // enough for the implicit link, even though the master is itself generated.
+    constexpr std::string_view kGeneratedMaster = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_a [get_nets ra]
+create_generated_clock -name gen_b -source [get_nets ra] [get_nets rb]
+)SDC";
+    const frontend::SdcResult generated_master =
+        frontend::read_sdc(kGeneratedMaster, "gen-implicit-generated.sdc");
+    expect(generated_master.diagnostics.empty(),
+           "one generated clock on the source leaves the implicit link unambiguous");
+    if (const frontend::SdcClock* gen_b = generated_master.constraints.find_clock("gen_b")) {
+        const frontend::SdcGeneratedClockIssues issues =
+            frontend::sdc_generated_clock_issues(generated_master.constraints, *gen_b);
+        expect(issues.ambiguous.empty(), "the generated master is not an ambiguity");
+        expect(gen_b->master_clock.empty(), "the implicit generated master stays empty");
+    }
+
+    // Generated clocks count toward the threshold too: two of them on one object
+    // leave the implicit link ambiguous even without a primary clock there.
+    constexpr std::string_view kTwoGenerated = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_generated_clock -name gen_a -source [get_ports clk_a] -master_clock clk_a [get_nets ra]
+create_generated_clock -name gen_c -source [get_ports clk_a] -master_clock clk_a [get_nets ra]
+create_generated_clock -name gen_b -source [get_nets ra] [get_nets rb]
+)SDC";
+    const frontend::SdcResult two_generated =
+        frontend::read_sdc(kTwoGenerated, "gen-two-generated.sdc");
+    expect(two_generated.diagnostics.size() == 1,
+           "two generated clocks on one source produce one warning");
+    if (two_generated.diagnostics.size() == 1) {
+        expect(two_generated.diagnostics[0].code ==
+                   frontend::DiagnosticCode::SdcGeneratedClockAmbiguousSource,
+               "the shared generated source has the ambiguous-source code");
+        expect(contains(two_generated.diagnostics[0].message, "(gen_a, gen_c)"),
+               "the warning lists the generated clocks on the source");
+    }
+
     // Two generated clocks that name each other have no primary root.
     constexpr std::string_view kCycle = R"SDC(
 create_clock -name clk_a -period 10 [get_ports clk_a]
