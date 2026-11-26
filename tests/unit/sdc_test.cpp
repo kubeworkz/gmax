@@ -669,6 +669,102 @@ create_generated_clock -name gen_leaf -source [get_ports clk_a] -master_clock ge
     }
 }
 
+// ADR-012 section 4: a false-path endpoint may be a clock, a port, a pin or a
+// net, so only an endpoint the file asked for with a clock query can be checked
+// without a netlist. The path is kept either way and the set stays complete.
+void test_false_path_endpoints() {
+    constexpr std::string_view kDeclared = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+create_clock -name clk_b -period 20 [get_ports clk_b]
+set_false_path -from [get_clocks clk_a] -to [get_clocks clk_b]
+)SDC";
+    const frontend::SdcResult declared = frontend::read_sdc(kDeclared, "false-declared.sdc");
+    expect(declared.diagnostics.empty(),
+           "a false path between declared clocks warns about nothing");
+    expect(declared.constraints.false_paths.size() == 1, "the false path is kept");
+    if (declared.constraints.false_paths.size() == 1) {
+        const frontend::SdcFalsePath& path = declared.constraints.false_paths[0];
+        expect(path.from == std::vector<std::string>{"clk_a"} &&
+                   path.to == std::vector<std::string>{"clk_b"},
+               "the endpoints are the resolved clock names");
+        expect(path.from_clocks == std::vector<std::string>{"clk_a"} &&
+                   path.to_clocks == std::vector<std::string>{"clk_b"},
+               "a clock-query endpoint is recorded as a clock");
+    }
+
+    constexpr std::string_view kUnknown = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+set_false_path -from [get_clocks clk_a] -to [get_clocks clk_typo]
+)SDC";
+    const frontend::SdcResult unknown = frontend::read_sdc(kUnknown, "false-unknown.sdc");
+    expect(unknown.ok, "an unknown clock endpoint does not refuse the file");
+    expect(unknown.diagnostics.size() == 1, "one unknown clock endpoint produces one warning");
+    if (unknown.diagnostics.size() == 1) {
+        const frontend::Diagnostic& diagnostic = unknown.diagnostics[0];
+        expect(diagnostic.code == frontend::DiagnosticCode::SdcFalsePathUnknownClock,
+               "the finding has the unknown-clock code");
+        expect(diagnostic.object == "clk_typo", "the warning carries the clock as its object");
+        expect(contains(diagnostic.message, "-to") && contains(diagnostic.message, "clk_typo"),
+               "the warning names the option and the clock");
+        expect(diagnostic.source.line == 3, "the warning keeps the command line");
+    }
+    expect(unknown.constraints.false_paths.size() == 1,
+           "a false path with an unknown clock stays in the set");
+
+    // -through is a clock endpoint the same way.
+    constexpr std::string_view kThrough = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+set_false_path -from [get_clocks clk_a] -through [get_clocks clk_typo]
+)SDC";
+    const frontend::SdcResult through = frontend::read_sdc(kThrough, "false-through.sdc");
+    expect(through.diagnostics.size() == 1, "an unknown -through clock is reported once");
+    if (through.diagnostics.size() == 1) {
+        expect(contains(through.diagnostics[0].message, "-through"),
+               "the warning names the -through option");
+    }
+
+    // A port or net endpoint is not a clock claim, so only a netlist can judge it.
+    constexpr std::string_view kObjects = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+set_false_path -from [get_ports clk_a] -through [get_nets nope] -to [get_ports clk_b]
+)SDC";
+    const frontend::SdcResult objects = frontend::read_sdc(kObjects, "false-objects.sdc");
+    expect(objects.diagnostics.empty(), "port and net endpoints are left to attachment");
+    if (objects.constraints.false_paths.size() == 1) {
+        const frontend::SdcFalsePath& path = objects.constraints.false_paths[0];
+        expect(path.from_clocks.empty() && path.through_clocks.empty() && path.to_clocks.empty(),
+               "no port or net endpoint is recorded as a clock");
+    }
+
+    // A clock query that names the port gets the hint the master checks give.
+    constexpr std::string_view kSource = R"SDC(
+create_clock -name core_clk -period 10 [get_ports clk]
+set_false_path -from [get_clocks clk] -to [get_clocks core_clk]
+)SDC";
+    const frontend::SdcResult source = frontend::read_sdc(kSource, "false-source.sdc");
+    expect(source.diagnostics.size() == 1, "a clock query naming the source is reported once");
+    if (source.diagnostics.size() == 1) {
+        expect(contains(source.diagnostics[0].message, "it is a clock source"),
+               "the warning says the name is a clock source");
+    }
+
+    // Both ends are checked, in -from, -through, -to order.
+    constexpr std::string_view kBoth = R"SDC(
+create_clock -name clk_a -period 10 [get_ports clk_a]
+set_false_path -from [get_clocks clk_x] -to [get_clocks clk_y]
+)SDC";
+    const frontend::SdcResult both = frontend::read_sdc(kBoth, "false-both.sdc");
+    expect(both.diagnostics.size() == 2, "two unknown clock endpoints produce two warnings");
+    if (both.diagnostics.size() == 2) {
+        expect(contains(both.diagnostics[0].message, "-from") &&
+                   contains(both.diagnostics[0].message, "clk_x"),
+               "the -from endpoint is reported first");
+        expect(contains(both.diagnostics[1].message, "-to") &&
+                   contains(both.diagnostics[1].message, "clk_y"),
+               "the -to endpoint is reported second");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -681,6 +777,7 @@ int main() {
     test_braced_continuations();
     test_clock_group_membership();
     test_generated_clock_masters();
+    test_false_path_endpoints();
     if (failures != 0) {
         std::cerr << failures << " SDC test(s) failed" << std::endl;
         return 1;

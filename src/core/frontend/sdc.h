@@ -77,6 +77,13 @@ struct SdcFalsePath {
     std::vector<std::string> from;
     std::vector<std::string> through;
     std::vector<std::string> to;
+    // Endpoints that came from a [get_clocks ...] query. from/through/to keep
+    // the resolved names the constraint stores; these say which of them the
+    // file asked to be clocks, because a bare or port/pin/net endpoint cannot
+    // be checked without a netlist.
+    std::vector<std::string> from_clocks;
+    std::vector<std::string> through_clocks;
+    std::vector<std::string> to_clocks;
     std::uint32_t line = 0;
 };
 

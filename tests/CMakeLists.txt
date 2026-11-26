@@ -122,6 +122,17 @@ add_test(NAME cli.sdc-generated-clock-chains
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-generated-clock-chains
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_generated_clock_chains.cmake)
 
+# ADR-012 section 4: a false-path endpoint that came from a clock query must
+# name a declared clock, and every endpoint is resolved against the design at
+# attachment. Both findings are warnings: the path is kept, the set stays
+# complete, and neither the hash nor the domain count changes.
+add_test(NAME cli.sdc-false-paths
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DCLOCK_FIXTURE_BINARY=$<TARGET_FILE:clock_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-sdc-false-paths
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/sdc_false_paths.cmake)
+
 # G0.3 / ADR-011: c432 run with one worker thread and with four must write
 # identical coverage and manifests that differ only in the recorded count. The
 # test shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made

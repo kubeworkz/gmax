@@ -228,6 +228,16 @@ transition faults. Its enforcement scope is therefore limited and explicit:
    are warnings: the clocks stay in the set, and the domain count and hash are
    unchanged.
 
+   A `set_false_path` endpoint may be a clock, a port, a pin or a net, so the name
+   alone does not say which. An endpoint that came from a `[get_clocks ...]`
+   query names a clock, and one that names no declared clock is reported as a
+   warning and kept. A port, pin or net endpoint needs the design, so it is
+   checked at attachment, where an endpoint that resolves to no net is reported
+   and kept. Because a false path is not enforced, neither finding refuses the
+   set: the status stays complete, the hash is unchanged, and the clock-domain
+   count is untouched. A bare endpoint name is not checked at read time, because
+   it may legitimately name a port, pin or net.
+
    A member must name a clock, never the object that clock is defined on:
    `create_clock -period 10 [get_ports clk]` declares a clock named `clk`, but
    `create_clock -name core_clk -period 10 [get_ports clk]` declares `core_clk`
