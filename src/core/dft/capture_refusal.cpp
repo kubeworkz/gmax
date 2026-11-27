@@ -241,10 +241,11 @@ void check_clock_repeated(const CaptureProcedure& procedure,
     }
 }
 
-// Condition 5: every declared clock clocks no state-holding gate, so the
-// clock-level exclusion of section 3 would leave nothing to pulse. ADR-013
-// section 4 refuses only when the list is emptied; one dropped clock is a
-// warning the run continues past.
+// Condition 5: every declared clock clocks no state-holding gate, so nothing is
+// left to pulse. Section 3's clock-level exclusion is what drops such a clock and
+// warns while other clocks keep the run alive; that slice is not implemented yet,
+// so this pass refuses without dropping anything and the finding states only what
+// the design shows. ADR-013 section 4 refuses only once the list is emptied.
 void check_no_capture_clock(const std::vector<db::ClockGateCount>& clock_gates,
                             std::vector<CaptureRefusal>& refusals) {
     bool any = false;
@@ -256,7 +257,7 @@ void check_no_capture_clock(const std::vector<db::ClockGateCount>& clock_gates,
     }
     for (const db::ClockGateCount& clock : clock_gates) {
         add(refusals, CaptureRefusalCode::NoCaptureClock,
-            "'" + clock.clock + "' clocks no state-holding gate and was dropped");
+            "'" + clock.clock + "' clocks no state-holding gate");
     }
 }
 

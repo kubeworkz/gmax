@@ -48,10 +48,10 @@ endif()
 
 check_contains("${err}" "gmax: cannot apply the capture procedure; refusing to grade" "header")
 check_contains("${err}"
-    "gmax:   no-capture-clock: 'clk_a' clocks no state-holding gate and was dropped"
+    "gmax:   no-capture-clock: 'clk_a' clocks no state-holding gate"
     "clk_a finding")
 check_contains("${err}"
-    "gmax:   no-capture-clock: 'clk_b' clocks no state-holding gate and was dropped"
+    "gmax:   no-capture-clock: 'clk_b' clocks no state-holding gate"
     "clk_b finding")
 
 # The header appears once even when several findings do, and every dropped clock

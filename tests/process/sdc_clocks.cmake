@@ -106,8 +106,8 @@ check_text("${GMAX_OUT}" "clocks: 2" "report-only form")
 check_absent("${GMAX_OUT}" "clock domains:" "report-only form")
 
 # ADR-013 section 4 condition 5: the combinational fixture has one input and no
-# flops, so the clock it declares clocks no state-holding gate. Section 3 drops
-# such a clock, and with none left the run is refused. That supersedes ADR-012's
+# flops, so the clock it declares clocks no state-holding gate and no capture
+# clock is left, which refuses the run. That supersedes ADR-012's
 # "a clock changes no fault outcome" for a clocked run: there is no capture claim
 # this run can honour, so it exits 2 and writes no coverage block.
 set(flat_db "${WORK_DIR}/flat.dfdb")
@@ -140,7 +140,7 @@ run_gmax(2 run_atpg "${flat_attached}" "${faults}" 100000 0 "${report}")
 check_text("${GMAX_ERR}" "gmax: cannot apply the capture procedure; refusing to grade"
     "flat ATPG refusal")
 check_text("${GMAX_ERR}"
-    "gmax:   no-capture-clock: 'a' clocks no state-holding gate and was dropped"
+    "gmax:   no-capture-clock: 'a' clocks no state-holding gate"
     "flat ATPG refusal")
 if(NOT "${GMAX_OUT}" STREQUAL "")
     message(FATAL_ERROR "a refused flat run graded: ${GMAX_OUT}")
