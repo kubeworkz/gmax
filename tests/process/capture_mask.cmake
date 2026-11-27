@@ -50,6 +50,24 @@ file(WRITE "${WORK_DIR}/masked.json"
     "  {\"intermediate\": \"masked\", \"groups\": [{\"clocks\": [\"clk_a\"], \"edge\": 0}]},\n"
     "  {\"groups\": [{\"clocks\": [\"clk_b\"], \"edge\": 0}]}]}}\n")
 
+# The profile's identity is its path and the CRC32 of its bytes. The bytes carry the
+# platform's line endings, so the test pins the shape and the path and leaves the
+# computation to the profile unit test.
+function(check_profile_input manifest path label)
+    string(FIND "${manifest}" "\"inputs\":{\"profile\":{\"path\":\"${path}\",\"hash\":\"" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "${label}: no profile input naming '${path}' in:
+${manifest}")
+    endif()
+    string(REGEX MATCH
+        "\"inputs\":\{\"profile\":\{\"path\":\"[^\"]*\",\"hash\":\"[0-9a-f]+\",\"algorithm\":\"crc32\"\}"
+        profile_input "${manifest}")
+    if(NOT profile_input)
+        message(FATAL_ERROR "${label}: the profile input is not path/hash/algorithm:
+${manifest}")
+    endif()
+endfunction()
+
 function(run profile report)
     file(REMOVE_RECURSE "${report}")
     execute_process(
@@ -81,9 +99,7 @@ file(READ "${WORK_DIR}/plain-report/manifest.json" plain_manifest)
 check_contains("${plain_manifest}" "\"capture\":{\"status\":\"enforced\"" "unmasked capture")
 # The profile is an input of the run, so the manifest names the document it read and
 # the CRC32 of its bytes: the run can be audited from its report alone.
-check_contains("${plain_manifest}"
-    "\"inputs\":{\"profile\":{\"path\":\"${WORK_DIR}/sequential.json\",\"hash\":\"69d832c6\",\"algorithm\":\"crc32\"}"
-    "the plain run records the profile it read")
+check_profile_input("${plain_manifest}" "${WORK_DIR}/sequential.json" "plain run")
 
 # 2. Masking clk_a removes the q_a0 observation, so the element fault that needed it
 #    is counted masked inside untestable and the denominators do not move.
@@ -124,9 +140,7 @@ endif()
 
 # 3. The mask is part of the procedure the run applied, and the run is deterministic.
 file(READ "${WORK_DIR}/masked-report/manifest.json" masked_manifest)
-check_contains("${masked_manifest}"
-    "\"inputs\":{\"profile\":{\"path\":\"${WORK_DIR}/masked.json\",\"hash\":\"145fa428\",\"algorithm\":\"crc32\"}"
-    "the masked run records the profile that declared the mask")
+check_profile_input("${masked_manifest}" "${WORK_DIR}/masked.json" "masked run")
 check_contains("${masked_coverage}"
     "\"capture\":{\"status\":\"enforced\",\"procedure\":\"sequential\"" "masked capture")
 run("${WORK_DIR}/masked.json" "${WORK_DIR}/masked-repeat")

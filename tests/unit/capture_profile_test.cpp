@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/db/constraints.h"
+#include "core/db/crc32.h"
 #include "core/dft/capture.h"
 #include "core/dft/capture_profile.h"
 #include "core/frontend/diagnostics.h"
@@ -540,6 +541,26 @@ void test_intermediate_state() {
 
 // A profile that cannot be opened is a diagnostic rather than an exception, so the
 // caller has one way to report a document it cannot use.
+// ADR-013 section 6: the profile is a run input, so the reader reports the document
+// it parsed and the CRC32 of its bytes. The text API names the source it was given,
+// so a test and a file read describe the same identity the same way.
+void test_parsed_identity() {
+    const std::string text = "{\"capture\": {\"kind\": \"simultaneous\", \"cycles\": "
+                             "[{\"groups\": [{\"clocks\": [\"clk_a\"]}]}]}}";
+    const dft::CaptureProfileResult result = read(text, make_constraints());
+    expect(result.ok && result.declared, "the declared procedure reads");
+    expect(result.path == "profile.json", "the reader reports the source it was given");
+    expect(result.hash == db::crc32(text), "the reader reports the CRC32 of the bytes it parsed");
+
+    // A document with no capture object is still an input the run read, so it keeps
+    // its identity even though the engine derives the procedure from it.
+    const std::string empty = "{}";
+    const dft::CaptureProfileResult none = read(empty, make_constraints());
+    expect(none.ok && !none.declared, "no capture object is a valid profile");
+    expect(none.path == "profile.json" && none.hash == db::crc32(empty),
+           "a profile that declares nothing keeps its identity");
+}
+
 void test_unreadable_file() {
     const db::Constraints constraints = make_constraints();
     const dft::CaptureProfileResult missing =
@@ -565,6 +586,7 @@ int main() {
     test_unknown_keys_ignored();
     test_identity();
     test_intermediate_state();
+    test_parsed_identity();
     test_unreadable_file();
 
     if (failures != 0) {
