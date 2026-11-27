@@ -302,6 +302,63 @@ void test_group_order() {
            "an edge tie is broken by the clock list");
 }
 
+void test_clock_exclusion_shape() {
+    const db::Constraints constraints = make_constraints();
+    std::vector<std::string> dropped;
+
+    // Two sequential cycles minus one clock is one cycle with one group, which
+    // section 1 calls simultaneous.
+    const dft::CaptureProcedure from_sequential =
+        dft::exclude_idle_clocks(dft::resolve_capture_procedure(constraints), constraints,
+                                 {{"clk_a", 1}, {"clk_b", 0}}, dropped);
+    expect(from_sequential.cycles.size() == 1, "one cycle survives the drop");
+    expect(from_sequential.kind == dft::CaptureKind::Simultaneous,
+           "one surviving cycle with one group is simultaneous");
+    expect(dft::canonical_capture_payload(from_sequential)
+                   .rfind("gmax-capture-4\nkind\tsimultaneous\n", 0) == 0,
+           "the payload names the re-derived kind");
+
+    // Three cycles minus one still leaves two, so the shape stays sequential.
+    db::Constraints three = constraints;
+    three.clocks.push_back(make_clock("clk_c", 30.0));
+    const dft::CaptureProcedure from_three =
+        dft::exclude_idle_clocks(dft::resolve_capture_procedure(three), three,
+                                 {{"clk_a", 1}, {"clk_b", 0}, {"clk_c", 1}}, dropped);
+    expect(from_three.cycles.size() == 2, "two cycles survive the drop");
+    expect(from_three.kind == dft::CaptureKind::Sequential, "two surviving cycles are sequential");
+
+    // A grouped cycle that loses one of its groups is left with one group.
+    dft::CaptureGroup fast;
+    fast.timing = dft::capture_timing_set(constraints, {"clk_a"}, 0.0);
+    dft::CaptureGroup slow;
+    slow.timing = dft::capture_timing_set(constraints, {"clk_b"}, 20.0);
+    dft::CaptureCycle cycle;
+    cycle.groups = {fast, slow};
+    dft::CaptureProcedure grouped;
+    grouped.kind = dft::CaptureKind::Grouped;
+    grouped.derived = false;
+    grouped.cycles = {cycle};
+    const dft::CaptureProcedure kept_one =
+        dft::exclude_idle_clocks(grouped, constraints, {{"clk_a", 1}, {"clk_b", 0}}, dropped);
+    expect(kept_one.cycles.size() == 1 && kept_one.cycles[0].groups.size() == 1,
+           "the emptied group goes with its clock");
+    expect(kept_one.kind == dft::CaptureKind::Simultaneous,
+           "one group left in one cycle is simultaneous");
+    expect(dft::exclude_idle_clocks(grouped, constraints, {{"clk_a", 1}, {"clk_b", 1}}, dropped)
+                   .kind == dft::CaptureKind::Grouped,
+           "two groups in one cycle stay grouped");
+
+    // A single-clock design never enters the drop path, and one cycle with one
+    // group is still not a sequential procedure.
+    db::Constraints single = constraints;
+    single.clocks = {constraints.clocks[0]};
+    const dft::CaptureProcedure one_clock = dft::exclude_idle_clocks(
+        dft::resolve_capture_procedure(single), single, {{"clk_a", 1}}, dropped);
+    expect(dropped.empty(), "nothing is dropped from a one-clock design");
+    expect(one_clock.cycles.size() == 1 && one_clock.kind == dft::CaptureKind::Simultaneous,
+           "a one-clock procedure is simultaneous");
+}
+
 void test_clock_exclusion() {
     const db::Constraints constraints = make_constraints();
     const dft::CaptureProcedure derived = dft::resolve_capture_procedure(constraints);
@@ -374,6 +431,7 @@ int main() {
     test_canonical_payload();
     test_group_order();
     test_clock_exclusion();
+    test_clock_exclusion_shape();
     test_constraints_hash_unchanged();
 
     if (failures != 0) {

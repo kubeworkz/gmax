@@ -137,8 +137,15 @@ void assign_capture_edges(std::vector<CaptureGroup>& groups);
 // the clocks that remain; a group left with no clock is removed, and a cycle left
 // with no group is removed with it. An intermediate state whose domain is gone
 // goes too, and the cycle that is last after the drop carries none, because no
-// final cycle owns an intermediate value. The returned procedure is the one the
-// run applies, so the capture identity describes what is actually pulsed.
+// final cycle owns an intermediate value.
+//
+// Section 1 defines the kind by the cycles, so the kind is re-derived rather than
+// carried over: one cycle with one group is simultaneous, one cycle with several
+// groups is grouped, and two or more cycles are sequential. A drop that leaves one
+// cycle therefore cannot keep describing a sequential procedure.
+//
+// The returned procedure is the one the run applies, so the capture identity
+// describes what is actually pulsed.
 CaptureProcedure exclude_idle_clocks(const CaptureProcedure& procedure,
                                      const db::Constraints& constraints,
                                      const std::vector<db::ClockGateCount>& clock_gates,

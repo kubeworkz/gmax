@@ -39,6 +39,18 @@ std::string join(const std::vector<std::string>& names) {
     return out;
 }
 
+// ADR-013 section 1's shapes, read off the cycles themselves: one cycle with one
+// group is simultaneous, one cycle with several groups is grouped, and two or more
+// cycles are sequential. An empty procedure has no shape; a run that reaches this
+// with no cycle refuses (section 4 condition 5), so the default kind only keeps
+// the encoding total.
+CaptureKind kind_from_cycles(const std::vector<CaptureCycle>& cycles) {
+    if (cycles.size() != 1) {
+        return CaptureKind::Sequential;
+    }
+    return cycles[0].groups.size() > 1 ? CaptureKind::Grouped : CaptureKind::Simultaneous;
+}
+
 const db::ConstraintClock* find_clock(const db::Constraints& constraints,
                                       const std::string_view name) {
     for (const db::ConstraintClock& clock : constraints.clocks) {
@@ -270,12 +282,15 @@ CaptureProcedure exclude_idle_clocks(const CaptureProcedure& procedure,
         }
     }
     if (dropped.empty()) {
-        return procedure;
+        // Nothing leaves, but the kind still follows the cycles: a one-clock
+        // procedure is simultaneous, not a sequential procedure with one cycle.
+        CaptureProcedure kept = procedure;
+        kept.kind = kind_from_cycles(kept.cycles);
+        return kept;
     }
     std::sort(dropped.begin(), dropped.end());
 
     CaptureProcedure kept;
-    kept.kind = procedure.kind;
     kept.derived = procedure.derived;
     for (const CaptureCycle& cycle : procedure.cycles) {
         CaptureCycle next;
@@ -311,6 +326,7 @@ CaptureProcedure exclude_idle_clocks(const CaptureProcedure& procedure,
     if (!kept.cycles.empty()) {
         kept.cycles.back().intermediate.clear();
     }
+    kept.kind = kind_from_cycles(kept.cycles);
     return kept;
 }
 
