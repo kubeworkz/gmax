@@ -145,6 +145,15 @@ void test_derived_procedure() {
     const dft::CaptureProcedure again = dft::resolve_capture_procedure(constraints);
     expect(again == procedure, "resolution is deterministic");
     expect(dft::capture_hash(again) == dft::capture_hash(procedure), "same input, same hash");
+    // Section 1 reads the kind off the cycles, so a design with one clock is one
+    // cycle of one group: simultaneous, never a sequential procedure with a single
+    // cycle. This is the shape the library returns, not only the excluded one.
+    db::Constraints single = make_constraints();
+    single.clocks = {constraints.clocks[0]};
+    const dft::CaptureProcedure alone = dft::resolve_capture_procedure(single);
+    expect(alone.cycles.size() == 1, "a one-clock design derives one cycle");
+    expect(alone.kind == dft::CaptureKind::Simultaneous,
+           "a one-clock derived procedure is simultaneous");
 }
 
 void test_empty_procedure() {
@@ -348,15 +357,17 @@ void test_clock_exclusion_shape() {
                    .kind == dft::CaptureKind::Grouped,
            "two groups in one cycle stay grouped");
 
-    // A single-clock design never enters the drop path, and one cycle with one
-    // group is still not a sequential procedure.
+    // A single-clock design is already simultaneous when it is resolved, so the
+    // exclusion hands it back untouched instead of repairing its shape.
     db::Constraints single = constraints;
     single.clocks = {constraints.clocks[0]};
-    const dft::CaptureProcedure one_clock = dft::exclude_idle_clocks(
-        dft::resolve_capture_procedure(single), single, {{"clk_a", 1}}, dropped);
+    const dft::CaptureProcedure resolved = dft::resolve_capture_procedure(single);
+    expect(resolved.kind == dft::CaptureKind::Simultaneous,
+           "a one-clock design resolves as simultaneous");
+    const dft::CaptureProcedure one_clock =
+        dft::exclude_idle_clocks(resolved, single, {{"clk_a", 1}}, dropped);
     expect(dropped.empty(), "nothing is dropped from a one-clock design");
-    expect(one_clock.cycles.size() == 1 && one_clock.kind == dft::CaptureKind::Simultaneous,
-           "a one-clock procedure is simultaneous");
+    expect(one_clock.kind == resolved.kind, "the exclusion leaves a shape it does not change");
 }
 
 void test_clock_exclusion() {

@@ -201,7 +201,6 @@ std::uint32_t capture_hash(const CaptureProcedure& procedure) {
 
 CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints) {
     CaptureProcedure procedure;
-    procedure.kind = CaptureKind::Sequential;
     procedure.derived = true;
 
     std::vector<std::string> names;
@@ -226,6 +225,11 @@ CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints) {
         }
         procedure.cycles.push_back(std::move(cycle));
     }
+    // Section 1 reads the kind off the cycles, and a design with one clock makes
+    // one cycle of one group: simultaneous, not a sequential procedure that happens
+    // to have a single cycle. Deriving it here means every caller gets a shape the
+    // ADR allows, whichever entry point built the procedure.
+    procedure.kind = kind_from_cycles(procedure.cycles);
     return procedure;
 }
 
@@ -282,11 +286,9 @@ CaptureProcedure exclude_idle_clocks(const CaptureProcedure& procedure,
         }
     }
     if (dropped.empty()) {
-        // Nothing leaves, but the kind still follows the cycles: a one-clock
-        // procedure is simultaneous, not a sequential procedure with one cycle.
-        CaptureProcedure kept = procedure;
-        kept.kind = kind_from_cycles(kept.cycles);
-        return kept;
+        // Nothing leaves, so nothing changes: the shape the caller resolved or read
+        // already matches its cycles, and it is not re-derived here.
+        return procedure;
     }
     std::sort(dropped.begin(), dropped.end());
 

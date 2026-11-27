@@ -102,11 +102,13 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure);
 // is how the constraints are used, not a constraint.
 std::uint32_t capture_hash(const CaptureProcedure& procedure);
 
-// The default derived procedure (ADR-013 section 1): sequential, one
-// single-clock cycle per declared clock, ordered by clock name. A clock with no
-// declared group is its own group, so undeclared clocks are never simultaneous.
-// Empty when the constraints declare no clock. Declared rows of set_clock_groups
-// do not enter the derived order; they shape a declared procedure.
+// The default derived procedure (ADR-013 section 1): one single-clock cycle per
+// declared clock, ordered by clock name, with the kind read back off those cycles.
+// Two or more cycles are sequential, so a design with a single clock comes back
+// simultaneous rather than as a sequential procedure without a second cycle. A
+// clock with no declared group is its own group, so undeclared clocks are never
+// simultaneous. Empty when the constraints declare no clock. Declared rows of
+// set_clock_groups do not enter the derived order; they shape a declared procedure.
 CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints);
 
 // The timing set for one group, taking period and waveform from the bytewise
@@ -139,10 +141,12 @@ void assign_capture_edges(std::vector<CaptureGroup>& groups);
 // goes too, and the cycle that is last after the drop carries none, because no
 // final cycle owns an intermediate value.
 //
-// Section 1 defines the kind by the cycles, so the kind is re-derived rather than
-// carried over: one cycle with one group is simultaneous, one cycle with several
-// groups is grouped, and two or more cycles are sequential. A drop that leaves one
-// cycle therefore cannot keep describing a sequential procedure.
+// Section 1 defines the kind by the cycles, so a drop re-derives it whenever the
+// cycles change: one cycle with one group is simultaneous, one cycle with several
+// groups is grouped, and two or more cycles are sequential. A procedure that loses
+// nothing keeps the kind it arrived with, which both builders already derived from
+// its cycles, so a drop that leaves one cycle cannot keep describing a sequential
+// procedure.
 //
 // The returned procedure is the one the run applies, so the capture identity
 // describes what is actually pulsed.
