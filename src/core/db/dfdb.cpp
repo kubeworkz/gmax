@@ -352,7 +352,8 @@ void write_names(Writer& writer, const std::vector<std::string>& names) {
     }
 }
 
-std::vector<std::uint8_t> build_constraints(const Constraints& constraints) {
+std::vector<std::uint8_t> build_constraints(const Constraints& constraints,
+                                            const std::uint16_t minor) {
     Writer writer;
     writer.u8(constraints.complete ? 1u : 0u);
     write_names(writer, constraints.unsupported);
@@ -391,7 +392,11 @@ std::vector<std::uint8_t> build_constraints(const Constraints& constraints) {
         write_names(writer, path.from_clocks);
         write_names(writer, path.through_clocks);
         write_names(writer, path.to_clocks);
-        writer.u32(path.line);
+        // 1.6: the SDC line the path was written on. A 1.5 file ends each path at the
+        // provenance, which is why the field could not be appended to that minor.
+        if (minor >= 6) {
+            writer.u32(path.line);
+        }
     }
 
     writer.u32(static_cast<std::uint32_t>(constraints.case_analysis.size()));
@@ -428,7 +433,8 @@ std::vector<std::uint8_t> build_constraints(const Constraints& constraints) {
 }  // namespace
 
 std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& flat,
-                                    const StringTable& strings, const Constraints* constraints) {
+                                    const StringTable& strings, const Constraints* constraints,
+                                    const std::uint16_t minor) {
     StringTable table = strings;
 
     // Hierarchy first: interning its names grows the table the strings section
@@ -448,7 +454,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
     sections.emplace_back(Section::Enable, std::move(enable));
     sections.emplace_back(Section::ClockEdge, std::move(clock_edge));
     if (constraints != nullptr) {
-        sections.emplace_back(Section::Constraints, build_constraints(*constraints));
+        sections.emplace_back(Section::Constraints, build_constraints(*constraints, minor));
     }
 
     Writer writer;
@@ -456,7 +462,7 @@ std::vector<std::uint8_t> serialize(const Design& design, const FlatNetlist& fla
         writer.u8(byte);
     }
     writer.u16(kSchemaMajor);
-    writer.u16(constraints != nullptr ? kSchemaMinor : kSchemaMinorWithoutConstraints);
+    writer.u16(constraints != nullptr ? minor : kSchemaMinorWithoutConstraints);
     writer.u32(kEndianMarker);
     writer.u32(static_cast<std::uint32_t>(sections.size()));
 
@@ -993,6 +999,8 @@ Status parse_constraints(Reader& reader, Constraints& constraints, const std::ui
             if (!status) {
                 return status;
             }
+        }
+        if (minor >= 6) {
             path.line = reader.u32();
             if (!reader.ok()) {
                 return fail(Error::TruncatedFile, "constraints section ends inside a false path");

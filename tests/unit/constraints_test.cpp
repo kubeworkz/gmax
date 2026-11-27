@@ -191,15 +191,15 @@ void test_schema_round_trip() {
     const std::vector<std::uint8_t> attached_bytes = bytes(attached);
     expect(bare_bytes.size() > 8 && bare_bytes[6] == 3,
            "a database without constraints is still written as 1.3");
-    expect(attached_bytes.size() > 8 && attached_bytes[6] == 5,
-           "a database with constraints is written as 1.5");
+    expect(attached_bytes.size() > 8 && attached_bytes[6] == 6,
+           "a database with constraints is written as 1.6");
 
     db::DesignDb reloaded_bare;
     expect(db::DesignDb::load(bare.string(), reloaded_bare).ok(), "the 1.3 file loads");
     expect(!reloaded_bare.has_constraints(), "a 1.3 file loads with no constraints");
 
     db::DesignDb reloaded;
-    expect(db::DesignDb::load(attached.string(), reloaded).ok(), "the 1.5 file loads");
+    expect(db::DesignDb::load(attached.string(), reloaded).ok(), "the 1.6 file loads");
     expect(reloaded.has_constraints(), "a 1.4 file loads with constraints");
     expect(reloaded.constraints() == database.constraints(),
            "constraints survive the round trip exactly");
@@ -388,6 +388,65 @@ void test_sat_applies_case_analysis() {
         gmax::atpg::check_fault(netlist, fault, observables, 1000000, 0, nullptr, a_low);
     expect(constrained.status == gmax::atpg::SatFaultStatus::Untestable,
            "the case value makes the miter UNSAT, which is untestable not unknown");
+}
+
+// ADR-004's schema policy at the 1.5/1.6 boundary: the false path's line landed after
+// 1.5 had been written by a release, so it is its own minor rather than a longer 1.5
+// record. A 1.5 file therefore still loads, keeping its clock provenance and reading
+// no line, while the current layout keeps both.
+void test_false_path_layouts() {
+    Fixture fixture = make_inverter();
+    db::DesignDb database;
+    database.design() = fixture.design;
+    expect(database.flatten().ok(), "the inverter flattens");
+
+    database.constraints() = make_constraints();
+    db::ConstraintFalsePath path;
+    path.from = {"clk_a"};
+    path.to = {"clk_b"};
+    path.from_clocks = {"clk_a"};
+    path.to_clocks = {"clk_b"};
+    path.line = 9;
+    database.constraints().false_paths = {path};
+
+    const std::filesystem::path older =
+        std::filesystem::temp_directory_path() / "gmax-constraints-1.5.dfdb";
+    const std::filesystem::path current =
+        std::filesystem::temp_directory_path() / "gmax-constraints-1.6.dfdb";
+    const auto write = [&database](const std::uint16_t minor, const std::filesystem::path& target) {
+        const std::vector<std::uint8_t> bytes = db::dfdb::serialize(
+            database.design(), database.flat(), database.strings(), &database.constraints(), minor);
+        std::ofstream out(target, std::ios::binary | std::ios::trunc);
+        out.write(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<std::streamsize>(bytes.size()));
+        return bytes;
+    };
+
+    const std::vector<std::uint8_t> older_bytes = write(5, older);
+    const std::vector<std::uint8_t> current_bytes = write(db::dfdb::kSchemaMinor, current);
+    expect(older_bytes.size() > 8 && older_bytes[6] == 5, "the older layout writes 1.5");
+    expect(current_bytes.size() > 8 && current_bytes[6] == 6, "the current layout writes 1.6");
+    expect(current_bytes.size() == older_bytes.size() + 4,
+           "1.6 is exactly the line field longer than 1.5");
+
+    db::DesignDb loaded_older;
+    expect(db::DesignDb::load(older.string(), loaded_older).ok(),
+           "a 1.5 database loads under the 1.6 reader");
+    expect(loaded_older.constraints().false_paths.size() == 1, "the 1.5 file keeps its false path");
+    if (loaded_older.constraints().false_paths.size() == 1) {
+        const db::ConstraintFalsePath& reloaded = loaded_older.constraints().false_paths[0];
+        expect(reloaded.from == path.from && reloaded.to == path.to,
+               "the 1.5 layout's endpoints survive");
+        expect(reloaded.from_clocks == std::vector<std::string>{"clk_a"} &&
+                   reloaded.to_clocks == std::vector<std::string>{"clk_b"},
+               "the 1.5 layout's clock provenance survives");
+        expect(reloaded.line == 0, "a 1.5 path carries no line");
+    }
+
+    db::DesignDb loaded_current;
+    expect(db::DesignDb::load(current.string(), loaded_current).ok(), "the 1.6 database loads");
+    expect(loaded_current.constraints() == database.constraints(),
+           "the 1.6 round trip keeps the line and the provenance exactly");
 }
 
 // ADR-013 section 6: the clock provenance of a false-path endpoint is part of the
@@ -601,6 +660,7 @@ int main() {
     test_report_claims_no_enforcement();
     test_report_capture_object();
     test_false_path_provenance();
+    test_false_path_layouts();
     test_enforced_constructs();
     test_false_path_warning_report();
     if (failures != 0) {
