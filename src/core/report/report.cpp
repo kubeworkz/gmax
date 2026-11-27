@@ -85,6 +85,22 @@ std::string hex32(const std::uint32_t value) {
 // ADR-013 section 6's `capture` object. An absent run has no procedure, so the
 // kind, provenance and hash are null rather than invented; the manifest also lists
 // the procedure body, which the coverage report leaves to its hash.
+// ADR-013 section 5's DFT019 findings. One object per path, naming the rule, both
+// clocks and the line the path was written on. An empty list is written, not omitted,
+// so a reader can tell "no finding" from "not evaluated".
+void false_paths_entry(std::ostringstream& out, const std::vector<FalsePathWarningReport>& paths) {
+    out << ",\"false_paths\":[";
+    for (std::size_t index = 0; index < paths.size(); ++index) {
+        if (index != 0) {
+            out << ',';
+        }
+        out << "{\"rule\":\"DFT019\",\"from\":" << json_string(paths[index].from)
+            << ",\"to\":" << json_string(paths[index].to) << ",\"line\":" << paths[index].line
+            << '}';
+    }
+    out << ']';
+}
+
 void capture_entry(std::ostringstream& out, const CaptureReport& capture, const bool with_cycles) {
     out << "{\"status\":\"" << (capture.absent ? "absent" : "enforced") << "\",\"procedure\":";
     if (capture.absent) {
@@ -126,8 +142,8 @@ void capture_entry(std::ostringstream& out, const CaptureReport& capture, const 
     out << '}';
 }
 
-std::vector<std::string> enforced_constructs(const bool case_analysis,
-                                             const CaptureReport& capture) {
+std::vector<std::string> enforced_constructs(const bool case_analysis, const CaptureReport& capture,
+                                             const bool false_paths) {
     std::vector<std::string> enforced;
     if (case_analysis) {
         enforced.emplace_back("case_analysis");
@@ -135,13 +151,18 @@ std::vector<std::string> enforced_constructs(const bool case_analysis,
     if (!capture.absent) {
         enforced.emplace_back("clock_groups");
     }
+    // A procedure that did not run examined no path, so a retained set alone never
+    // names the construct.
+    if (!capture.absent && false_paths) {
+        enforced.emplace_back("false_paths");
+    }
     return enforced;
 }
 
 std::string coverage_json(const CoverageReport& report) {
     const CoverageSummary& summary = report.summary;
     std::ostringstream out;
-    out << "{\"schema\":\"gmax-coverage-3\"";
+    out << "{\"schema\":\"gmax-coverage-4\"";
     out << ",\"design\":" << json_string(report.design);
     out << ",\"netlist_hash\":\"" << hex32(report.netlist_hash) << '"';
     out << ",\"fault_list_hash\":\"" << hex32(report.fault_list_hash) << '"';
@@ -163,7 +184,9 @@ std::string coverage_json(const CoverageReport& report) {
         }
         out << json_string(report.enforced[index]);
     }
-    out << "],\"capture\":";
+    out << ']';
+    false_paths_entry(out, report.false_paths);
+    out << ",\"capture\":";
     capture_entry(out, report.capture, false);
     out << '}';
     out << ",\"counts\":{\"raw\":" << summary.raw << ",\"collapsed\":" << summary.collapsed
@@ -203,7 +226,7 @@ std::string coverage_json(const CoverageReport& report) {
 std::string manifest_json(const RunManifest& manifest) {
     const CoverageSummary& summary = manifest.summary;
     std::ostringstream out;
-    out << "{\"schema\":\"gmax-run-manifest-3\"";
+    out << "{\"schema\":\"gmax-run-manifest-4\"";
     out << ",\"tool\":{\"name\":\"gmax\",\"version\":" << json_string(manifest.tool_version) << '}';
     out << ",\"command\":\"run_atpg\"";
     out << ",\"design\":{\"name\":" << json_string(manifest.design)
@@ -222,7 +245,9 @@ std::string manifest_json(const RunManifest& manifest) {
     } else {
         out << '"' << hex32(manifest.constraints_hash) << '"';
     }
-    out << ",\"algorithm\":\"crc32\",\"capture\":";
+    out << ",\"algorithm\":\"crc32\"";
+    false_paths_entry(out, manifest.false_paths);
+    out << ",\"capture\":";
     capture_entry(out, manifest.capture, true);
     // The capture object closes itself; these close the constraints object and the
     // inputs object that holds it.

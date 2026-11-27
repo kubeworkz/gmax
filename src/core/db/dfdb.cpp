@@ -391,6 +391,7 @@ std::vector<std::uint8_t> build_constraints(const Constraints& constraints) {
         write_names(writer, path.from_clocks);
         write_names(writer, path.through_clocks);
         write_names(writer, path.to_clocks);
+        writer.u32(path.line);
     }
 
     writer.u32(static_cast<std::uint32_t>(constraints.case_analysis.size()));
@@ -991,6 +992,10 @@ Status parse_constraints(Reader& reader, Constraints& constraints, const std::ui
             status = read_names(reader, path.to_clocks);
             if (!status) {
                 return status;
+            }
+            path.line = reader.u32();
+            if (!reader.ok()) {
+                return fail(Error::TruncatedFile, "constraints section ends inside a false path");
             }
         }
         constraints.false_paths.push_back(std::move(path));

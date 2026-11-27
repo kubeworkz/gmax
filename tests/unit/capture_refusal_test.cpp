@@ -12,6 +12,7 @@
 
 #include "core/db/constraints.h"
 #include "core/dft/capture.h"
+#include "core/dft/capture_crossing.h"
 #include "core/dft/capture_profile.h"
 #include "core/dft/capture_refusal.h"
 
@@ -414,6 +415,68 @@ void test_render() {
 
 }  // namespace
 
+// ADR-013 section 5's DFT019: a false path whose two clock endpoints the procedure
+// captures apart hides the capture edge between them, and is a warning rather than a
+// refusal. Only clock endpoints count, and one group of one cycle is one edge.
+void test_false_path_warnings() {
+    dft::CaptureGroup first_group;
+    first_group.timing.clocks = {"clk_a"};
+    dft::CaptureGroup second_group;
+    second_group.timing.clocks = {"clk_b"};
+
+    dft::CaptureCycle first;
+    first.groups = {first_group};
+    dft::CaptureCycle second;
+    second.groups = {second_group};
+    dft::CaptureProcedure sequential;
+    sequential.cycles = {first, second};
+
+    db::Constraints constraints = make_constraints();
+    db::ConstraintFalsePath path;
+    path.from = {"clk_a"};
+    path.to = {"clk_b"};
+    path.from_clocks = {"clk_a"};
+    path.to_clocks = {"clk_b"};
+    path.line = 7;
+    constraints.false_paths = {path};
+
+    const std::vector<dft::FalsePathWarning> warnings =
+        dft::find_false_path_warnings(sequential, constraints);
+    expect(warnings.size() == 1, "a clock-to-clock false path across two cycles warns");
+    if (warnings.size() == 1) {
+        expect(warnings[0].from_clock == "clk_a" && warnings[0].to_clock == "clk_b",
+               "the warning names both clocks");
+        expect(warnings[0].line == 7, "the warning names the path's line");
+    }
+
+    dft::CaptureGroup shared;
+    shared.timing.clocks = {"clk_a", "clk_b"};
+    dft::CaptureCycle together;
+    together.groups = {shared};
+    dft::CaptureProcedure simultaneous;
+    simultaneous.cycles = {together};
+    expect(dft::find_false_path_warnings(simultaneous, constraints).empty(),
+           "clocks captured in one group are one edge");
+
+    dft::CaptureCycle split;
+    split.groups = {first_group, second_group};
+    dft::CaptureProcedure shared_cycle;
+    shared_cycle.cycles = {split};
+    expect(dft::find_false_path_warnings(shared_cycle, constraints).size() == 1,
+           "two groups of one cycle are two edges");
+
+    db::Constraints objects = constraints;
+    objects.false_paths[0].from_clocks.clear();
+    expect(dft::find_false_path_warnings(sequential, objects).empty(),
+           "an object endpoint is not a clock endpoint");
+
+    db::Constraints unpulsed = constraints;
+    unpulsed.false_paths[0].to_clocks = {"clk_z"};
+    unpulsed.false_paths[0].to = {"clk_z"};
+    expect(dft::find_false_path_warnings(sequential, unpulsed).empty(),
+           "a clock the procedure never pulses is not evaluated");
+}
+
 int main() {
     test_code_names();
     test_clean_procedure();
@@ -425,6 +488,7 @@ int main() {
     test_group_spanning_declared_groups();
     test_order();
     test_render();
+    test_false_path_warnings();
 
     if (failures != 0) {
         std::cerr << failures << " failure(s)" << std::endl;

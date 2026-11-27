@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <string>
 #include <vector>
 
 #include "core/db/constraints.h"
@@ -28,5 +30,20 @@ std::vector<CaptureRefusal> find_crossing_refusals(const CaptureProcedure& proce
                                                    const db::Constraints& constraints,
                                                    const db::FlatNetlist& flat,
                                                    const db::StringTable& strings);
+
+// ADR-013 section 5's DFT019, and the same finding from the other side: a false path
+// whose two endpoints are clocks the procedure captures in different groups or cycles
+// removes exactly the capture edge between them. It is a warning, so nothing here
+// refuses; the run records the findings and grades. Only endpoints the SDC wrote as
+// clocks count, because an object endpoint names no capture edge, and a path naming a
+// pulsed clock on one side only is not evaluated.
+struct FalsePathWarning {
+    std::string from_clock;
+    std::string to_clock;
+    std::uint32_t line = 0;
+};
+
+std::vector<FalsePathWarning> find_false_path_warnings(const CaptureProcedure& procedure,
+                                                       const db::Constraints& constraints);
 
 }  // namespace gmax::dft

@@ -80,6 +80,10 @@ struct ConstraintFalsePath {
     std::vector<std::string> from_clocks;
     std::vector<std::string> through_clocks;
     std::vector<std::string> to_clocks;
+    // The SDC line the path was written on, so a finding can name it. Provenance like
+    // the clock endpoints: stored with the path, absent from the canonical payload,
+    // because moving a comment must not move `constraints_hash`.
+    std::uint32_t line = 0;
 
     friend bool operator==(const ConstraintFalsePath&, const ConstraintFalsePath&) = default;
 };

@@ -77,9 +77,19 @@ string(FIND "${coverage_text}" "\"enforced\":[\"clock_groups\"]" enforced_positi
 if(enforced_position EQUAL -1)
     message(FATAL_ERROR "the coverage report claims no applied clock groups: ${coverage_text}")
 endif()
-string(FIND "${coverage_text}" "false_paths" false_path_position)
-if(NOT false_path_position EQUAL -1)
-    message(FATAL_ERROR "the report claims false paths the run never applied: ${coverage_text}")
+# ADR-013 section 5: this constraint set retains no false path, so the run examined
+# none. The enforced list does not name them, and the warning list is present and
+# empty rather than omitted, which is how a reader tells "no finding" from "not
+# evaluated".
+string(FIND "${coverage_text}" "\"enforced\":[\"clock_groups\",\"false_paths\"]"
+    enforced_false_position)
+if(NOT enforced_false_position EQUAL -1)
+    message(FATAL_ERROR
+        "the report claims false paths the run never examined: ${coverage_text}")
+endif()
+string(FIND "${coverage_text}" "\"false_paths\":[]" empty_false_position)
+if(empty_false_position EQUAL -1)
+    message(FATAL_ERROR "the report carries no empty warning list: ${coverage_text}")
 endif()
 
 if(NOT EXISTS "${reports}/manifest.json")

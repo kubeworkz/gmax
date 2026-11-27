@@ -417,8 +417,8 @@ void test_report_claims_no_enforcement() {
     report.constraints_status = db::ConstraintsStatus::Complete;
     report.constraints_hash = 0x1234abcdu;
     const std::string json = gmax::report::coverage_json(report);
-    expect(json.find("\"schema\":\"gmax-coverage-3\"") != std::string::npos,
-           "the coverage schema is the capture-aware one");
+    expect(json.find("\"schema\":\"gmax-coverage-4\"") != std::string::npos,
+           "the coverage schema is the warning-aware one");
     std::string constraints_object = "\"constraints\":{\"status\":\"complete\",\"hash\":\"";
     constraints_object += gmax::report::hex32(0x1234abcdu);
     constraints_object += '"';
@@ -437,24 +437,83 @@ void test_report_claims_no_enforcement() {
 // enforced capture names the clock-group model it applied.
 void test_enforced_constructs() {
     gmax::report::CaptureReport absent;
-    expect(gmax::report::enforced_constructs(false, absent).empty(),
+    expect(gmax::report::enforced_constructs(false, absent, false).empty(),
            "a run that applied nothing claims nothing");
 
     gmax::report::CaptureReport capture;
     capture.absent = false;
     capture.procedure = "sequential";
-    const std::vector<std::string> both = gmax::report::enforced_constructs(true, capture);
+    const std::vector<std::string> both = gmax::report::enforced_constructs(true, capture, false);
     expect(both == (std::vector<std::string>{"case_analysis", "clock_groups"}),
            "case analysis comes first and the applied capture follows");
-    expect(gmax::report::enforced_constructs(false, capture) ==
+    expect(gmax::report::enforced_constructs(false, capture, false) ==
                (std::vector<std::string>{"clock_groups"}),
            "a capture-only run names the clock-group model");
-    expect(gmax::report::enforced_constructs(true, absent) ==
+    expect(gmax::report::enforced_constructs(true, absent, false) ==
                (std::vector<std::string>{"case_analysis"}),
            "a case-only run names only case analysis");
-    for (const std::string& name : both) {
-        expect(name != "false_paths", "false paths stay retained, not enforced");
+    expect(gmax::report::enforced_constructs(true, capture, true) ==
+               (std::vector<std::string>{"case_analysis", "clock_groups", "false_paths"}),
+           "an examined false-path set follows the capture model");
+    expect(gmax::report::enforced_constructs(true, absent, true) ==
+               (std::vector<std::string>{"case_analysis"}),
+           "a run with no procedure examined no false path");
+}
+
+// ADR-013 section 5's DFT019: a false path between two clocks the run captures apart
+// is a warning, so the run still grades; both reports carry the finding, its line and
+// the rule, and the enforced set names the set the run examined.
+void test_false_path_warning_report() {
+    gmax::report::CoverageReport coverage;
+    coverage.design = "top";
+    coverage.constraints_status = db::ConstraintsStatus::Complete;
+    coverage.constraints_hash = 0x1234abcdu;
+    coverage.capture.absent = false;
+    coverage.capture.procedure = "sequential";
+    coverage.capture.hash = 0x00abcdefu;
+    coverage.enforced = gmax::report::enforced_constructs(false, coverage.capture, true);
+    gmax::report::FalsePathWarningReport warning;
+    warning.from = "clk_a";
+    warning.to = "clk_b";
+    warning.line = 3;
+    coverage.false_paths = {warning};
+
+    const std::string json = gmax::report::coverage_json(coverage);
+    expect(json.find("\"enforced\":[\"clock_groups\",\"false_paths\"]") != std::string::npos,
+           "the enforced set names the false paths the run examined");
+
+    gmax::frontend::JsonValue parsed;
+    std::string parse_error;
+    expect(gmax::frontend::parse_json(json, parsed, parse_error),
+           "a report with a warning is well-formed JSON");
+    const gmax::frontend::JsonValue* constraints = parsed.find("constraints");
+    const gmax::frontend::JsonValue* paths =
+        constraints == nullptr ? nullptr : constraints->find("false_paths");
+    expect(paths != nullptr && paths->is_array() && paths->array.size() == 1,
+           "the coverage report lists the DFT019 finding");
+    if (paths != nullptr && paths->array.size() == 1) {
+        const gmax::frontend::JsonValue& finding = *paths->array[0];
+        const gmax::frontend::JsonValue* rule = finding.find("rule");
+        const gmax::frontend::JsonValue* from = finding.find("from");
+        const gmax::frontend::JsonValue* to = finding.find("to");
+        const gmax::frontend::JsonValue* line = finding.find("line");
+        expect(rule != nullptr && rule->text == "DFT019", "the finding names its rule");
+        expect(from != nullptr && from->text == "clk_a" && to != nullptr && to->text == "clk_b",
+               "the finding names both clocks");
+        expect(line != nullptr && line->is_number() && line->number == 3.0,
+               "the finding names the path's line");
     }
+
+    gmax::report::RunManifest manifest;
+    manifest.tool_version = "0.1.0";
+    manifest.capture = coverage.capture;
+    manifest.false_paths = coverage.false_paths;
+    const std::string manifest_text = gmax::report::manifest_json(manifest);
+    expect(manifest_text.find("\"schema\":\"gmax-run-manifest-4\"") != std::string::npos,
+           "the manifest schema carries the warning list");
+    expect(manifest_text.find("\"false_paths\":[{\"rule\":\"DFT019\",\"from\":\"clk_a\","
+                              "\"to\":\"clk_b\",\"line\":3}]") != std::string::npos,
+           "the manifest repeats the finding");
 }
 
 // ADR-013 section 6: the capture object names the procedure the run applied, its
@@ -502,7 +561,7 @@ void test_report_capture_object() {
     manifest.tool_version = "0.1.0";
     manifest.capture = coverage.capture;
     const std::string manifest_text = gmax::report::manifest_json(manifest);
-    expect(manifest_text.find("\"schema\":\"gmax-run-manifest-3\"") != std::string::npos,
+    expect(manifest_text.find("\"schema\":\"gmax-run-manifest-4\"") != std::string::npos,
            "the manifest schema carries the capture object");
     gmax::frontend::JsonValue manifest_parse;
     expect(gmax::frontend::parse_json(manifest_text, manifest_parse, parse_error),
@@ -543,6 +602,7 @@ int main() {
     test_report_capture_object();
     test_false_path_provenance();
     test_enforced_constructs();
+    test_false_path_warning_report();
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed" << std::endl;
         return 1;

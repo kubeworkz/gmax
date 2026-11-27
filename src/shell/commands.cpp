@@ -625,11 +625,26 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
             capture_report.cycles.push_back(std::move(cycle_report));
         }
     }
+    // ADR-013 section 5's DFT019: a false path between two clocks the procedure
+    // captures apart hides the capture edge between them. It is a warning, so the run
+    // grades and records it rather than refusing.
+    std::vector<report::FalsePathWarningReport> false_path_warnings;
+    for (const gmax::dft::FalsePathWarning& warning :
+         gmax::dft::find_false_path_warnings(capture_procedure, database.constraints())) {
+        report::FalsePathWarningReport finding;
+        finding.from = warning.from_clock;
+        finding.to = warning.to_clock;
+        finding.line = warning.line;
+        false_path_warnings.push_back(std::move(finding));
+    }
+    coverage.false_paths = false_path_warnings;
     coverage.capture = capture_report;
     // ADR-013 section 6: the enforced list names what the run actually used, never
     // what the database holds. A procedure that ran applied the clock-group model,
-    // so an enforced capture cannot be reported without it.
-    coverage.enforced = report::enforced_constructs(!case_assignments.empty(), capture_report);
+    // so an enforced capture cannot be reported without it, and a run that examined
+    // a retained false-path set names that too.
+    coverage.enforced = report::enforced_constructs(!case_assignments.empty(), capture_report,
+                                                    !database.constraints().false_paths.empty());
     coverage.budget = budget;
     coverage.summary = summary;
     coverage.faults = std::move(outcomes);
@@ -662,6 +677,7 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         manifest.constraints_status = constraints_status;
         manifest.constraints_hash = constraints_hash_value;
         manifest.capture = capture_report;
+        manifest.false_paths = false_path_warnings;
         manifest.gates = database.flat().gate_count();
         manifest.nets = database.flat().net_count();
         manifest.budget = budget;

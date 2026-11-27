@@ -151,6 +151,28 @@ bool crossing_exists(const db::Constraints& constraints, const FlatNetlist& flat
     return false;
 }
 
+// Where the procedure captures `clock`, as a cycle and an inner group index.
+bool pulses(const CaptureProcedure& procedure, const std::string& clock, std::size_t& cycle,
+            std::size_t& group) {
+    for (std::size_t c = 0; c < procedure.cycles.size(); ++c) {
+        for (std::size_t g = 0; g < procedure.cycles[c].groups.size(); ++g) {
+            const std::vector<std::string>& clocks = procedure.cycles[c].groups[g].timing.clocks;
+            if (std::find(clocks.begin(), clocks.end(), clock) != clocks.end()) {
+                cycle = c;
+                group = g;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> sorted_unique(std::vector<std::string> names) {
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
 // The clocks one cycle captures, bytewise sorted and unique, so the pairing and the
 // message do not depend on how the profile ordered its groups.
 std::vector<std::string> cycle_clocks(const CaptureCycle& cycle) {
@@ -202,6 +224,55 @@ std::vector<CaptureRefusal> find_crossing_refusals(const CaptureProcedure& proce
     }
     sort_capture_refusals(refusals);
     return refusals;
+}
+
+std::vector<FalsePathWarning> find_false_path_warnings(const CaptureProcedure& procedure,
+                                                       const db::Constraints& constraints) {
+    std::vector<FalsePathWarning> warnings;
+    for (const db::ConstraintFalsePath& path : constraints.false_paths) {
+        for (const std::string& from : sorted_unique(path.from_clocks)) {
+            std::size_t from_cycle = 0;
+            std::size_t from_group = 0;
+            if (!pulses(procedure, from, from_cycle, from_group)) {
+                continue;
+            }
+            for (const std::string& to : sorted_unique(path.to_clocks)) {
+                std::size_t to_cycle = 0;
+                std::size_t to_group = 0;
+                if (!pulses(procedure, to, to_cycle, to_group)) {
+                    continue;
+                }
+                // One group of one cycle is one capture edge, so a path between clocks
+                // captured together hides no edge of this procedure.
+                if (from_cycle == to_cycle && from_group == to_group) {
+                    continue;
+                }
+                FalsePathWarning warning;
+                warning.from_clock = from;
+                warning.to_clock = to;
+                warning.line = path.line;
+                warnings.push_back(std::move(warning));
+            }
+        }
+    }
+    std::sort(warnings.begin(), warnings.end(),
+              [](const FalsePathWarning& left, const FalsePathWarning& right) {
+                  if (left.line != right.line) {
+                      return left.line < right.line;
+                  }
+                  if (left.from_clock != right.from_clock) {
+                      return left.from_clock < right.from_clock;
+                  }
+                  return left.to_clock < right.to_clock;
+              });
+    warnings.erase(std::unique(warnings.begin(), warnings.end(),
+                               [](const FalsePathWarning& left, const FalsePathWarning& right) {
+                                   return left.line == right.line &&
+                                          left.from_clock == right.from_clock &&
+                                          left.to_clock == right.to_clock;
+                               }),
+                   warnings.end());
+    return warnings;
 }
 
 }  // namespace gmax::dft

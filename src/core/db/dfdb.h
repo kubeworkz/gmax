@@ -19,9 +19,9 @@ namespace gmax::db::dfdb {
 //
 // The additive minor sections are async (DFF/DLAT clear and preset, 1.1), enable
 // (DFF hold, 1.2), clock edge (DFF capture edge, 1.3), constraints (the canonical
-// SDC model, 1.4) and false-path clock provenance (which endpoints the SDC wrote as
-// [get_clocks], 1.5), so older files still load: absent provenance means every
-// endpoint was written as an object.
+// SDC model, 1.4) and false-path provenance (which endpoints the SDC wrote as
+// [get_clocks] and the path's line, 1.5), so older files still load: absent provenance
+// means every endpoint was written as an object and no line is recorded.
 inline constexpr std::uint16_t kSchemaMajor = 1;
 inline constexpr std::uint16_t kSchemaMinor = 5;
 // What a database without a constraints section is written as (ADR-012: "may

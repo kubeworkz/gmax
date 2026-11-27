@@ -73,6 +73,16 @@ struct CaptureReport {
     std::vector<CaptureCycleReport> cycles;
 };
 
+// ADR-013 section 5's DFT019 finding: both endpoints of a false path are clocks the
+// run captures apart, so the path removes the capture edge between them. It is a
+// warning, so the run still grades; `line` is the SDC line the path was written on,
+// and both reports list the findings so a run can be audited without the file.
+struct FalsePathWarningReport {
+    std::string from;
+    std::string to;
+    std::uint32_t line = 0;
+};
+
 struct CoverageReport {
     std::string design;
     std::uint32_t netlist_hash = 0;
@@ -84,6 +94,7 @@ struct CoverageReport {
     db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
     std::uint32_t constraints_hash = 0;
     std::vector<std::string> enforced;
+    std::vector<FalsePathWarningReport> false_paths;
     CaptureReport capture;
     atpg::PodemBudget budget;
     CoverageSummary summary;
@@ -93,10 +104,12 @@ struct CoverageReport {
 // The construct names the run applied, in a fixed order so two runs over one input
 // report byte-identical coverage. `case_analysis` is what PODEM and the SAT miter
 // consume; a `capture` object that is not absent means a procedure ran and applied
-// the clock-group model (ADR-013 sections 1 and 6). False paths stay out: ADR-012
-// section 4 retains them rather than applying them, and the engine that uses them
-// adds the name here when it does.
-std::vector<std::string> enforced_constructs(bool case_analysis, const CaptureReport& capture);
+// the clock-group model (ADR-013 sections 1 and 6). `false_paths` appears when that
+// procedure also examined a retained false-path set, which is the DFT003 excuse and
+// the DFT019 finding: the paths are read, never applied to the fault grading, so the
+// name says the run looked at them.
+std::vector<std::string> enforced_constructs(bool case_analysis, const CaptureReport& capture,
+                                             bool false_paths);
 
 // Stable, compact JSON. It is deliberately built by hand here rather than by a
 // general JSON writer: the shape is tiny, and keeping field order fixed makes
@@ -119,6 +132,8 @@ struct RunManifest {
     std::uint32_t constraints_hash = 0;
     // The same object as the coverage report's, plus the procedure body.
     CaptureReport capture;
+    // The same DFT019 findings the coverage report carries.
+    std::vector<FalsePathWarningReport> false_paths;
     std::uint32_t gates = 0;
     std::uint32_t nets = 0;
     atpg::PodemBudget budget;

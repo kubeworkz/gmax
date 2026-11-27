@@ -138,3 +138,23 @@ attach(clock_path "${clock_path_sdc}")
 run(clock_path 2)
 check_contains("${RUN_ERR}" "${finding_head}" "a clock false path excuses nothing (head)")
 check_contains("${RUN_ERR}" "${finding_tail}" "a clock false path excuses nothing (tail)")
+
+# 5. The same false path on the design whose lockup latch already excuses the
+#    crossing: the run grades and records DFT019 instead of refusing, in both reports.
+#    The false path is on line 3 of clock-path.sdc.
+configure_file("${WORK_DIR}/lockup.dfdb" "${WORK_DIR}/lockup_warn.dfdb" COPYONLY)
+configure_file("${WORK_DIR}/lockup.faults" "${WORK_DIR}/lockup_warn.faults" COPYONLY)
+attach(lockup_warn "${clock_path_sdc}")
+run(lockup_warn 0)
+check_absent("${RUN_ERR}" "crossing-without-lockup" "the lockup latch excuses the crossing")
+file(READ "${WORK_DIR}/lockup_warn-report/coverage.json" warn_coverage)
+check_contains("${warn_coverage}"
+    "\"enforced\":[\"clock_groups\",\"false_paths\"]"
+    "the enforced set names the false paths the run examined")
+check_contains("${warn_coverage}"
+    "\"false_paths\":[{\"rule\":\"DFT019\",\"from\":\"clk_a\",\"to\":\"clk_b\",\"line\":3}]"
+    "the coverage report records DFT019")
+file(READ "${WORK_DIR}/lockup_warn-report/manifest.json" warn_manifest)
+check_contains("${warn_manifest}"
+    "\"false_paths\":[{\"rule\":\"DFT019\",\"from\":\"clk_a\",\"to\":\"clk_b\",\"line\":3}]"
+    "the run manifest repeats DFT019")
