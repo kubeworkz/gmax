@@ -231,3 +231,13 @@ gmax_set_warnings(capture_refusal_test)
 gmax_set_sanitizers(capture_refusal_test)
 
 add_test(NAME capture_refusal COMMAND capture_refusal_test)
+
+add_executable(capture_mask_test
+  capture_mask_test.cpp)
+
+target_link_libraries(capture_mask_test PRIVATE gmax_core)
+
+gmax_set_warnings(capture_mask_test)
+gmax_set_sanitizers(capture_mask_test)
+
+add_test(NAME capture_mask COMMAND capture_mask_test)

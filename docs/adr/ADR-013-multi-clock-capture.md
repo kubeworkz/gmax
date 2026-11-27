@@ -86,11 +86,13 @@ Anything else is refused (section 4). A mask is recorded in the pattern IR
 (ADR-010) on the cycle and observation it applies to, so replay reproduces it
 exactly.
 
-Until the masking slice lands, the refusal accepts a masked declaration but the
-grading path does not apply it: a run whose procedure masks a domain grades
-without forcing the observations that depend on it, so the `masked` count and its
-per-fault list do not exist yet. A masked domain is an accepted declaration, not
-yet a counted one.
+A masked domain is applied to the run's observation points: every observation
+its state elements reach through combinational logic is forced X, and a fault is
+counted `masked` when it is detected with those observations restored and not
+without them. `masked` sits inside `untestable` in both the collapsed and the raw
+counts, so no coverage denominator moves, and the per-fault list names `masked`
+where an untestable fault names `untestable`. Recording the mask on the pattern
+IR's cycle and observation is part of the pattern IR's own slice.
 
 ### 3. Per-group timing sets
 

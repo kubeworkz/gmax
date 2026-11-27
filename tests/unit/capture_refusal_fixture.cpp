@@ -1,12 +1,19 @@
-// Process-level design fixture for ADR-013 section 4. Two modes:
+// Process-level design fixture for ADR-013 sections 2 and 4:
 //
-//   no-clock  both declared clocks clock no state-holding gate, so the
-//             clock-level exclusion would leave nothing to pulse and condition 5
-//             refuses the run;
-//   boundary  clk_a clocks a flop and clk_b clocks nothing, so the list is not
-//             emptied and the run must grade.
+//   no-clock      both declared clocks clock no state-holding gate, so the
+//                 clock-level exclusion would leave nothing to pulse and condition
+//                 5 refuses the run;
+//   boundary      clk_a clocks a flop and clk_b clocks nothing, so the list is not
+//                 emptied and the run must grade;
+//   partial-scan  eight clk_a elements, three of them scan cells, so condition 2
+//                 refuses a sequential procedure that captures clk_a first;
+//   full-scan     the same design with all eight scanned, so that procedure grades;
+//   masking       the full-scan design plus one clk_b element nothing reads, so a
+//                 run can mask clk_a and have a genuinely untestable fault beside
+//                 the masked ones.
 //
-// usage: capture_refusal_fixture <no-clock|boundary> <output.dfdb> <output.faults>
+// usage: capture_refusal_fixture
+//            <no-clock|boundary|partial-scan|full-scan|masking> <output.dfdb> <output.faults>
 
 #include <cstdint>
 #include <iostream>
@@ -58,13 +65,15 @@ db::ConstraintClock clock(const std::string& name, const double period) {
 
 int main(int argc, char** argv) {
     if (argc != 4) {
-        std::cerr << "usage: capture_refusal_fixture <no-clock|boundary|partial-scan|full-scan> "
+        std::cerr << "usage: capture_refusal_fixture "
+                     "<no-clock|boundary|partial-scan|full-scan|masking> "
                      "<output.dfdb> <output.faults>"
                   << std::endl;
         return 1;
     }
     const std::string mode = argv[1];
-    if (mode != "no-clock" && mode != "boundary" && mode != "partial-scan" && mode != "full-scan") {
+    if (mode != "no-clock" && mode != "boundary" && mode != "partial-scan" && mode != "full-scan" &&
+        mode != "masking") {
         std::cerr << "unknown mode '" << mode << "'" << std::endl;
         return 1;
     }
@@ -79,7 +88,7 @@ int main(int argc, char** argv) {
     top.gates = {
         gate(db::GateType::And2, "g_and", {"a", "b"}, "n1"),
     };
-    const bool scan_design = mode == "partial-scan" || mode == "full-scan";
+    const bool scan_design = mode == "partial-scan" || mode == "full-scan" || mode == "masking";
     if (mode == "boundary") {
         // clk_a clocks the only state-holding gate; clk_b clocks nothing.
         top.gates.push_back(gate(db::GateType::Dff, "ff", {"n1", "clk_a"}, "q"));
@@ -90,7 +99,7 @@ int main(int argc, char** argv) {
         // only question left is section 2's intermediate state. `full-scan` marks all
         // eight elements as scan cells; `partial-scan` marks three.
         const db::GateType repeated =
-            mode == "full-scan" ? db::GateType::ScanCell : db::GateType::Dff;
+            mode == "partial-scan" ? db::GateType::Dff : db::GateType::ScanCell;
         top.inputs = {"clk_a", "clk_b", "d"};
         top.outputs.clear();
         top.gates.clear();
@@ -105,6 +114,11 @@ int main(int argc, char** argv) {
         top.gates.push_back(gate(db::GateType::Dff, "ff_b", {"n_hold", "clk_b"}, "n_b"));
         top.gates.push_back(gate(db::GateType::Buf, "g_b", {"n_b"}, "q_b"));
         top.outputs.push_back("q_b");
+        if (mode == "masking") {
+            // Nothing reads this element, so its fault is untestable in every run:
+            // the masked run's per-fault list carries it beside the masked faults.
+            top.gates.push_back(gate(db::GateType::ScanCell, "ff_dead", {"d", "clk_b"}, "n_dead"));
+        }
     } else {
         top.gates.push_back(gate(db::GateType::Buf, "g_y", {"n1"}, "y"));
     }
@@ -134,6 +148,14 @@ int main(int argc, char** argv) {
     if (scan_design) {
         nets = {net_named(database, "q_a0"), net_named(database, "n_a0"),
                 net_named(database, "q_b")};
+        if (mode == "masking") {
+            // `n_a0` is the observation the mask removes from use, `n_b` another
+            // domain's element that stays observable, `n_dead` an element nothing
+            // reads, and `q_a0` a primary output whose own fault no run can detect,
+            // so the masked list is distinguishable from every other outcome.
+            nets = {net_named(database, "n_a0"), net_named(database, "n_b"),
+                    net_named(database, "n_dead"), net_named(database, "q_a0")};
+        }
     } else {
         nets = {net_named(database, "y"), net_named(database, "n1")};
     }

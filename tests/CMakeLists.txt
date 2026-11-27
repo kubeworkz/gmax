@@ -139,6 +139,16 @@ add_test(NAME cli.capture-refusal-intermediate
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-intermediate
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_intermediate.cmake)
 
+# ADR-013 section 2's masked state: a masked domain's observation becomes X, so the
+# faults that needed it are counted masked inside untestable, with the denominators
+# and the per-fault distinction the ADR's test list names.
+add_test(NAME cli.capture-mask
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-mask
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_mask.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.

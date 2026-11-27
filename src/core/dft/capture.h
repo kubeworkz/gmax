@@ -84,6 +84,13 @@ struct CaptureCycle {
     friend bool operator==(const CaptureCycle&, const CaptureCycle&) = default;
 };
 
+// The state section 2 gives one captured domain of one cycle: the entry the
+// procedure wrote for that clock, or `scanned` when it wrote none. A domain the
+// cycle leaves unpulsed is not intermediate there, so callers ask only about the
+// clocks a cycle captures.
+CaptureIntermediateState capture_intermediate_state(const CaptureCycle& cycle,
+                                                    std::string_view clock);
+
 struct CaptureProcedure {
     CaptureKind kind = CaptureKind::Sequential;
     // True when the engine derived the procedure instead of a profile declaring

@@ -28,6 +28,7 @@
 #include "core/db/status.h"
 #include "core/dft/capture.h"
 #include "core/dft/capture_crossing.h"
+#include "core/dft/capture_mask.h"
 #include "core/dft/capture_profile.h"
 #include "core/dft/capture_refusal.h"
 #include "core/frontend/diagnostics.h"
@@ -516,6 +517,16 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
             << "' clocks no state-holding gate and was left out of the capture procedure\n";
     }
 
+    // ADR-013 section 2: a masked domain's intermediate value is X, so the run may
+    // not observe anything that depends on it. An empty mask leaves the observation
+    // points exactly as the design declares them, and a mask that reaches no
+    // observation changes nothing, so neither re-grades a fault.
+    const gmax::dft::CaptureMask capture_mask =
+        gmax::dft::apply_capture_mask(capture_procedure, database.constraints(), database.flat(),
+                                      database.strings(), observables);
+    const std::vector<db::NetId>& graded_observables = capture_mask.observables;
+    const bool mask_applied = graded_observables.size() != observables.size();
+
     atpg::FaultListFile faults;
     const db::Status read = atpg::read_faults(faults_path, database, faults);
     if (!read.ok()) {
@@ -536,8 +547,8 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         const std::size_t end = std::min(begin + kFaultChunk, grade_count);
         for (std::size_t index = begin; index < end; ++index) {
             try {
-                grades[index] = grade_fault(database.flat(), faults.collapsed[index], observables,
-                                            budget, case_assignments);
+                grades[index] = grade_fault(database.flat(), faults.collapsed[index],
+                                            graded_observables, budget, case_assignments);
             } catch (...) {
                 grade_errors[index] = std::current_exception();
             }
@@ -577,33 +588,55 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
 
     std::size_t detected = 0;
     std::size_t untestable = 0;
+    std::size_t masked = 0;
     std::size_t aborted = 0;
     std::size_t backtracks = 0;
     std::size_t decisions = 0;
+    // One flag per collapsed fault, in the same order as `outcomes`, so a raw fault
+    // can inherit its representative's masked state.
+    std::vector<char> masked_outcome;
+    masked_outcome.reserve(grade_count);
     std::vector<report::FaultOutcome> outcomes;
     outcomes.reserve(grade_count);
     for (std::size_t index = 0; index < grade_count; ++index) {
         const sim::Fault& fault = faults.collapsed[index];
         const FaultGrade& grade = grades[index];
-        switch (grade.status) {
-        case atpg::PodemStatus::Detected:
-            ++detected;
-            break;
-        case atpg::PodemStatus::Untestable:
+        // ADR-013 section 2: the mask forced the observations this fault needed to X,
+        // so the run did not detect it. It is `masked` only when the same fault is
+        // detected with those observations restored: that re-grade is the proof the
+        // mask, not redundancy, removed it. A masked fault counts inside `untestable`
+        // and never as aborted, so the coverage denominators do not move.
+        const bool is_masked =
+            mask_applied && grade.status != atpg::PodemStatus::Detected &&
+            grade_fault(database.flat(), fault, observables, budget, case_assignments).status ==
+                atpg::PodemStatus::Detected;
+        if (is_masked) {
+            ++masked;
             ++untestable;
-            break;
-        case atpg::PodemStatus::Aborted:
-            ++aborted;
-            break;
+        } else {
+            switch (grade.status) {
+            case atpg::PodemStatus::Detected:
+                ++detected;
+                break;
+            case atpg::PodemStatus::Untestable:
+                ++untestable;
+                break;
+            case atpg::PodemStatus::Aborted:
+                ++aborted;
+                break;
+            }
         }
+        masked_outcome.push_back(is_masked ? 1 : 0);
         backtracks += grade.backtracks;
         decisions += grade.decisions;
         outcomes.push_back(report::FaultOutcome{fault, net_name(database, fault.net), grade.status,
                                                 grade.decisions, grade.backtracks,
-                                                grade.sat_fallback ? "sat" : "podem"});
+                                                grade.sat_fallback ? "sat" : "podem", is_masked});
 
+        const std::string_view status_name =
+            is_masked ? std::string_view("masked") : atpg::podem_status_name(grade.status);
         out << "fault " << fault.net << ' ' << (fault.stuck == sim::StuckValue::One ? '1' : '0')
-            << ": " << atpg::podem_status_name(grade.status) << " decisions=" << grade.decisions
+            << ": " << status_name << " decisions=" << grade.decisions
             << " backtracks=" << grade.backtracks << (grade.sat_fallback ? " [sat]" : "") << '\n';
     }
 
@@ -612,6 +645,7 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     summary.collapsed = faults.collapsed.size();
     summary.detected = detected;
     summary.untestable = untestable;
+    summary.masked = masked;
     summary.aborted = aborted;
     summary.decisions = decisions;
     summary.backtracks = backtracks;
@@ -621,9 +655,17 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         collapsed_status.push_back(outcome.status);
     }
     for (const std::uint32_t collapsed_id : faults.raw_to_collapsed) {
-        const atpg::PodemStatus status = collapsed_id < collapsed_status.size()
-                                             ? collapsed_status[collapsed_id]
-                                             : atpg::PodemStatus::Aborted;
+        const bool known = collapsed_id < collapsed_status.size();
+        // A raw fault inherits its representative's masked state, so `raw_masked`
+        // stays a subset of `raw_untestable` just as `masked` stays inside
+        // `untestable`.
+        if (known && masked_outcome[collapsed_id] != 0) {
+            ++summary.raw_masked;
+            ++summary.raw_untestable;
+            continue;
+        }
+        const atpg::PodemStatus status =
+            known ? collapsed_status[collapsed_id] : atpg::PodemStatus::Aborted;
         switch (status) {
         case atpg::PodemStatus::Detected:
             ++summary.raw_detected;
@@ -639,6 +681,7 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
 
     out << "detected: " << detected << "\n";
     out << "untestable: " << untestable << "\n";
+    out << "masked: " << masked << "\n";
     out << "aborted: " << aborted << "\n";
     out << "backtracks: " << backtracks << "\n";
     out << "decisions: " << decisions << "\n";

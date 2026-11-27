@@ -90,6 +90,16 @@ std::string_view capture_intermediate_state_name(const CaptureIntermediateState 
     return "scanned";
 }
 
+CaptureIntermediateState capture_intermediate_state(const CaptureCycle& cycle,
+                                                    const std::string_view clock) {
+    for (const auto& entry : cycle.intermediate) {
+        if (entry.first == clock) {
+            return entry.second;
+        }
+    }
+    return CaptureIntermediateState::Scanned;
+}
+
 std::string canonical_capture_payload(const CaptureProcedure& procedure) {
     // Unlike the constraint payload, nothing here is sorted by line: cycle and
     // group order carry meaning (section 1), so they are written in order. Only

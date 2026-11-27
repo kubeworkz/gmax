@@ -178,17 +178,6 @@ void check_shared_edge(const CaptureProcedure& procedure, std::vector<CaptureRef
     }
 }
 
-// The state section 2 gives one domain of a cycle: the entry the profile wrote, or
-// the `scanned` default when it wrote none.
-CaptureIntermediateState intermediate_state(const CaptureCycle& cycle, const std::string& clock) {
-    for (const auto& entry : cycle.intermediate) {
-        if (entry.first == clock) {
-            return entry.second;
-        }
-    }
-    return CaptureIntermediateState::Scanned;
-}
-
 const db::ClockGateCount* find_clock_gates(const std::vector<db::ClockGateCount>& clock_gates,
                                            const std::string& clock) {
     for (const db::ClockGateCount& count : clock_gates) {
@@ -219,7 +208,7 @@ void check_intermediate_state(const CaptureProcedure& procedure,
         const CaptureCycle& cycle = procedure.cycles[c];
         for (const CaptureGroup& group : cycle.groups) {
             for (const std::string& clock : group.timing.clocks) {
-                const CaptureIntermediateState state = intermediate_state(cycle, clock);
+                const CaptureIntermediateState state = capture_intermediate_state(cycle, clock);
                 if (state == CaptureIntermediateState::Masked) {
                     continue;
                 }

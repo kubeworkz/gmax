@@ -193,7 +193,8 @@ std::string coverage_json(const CoverageReport& report) {
         << ",\"detected\":" << summary.detected << ",\"untestable\":" << summary.untestable
         << ",\"aborted\":" << summary.aborted << ",\"raw_detected\":" << summary.raw_detected
         << ",\"raw_untestable\":" << summary.raw_untestable
-        << ",\"raw_aborted\":" << summary.raw_aborted << '}';
+        << ",\"raw_aborted\":" << summary.raw_aborted << ",\"masked\":" << summary.masked
+        << ",\"raw_masked\":" << summary.raw_masked << '}';
     out << ",\"coverage\":{";
     coverage_entry(out, "raw", summary.raw_detected, summary.raw);
     out << ',';
@@ -215,9 +216,11 @@ std::string coverage_json(const CoverageReport& report) {
         }
         out << "{\"net\":" << fault.fault.net << ",\"name\":" << json_string(fault.net_name)
             << ",\"stuck\":" << (fault.fault.stuck == sim::StuckValue::One ? 1 : 0)
-            << ",\"status\":\"" << atpg::podem_status_name(fault.status) << '"'
-            << ",\"method\":" << json_string(fault.method) << ",\"decisions\":" << fault.decisions
-            << ",\"backtracks\":" << fault.backtracks << '}';
+            << ",\"status\":\""
+            << (fault.masked ? std::string_view("masked") : atpg::podem_status_name(fault.status))
+            << '"' << ",\"method\":" << json_string(fault.method)
+            << ",\"decisions\":" << fault.decisions << ",\"backtracks\":" << fault.backtracks
+            << '}';
     }
     out << "]}";
     return out.str();

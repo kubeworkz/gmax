@@ -26,6 +26,10 @@ struct FaultOutcome {
     // "podem" for a structural result, "sat" when a PODEM budget abort was
     // resolved by the complete SAT miter.
     std::string method = "podem";
+    // ADR-013 section 2: the capture mask forced the observations this fault needed
+    // to X, and restoring them detects it, so it is counted as masked rather than
+    // untestable. `status` keeps the outcome the masked observations produced.
+    bool masked = false;
 };
 
 struct CoverageSummary {
@@ -33,7 +37,10 @@ struct CoverageSummary {
     // search reports directly.
     std::size_t collapsed = 0;
     std::size_t detected = 0;
+    // `untestable` already counts the `masked` faults below, so the coverage
+    // denominators do not move when a procedure masks a domain.
     std::size_t untestable = 0;
+    std::size_t masked = 0;
     std::size_t aborted = 0;
 
     // Raw-fault counts, obtained by mapping every raw fault to the outcome of
@@ -41,6 +48,7 @@ struct CoverageSummary {
     std::size_t raw = 0;
     std::size_t raw_detected = 0;
     std::size_t raw_untestable = 0;
+    std::size_t raw_masked = 0;
     std::size_t raw_aborted = 0;
 
     std::size_t decisions = 0;
