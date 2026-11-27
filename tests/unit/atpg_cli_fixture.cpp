@@ -43,8 +43,9 @@ db::NetId net_named(const db::DesignDb& database, const std::string_view name) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        std::cerr << "usage: atpg_cli_fixture <output.dfdb> <output.faults>" << std::endl;
+    if (argc < 3 || argc > 4) {
+        std::cerr << "usage: atpg_cli_fixture <output.dfdb> <output.faults> [incomplete]"
+                  << std::endl;
         return 1;
     }
 
@@ -70,6 +71,11 @@ int main(int argc, char** argv) {
     if (!flattened.ok()) {
         std::cerr << "fixture flatten failed: " << flattened.message() << std::endl;
         return 1;
+    }
+    if (argc == 4 && std::string(argv[3]) == "incomplete") {
+        database.constraints().present = true;
+        database.constraints().complete = false;
+        database.constraints().unsupported = {"unsupported-construct"};
     }
     const db::Status saved = database.save(argv[1]);
     if (!saved.ok()) {

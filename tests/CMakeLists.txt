@@ -52,6 +52,15 @@ add_test(NAME cli.run-atpg
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-run-atpg
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/run_atpg.cmake)
 
+# ADR-013 s4: an incomplete-constraints run refuses before grading and leaves
+# no report directory behind, because creation is deferred to write time.
+add_test(NAME cli.report-dir-incomplete
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:atpg_cli_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-report-dir-incomplete
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/report_dir_incomplete.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.
