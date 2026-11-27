@@ -112,19 +112,17 @@ file(SHA256 "${database}" hash_before)
 attach(plain "plain.sdc")
 run(plain "simultaneous.json")
 check_contains("${RUN_ERR}"
-    "simultaneous-across-groups: cycle 0 pulses 'clk_a' (no declared group)"
+    "simultaneous-across-groups: cycle 0 pulses 'clk_a' (no declared group) and 'clk_b' (no declared group), which set_clock_groups keeps apart"
     "undeclared pairing")
-check_contains("${RUN_ERR}"
-    "and 'clk_b' (no declared group), which set_clock_groups keeps apart"
-    "undeclared pairing names both clocks")
 
-# 2. The same group with the clocks declared in different -group options: the verdict
-#    follows the SDC's grouping, not the number of clocks in the group.
+# 2. The same group with the clocks declared in different -group options. Both clocks
+#    carry the row's -name, so the phrase has to name their actual memberships too;
+#    that is what makes the two sides of the finding distinguishable.
 attach(apart "apart.sdc")
 run(apart "simultaneous.json")
-check_contains("${RUN_ERR}" "simultaneous-across-groups: cycle 0 pulses 'clk_a'" "apart groups")
-check_contains("${RUN_ERR}" "and 'clk_b'" "apart groups name both clocks")
-check_contains("${RUN_ERR}" "which set_clock_groups keeps apart" "apart groups name the command")
+check_contains("${RUN_ERR}"
+    "simultaneous-across-groups: cycle 0 pulses 'clk_a' (group 'apart' [clk_a]) and 'clk_b' (group 'apart' [clk_b, clk_c]), which set_clock_groups keeps apart"
+    "two inner groups of one declared row")
 
 # 3. Two groups of one cycle given the same edge time: simultaneous capture by timing
 #    rather than by declaration, so each group stays a single clock.

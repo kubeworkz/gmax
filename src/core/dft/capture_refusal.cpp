@@ -61,14 +61,6 @@ bool group_position(const db::Constraints& constraints, const std::string_view c
     return false;
 }
 
-std::string declared_group_name(const db::Constraints& constraints, const std::string_view clock) {
-    GroupPosition position;
-    if (!group_position(constraints, clock, position)) {
-        return std::string();
-    }
-    return constraints.clock_groups[position.row].name;
-}
-
 // Two clocks are captured together only when the SDC puts them in one declared
 // group; two clocks the SDC never groups are each their own group, so they are
 // apart unless they are the same clock.
@@ -87,13 +79,28 @@ bool same_declared_group(const db::Constraints& constraints, const std::string& 
     return false;
 }
 
-// `'clk_a' (group 'fast')`, or `'clk_a' (no declared group)`.
+// `'clk_a' (group 'fast' [clk_a, clk_c])`, or `'clk_a' (no declared group)`.
+//
+// The row's -name alone is not enough. One set_clock_groups command labels every
+// inner group it declares, so two clocks the command keeps apart would both print
+// the same group and the finding would name no difference at all -- the very fact
+// condition 1 exists to report. The phrase therefore names the clocks that share
+// this clock's inner group, which no other inner group can repeat. A row written
+// without -name prints the membership alone.
 std::string clock_phrase(const db::Constraints& constraints, const std::string& clock) {
-    const std::string name = declared_group_name(constraints, clock);
-    if (name.empty()) {
+    GroupPosition position;
+    if (!group_position(constraints, clock, position)) {
         return "'" + clock + "' (no declared group)";
     }
-    return "'" + clock + "' (group '" + name + "')";
+    const db::ConstraintClockGroup& row = constraints.clock_groups[position.row];
+    std::vector<std::string> members = row.groups[position.group];
+    std::sort(members.begin(), members.end());
+    std::string phrase = "'" + clock + "' (group ";
+    if (!row.name.empty()) {
+        phrase += "'" + row.name + "' ";
+    }
+    phrase += "[" + join(members) + "])";
+    return phrase;
 }
 
 // The group's label when the profile gave one, otherwise its clock list.

@@ -152,9 +152,9 @@ void test_simultaneous_across_groups() {
     const std::string detail =
         detail_of(refusals, dft::CaptureRefusalCode::SimultaneousAcrossGroups);
     expect(contains(detail, "cycle 0"), "the finding names the cycle");
-    expect(contains(detail, "'clk_a' (group 'async')"),
+    expect(contains(detail, "'clk_a' (group 'async' [clk_a])"),
            "the finding names the first clock's group");
-    expect(contains(detail, "'clk_b' (group 'async')"),
+    expect(contains(detail, "'clk_b' (group 'async' [clk_b])"),
            "the finding names the second clock's group");
     expect(contains(detail, "keeps apart"), "the finding says why");
 
@@ -343,8 +343,8 @@ void test_group_spanning_declared_groups() {
     expect(profile.procedure.kind == dft::CaptureKind::Grouped, "the declared shape is grouped");
 
     const std::string detail =
-        "cycle 0 pulses 'clk_a' (group 'fast') and 'clk_b' (group 'slow'), which "
-        "set_clock_groups keeps apart";
+        "cycle 0 pulses 'clk_a' (group 'fast' [clk_a]) and 'clk_b' (group 'slow' "
+        "[clk_b]), which set_clock_groups keeps apart";
     const std::vector<dft::CaptureRefusal> declared = dft::find_capture_refusals(
         profile.procedure, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 1}});
     expect(declared.size() == 1, "the grouped procedure refuses before any drop");
