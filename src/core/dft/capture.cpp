@@ -83,7 +83,7 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
     // label is a diagnostic rather than part of the procedure. Version 3 writes
     // each cycle's groups in edge order, so the same groups listed differently
     // by a profile produce the same bytes. Version 4 adds the intermediate
-    // state of a non-final cycle's domains (section 5).
+    // state of the domains a non-final cycle captures (section 2).
     std::string out = "gmax-capture-4\n";
     append(out, "kind");
     out.append(capture_kind_name(procedure.kind));
@@ -145,11 +145,12 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
             out.append(line);
         }
 
-        // Section 5: a non-final cycle records what happens to every domain it
-        // does not pulse. The domains come from the cycle's own groups and are
-        // written sorted, so the bytes never depend on how the groups were
-        // ordered. The final cycle observes everything, so it writes no state
-        // and its absence is the encoding.
+        // Section 2: a non-final cycle records the state of the domains it
+        // captures, because those are the domains a later cycle reads. A domain
+        // it leaves unpulsed is not intermediate at this cycle and is not
+        // written. The domains come from the cycle's own groups and are written
+        // sorted, so the bytes never depend on how the groups were ordered. The
+        // final cycle owns no intermediate value, so it writes no state at all.
         if (c + 1 < procedure.cycles.size()) {
             std::vector<std::string> domains;
             for (const CaptureGroup& group : cycle.groups) {
@@ -206,8 +207,8 @@ CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints) {
         group.timing = capture_timing_set(constraints, {names[i]}, 0.0);
         CaptureCycle cycle;
         cycle.groups.push_back(std::move(group));
-        // A cycle the engine does not fill observes nothing, so section 5's
-        // default is stated rather than left implicit on every non-final cycle.
+        // A derived cycle captures exactly its own clock, so section 2's default
+        // is stated rather than left implicit on every non-final cycle.
         if (i + 1 < names.size()) {
             cycle.intermediate.push_back({names[i], CaptureIntermediateState::Scanned});
         }

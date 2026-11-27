@@ -131,8 +131,8 @@ void test_derived_procedure() {
         expect(procedure.cycles[0].groups[0].timing.period == 10.0, "cycle keeps clk_a period");
         expect(procedure.cycles[0].groups[0].timing.edge == 0.0, "derived cycle starts at zero");
         expect(procedure.cycles[0].groups[0].name.empty(), "a derived group has no SDC name");
-        // Section 5: a non-final cycle states the state of the domain it does not
-        // pulse, and the engine's default is to scan it.
+        // Section 2: a non-final cycle states the domain it captures, which is
+        // the domain a later cycle reads, and the engine's default is to scan it.
         expect(procedure.cycles[0].intermediate.size() == 1,
                "a non-final cycle records one intermediate state");
         expect(procedure.cycles[0].intermediate[0].first == "clk_a",
@@ -235,10 +235,13 @@ void test_canonical_payload() {
     expect(dft::canonical_capture_payload(labelled).find("fast_domain") == std::string::npos,
            "the label text never reaches the payload");
 
-    // Section 5: only a non-final cycle writes an intermediate line, the default
-    // is written rather than omitted, and a masked domain changes the identity.
+    // Section 2: the state belongs to the domains the cycle captures, so only a
+    // non-final cycle writes a line, the default is written rather than omitted,
+    // and a domain the cycle leaves unpulsed is not intermediate there.
     expect(payload.find("intermediate\t0\tclk_a\tscanned") != std::string::npos,
            "a non-final cycle writes its default state");
+    expect(payload.find("intermediate\t0\tclk_b") == std::string::npos,
+           "an unpulsed domain is not intermediate at this cycle");
     expect(payload.find("intermediate\t1\t") == std::string::npos,
            "the final cycle writes no intermediate state");
 
@@ -250,8 +253,8 @@ void test_canonical_payload() {
                std::string::npos,
            "a masked domain is written as masked");
 
-    // The state belongs to the cycle's domains, so a cycle that pulses both of
-    // its domains in one group still states each of them.
+    // The state is keyed by captured domains, so a cycle whose one group pulses
+    // two domains states both of them.
     dft::CaptureProcedure both = procedure;
     both.cycles[0].groups[0].timing.clocks = {"clk_a", "clk_b"};
     expect(dft::canonical_capture_payload(both).find("intermediate\t0\tclk_b\tscanned") !=

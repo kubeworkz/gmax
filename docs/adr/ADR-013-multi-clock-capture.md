@@ -163,12 +163,16 @@ The coverage and manifest reports gain one `capture` object inside the existing
 - In the manifest only, `cycles`: the canonical procedure, one entry per cycle
   with its groups, clocks and edge times.
 
-The procedure payload is canonical: cycles in order, groups in cycle order,
+The procedure payload is canonical: cycles in order, groups in edge order,
 clocks sorted bytewise within a group, numeric fields in one canonical decimal
-encoding. It excludes source paths, comments, whitespace, line and column
-numbers, resolved database IDs, and the `derived` flag, which is provenance
-rather than procedure. Two procedures that differ only in those respects have
-the same `capture.hash`.
+encoding, and one `intermediate <cycle> <clock> <state>` line per clock, sorted
+by clock name, for each domain a non-final cycle captures. The state is keyed by
+the captured domain because that is the domain a later cycle reads; a domain the
+cycle leaves unpulsed is not intermediate at that cycle and is not written, and
+the final cycle writes no such line. It excludes source paths, comments,
+whitespace, line and column numbers, resolved database IDs, and the `derived`
+flag, which is provenance rather than procedure. Two procedures that differ only
+in those respects have the same `capture.hash`.
 
 `constraints_hash` does not change. A procedure is how constraints are used, not
 a constraint, so it stays out of the payload in ADR-012 section 2; every

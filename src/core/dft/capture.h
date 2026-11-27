@@ -24,10 +24,13 @@ enum class CaptureKind : std::uint8_t {
 
 std::string_view capture_kind_name(CaptureKind kind);
 
-// ADR-013 section 5: on a non-final cycle every domain the cycle does not pulse
-// is either fully scanned or masked. `Scanned` is the default and a claim the
-// engine verifies; `Masked` makes every observation depending on the domain an
-// X, so a masked domain has to be recorded explicitly.
+// ADR-013 section 2: in a sequential procedure a domain captured before the
+// last cycle holds a value later cycles read, and that value is usable only if
+// the domain is fully scanned or explicitly masked. The state belongs to the
+// domain the cycle captures, so a non-final cycle states the domains it pulses;
+// a domain it leaves unpulsed is not intermediate there. `Scanned` is the default
+// and a claim the engine verifies; `Masked` makes every observation depending on
+// the domain an X, so a masked domain has to be recorded explicitly.
 enum class CaptureIntermediateState : std::uint8_t {
     Scanned,
     Masked,
@@ -65,9 +68,10 @@ struct CaptureGroup {
 
 struct CaptureCycle {
     std::vector<CaptureGroup> groups;
-    // Per-domain intermediate state (section 5), meaningful only on a non-final
-    // cycle. Empty means the default, `Scanned`; a masked domain must be
-    // recorded. Entry order is not identity: the payload writes the domains
+    // Per-domain intermediate state (section 2), meaningful only on a non-final
+    // cycle and keyed by the domains that cycle captures, which are the domains a
+    // later cycle reads. Empty means the default, `Scanned`; a masked domain must
+    // be recorded. Entry order is not identity: the payload writes the domains
     // sorted by clock name.
     std::vector<std::pair<std::string, CaptureIntermediateState>> intermediate;
 
@@ -87,8 +91,8 @@ struct CaptureProcedure {
 
 // The canonical payload the capture hash is computed over (ADR-013 section 6):
 // cycles in order, groups in edge order, clocks sorted bytewise within a group,
-// each non-final cycle's intermediate state per domain, and one decimal
-// encoding. Source paths, comments, whitespace, line and column numbers,
+// each non-final cycle's captured domains and their intermediate state, and one
+// decimal encoding. Source paths, comments, whitespace, line and column numbers,
 // database IDs, the `derived` flag and a group's diagnostic label are excluded
 // by construction.
 std::string canonical_capture_payload(const CaptureProcedure& procedure);
