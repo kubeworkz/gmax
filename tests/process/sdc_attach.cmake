@@ -137,7 +137,7 @@ endif()
 file(READ "${coverage}" coverage_text)
 check_text("${coverage_text}" "\"netlist_hash\":\"413dd789\"" "c432 coverage netlist hash")
 check_text("${coverage_text}"
-    "\"constraints\":{\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"enforced\":[\"case_analysis\"],\"capture\":{\"status\":\"absent\",\"procedure\":null,\"derived\":false,\"hash\":null}}"
+    "\"constraints\":{\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"enforced\":[\"case_analysis\"],\"false_paths\":[],\"capture\":{\"status\":\"absent\",\"procedure\":null,\"derived\":false,\"hash\":null}}"
     "c432 coverage constraints")
 # No declared clock means no capture claim, which ADR-013 section 6 reports as
 # `absent` inside the constraints object rather than as a constraint status.
@@ -146,7 +146,7 @@ check_absent("${coverage_text}" "\"constraints\":{\"status\":\"absent\""
 
 file(READ "${manifest}" manifest_text)
 check_text("${manifest_text}"
-    "\"constraints\":{\"path\":\"\",\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"capture\":{\"status\":\"absent\",\"procedure\":null,\"derived\":false,\"hash\":null,\"cycles\":[]}}"
+    "\"constraints\":{\"path\":\"\",\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"false_paths\":[],\"capture\":{\"status\":\"absent\",\"procedure\":null,\"derived\":false,\"hash\":null,\"cycles\":[]}}"
     "c432 manifest constraints")
 
 # A target that cannot be applied must never be graded. N118 is an internal net
