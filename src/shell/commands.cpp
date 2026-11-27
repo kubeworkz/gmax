@@ -371,12 +371,18 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         return ExitCode::Usage;
     }
     if (write_reports) {
-        std::error_code directory_error;
-        std::filesystem::create_directories(report_directory, directory_error);
-        if (directory_error || !std::filesystem::is_directory(report_directory, directory_error)) {
+        // ADR-013 s4: validate up front but create only when reports are
+        // written, so a refusing run leaves nothing behind.
+        std::error_code probe_error;
+        const bool exists = std::filesystem::exists(report_directory, probe_error);
+        if (probe_error) {
             err << "gmax: cannot use report directory '" << report_directory
-                << "': " << (directory_error ? directory_error.message() : "not a directory")
-                << '\n';
+                << "': " << probe_error.message() << '\n';
+            return ExitCode::Design;
+        }
+        if (exists && !std::filesystem::is_directory(report_directory, probe_error)) {
+            err << "gmax: cannot use report directory '" << report_directory
+                << "': " << (probe_error ? probe_error.message() : "not a directory") << '\n';
             return ExitCode::Design;
         }
     }
@@ -578,6 +584,14 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     const std::string coverage_text = report::coverage_json(coverage);
 
     if (write_reports) {
+        std::error_code directory_error;
+        std::filesystem::create_directories(report_directory, directory_error);
+        if (directory_error || !std::filesystem::is_directory(report_directory, directory_error)) {
+            err << "gmax: cannot use report directory '" << report_directory
+                << "': " << (directory_error ? directory_error.message() : "not a directory")
+                << '\n';
+            return ExitCode::Design;
+        }
         const std::filesystem::path coverage_path =
             std::filesystem::path(report_directory) / "coverage.json";
         const std::filesystem::path manifest_path =
