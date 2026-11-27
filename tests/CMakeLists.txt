@@ -53,9 +53,9 @@ add_test(NAME cli.run-atpg
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/run_atpg.cmake)
 
 # ADR-013 section 4: a procedure the run cannot apply refuses the run with exit 2,
-# no fault count, no report and an untouched database. Condition 5 is the one
-# trigger a run can reach on this branch, because the run derives its procedure
-# and the scan model and DFT003 are not implemented yet.
+# no fault count, no report and an untouched database. Condition 5 is the clock-level
+# exclusion emptying the procedure; condition 2 stays silent until the scan model can
+# decide it.
 add_test(NAME cli.capture-refusal-no-clock
   COMMAND ${CMAKE_COMMAND}
     -DGMAX_BINARY=$<TARGET_FILE:gmax>
@@ -92,6 +92,42 @@ add_test(NAME cli.capture-profile
     -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-profile
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_profile.cmake)
+
+# ADR-013 section 4 condition 1: clocks captured together that the SDC keeps apart, in
+# both shapes the condition names -- one group spanning declared groups, and two groups
+# of one cycle sharing an edge time.
+add_test(NAME cli.capture-refusal-simultaneous
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-simultaneous
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_simultaneous.cmake)
+
+# Condition 3: one declared group whose clocks disagree on period or waveform.
+add_test(NAME cli.capture-refusal-group-timing
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-group-timing
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_group_timing.cmake)
+
+# The condition 1/3 boundary: the same two-clock group with agreeing timing and a
+# grouping SDC grades, so neither condition keys off the number of clocks alone.
+add_test(NAME cli.capture-refusal-timing-boundary
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-timing-boundary
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_timing_boundary.cmake)
+
+# Condition 4: a clock in two cycles or twice in one cycle, and the determinism
+# companion that fires it beside condition 3.
+add_test(NAME cli.capture-refusal-clock-repeated
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-clock-repeated
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_clock_repeated.cmake)
 
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
