@@ -6,6 +6,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/db/constraints.h"
@@ -178,7 +179,7 @@ void test_canonical_payload() {
     const dft::CaptureProcedure procedure = dft::resolve_capture_procedure(constraints);
     const std::string payload = dft::canonical_capture_payload(procedure);
 
-    expect(payload.rfind("gmax-capture-2\n", 0) == 0, "payload carries its own version");
+    expect(payload.rfind("gmax-capture-3\n", 0) == 0, "payload carries its own version");
     expect(payload.find("sequential") != std::string::npos, "payload names the kind");
     expect(payload.find("clk_a") != std::string::npos, "payload names the clocks");
     expect(payload.find("derived") == std::string::npos, "provenance is excluded from the payload");
@@ -226,6 +227,46 @@ void test_canonical_payload() {
            "the label text never reaches the payload");
 }
 
+void test_group_order() {
+    const db::Constraints constraints = make_constraints();
+
+    dft::CaptureGroup fast;
+    fast.timing = dft::capture_timing_set(constraints, {"clk_a"}, 0.0);
+    dft::CaptureGroup slow;
+    slow.timing = dft::capture_timing_set(constraints, {"clk_b"}, 20.0);
+
+    dft::CaptureCycle cycle;
+    cycle.groups = {fast, slow};
+    dft::CaptureProcedure forward;
+    forward.kind = dft::CaptureKind::Grouped;
+    forward.derived = false;
+    forward.cycles = {cycle};
+
+    // The edge places the group, so the profile's listing order is not procedure.
+    dft::CaptureProcedure reversed = forward;
+    std::swap(reversed.cycles[0].groups[0], reversed.cycles[0].groups[1]);
+    expect(dft::canonical_capture_payload(reversed) == dft::canonical_capture_payload(forward),
+           "group order does not change the payload");
+    expect(dft::capture_hash(reversed) == dft::capture_hash(forward),
+           "group order does not change the hash");
+
+    const std::string payload = dft::canonical_capture_payload(reversed);
+    expect(payload.find("clk_a") < payload.find("clk_b"), "groups are written in edge order");
+    expect(payload.find("group\t0\t0\t0") != std::string::npos,
+           "the earliest edge takes group index zero");
+    expect(payload.find("group\t0\t1\t20") != std::string::npos,
+           "the later edge takes group index one");
+
+    // Equal edges are refused later, but the encoding still has to be total, so
+    // the clock list breaks the tie.
+    dft::CaptureProcedure tied = forward;
+    tied.cycles[0].groups[1].timing.edge = 0.0;
+    dft::CaptureProcedure tied_reversed = tied;
+    std::swap(tied_reversed.cycles[0].groups[0], tied_reversed.cycles[0].groups[1]);
+    expect(dft::canonical_capture_payload(tied_reversed) == dft::canonical_capture_payload(tied),
+           "an edge tie is broken by the clock list");
+}
+
 void test_constraints_hash_unchanged() {
     db::Constraints constraints = make_constraints();
     const std::uint32_t before = db::constraints_hash(constraints);
@@ -250,6 +291,7 @@ int main() {
     test_duplicate_clock_kept();
     test_edge_layout();
     test_canonical_payload();
+    test_group_order();
     test_constraints_hash_unchanged();
 
     if (failures != 0) {

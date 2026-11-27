@@ -69,7 +69,7 @@ struct CaptureProcedure {
 };
 
 // The canonical payload the capture hash is computed over (ADR-013 section 6):
-// cycles in order, groups in cycle order, clocks sorted bytewise within a group,
+// cycles in order, groups in edge order, clocks sorted bytewise within a group,
 // and one decimal encoding. Source paths, comments, whitespace, line and column
 // numbers, database IDs, the `derived` flag and a group's diagnostic label are
 // excluded by construction.

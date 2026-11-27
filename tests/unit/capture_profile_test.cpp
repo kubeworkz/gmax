@@ -276,6 +276,39 @@ void test_sequential() {
     expect(names_object(wide, "capture.cycles[0]"), "the finding names the cycle");
 }
 
+void test_group_order_identity() {
+    const db::Constraints constraints = make_constraints();
+
+    const dft::CaptureProfileResult reversed = read(R"({
+      "capture": {"kind": "grouped", "cycles": [{"groups": [
+        {"clocks": ["clk_b"], "edge": 20},
+        {"clocks": ["clk_a"], "edge": 0}
+      ]}]}
+    })",
+                                                    constraints);
+    const dft::CaptureProfileResult forward = read(grouped_profile, constraints);
+    expect(reversed.ok && forward.ok, "both group orderings parse");
+    expect(reversed.procedure.cycles[0].groups[0].timing.clocks ==
+               (std::vector<std::string>{"clk_b"}),
+           "the model keeps the order the profile wrote");
+    expect(dft::capture_hash(reversed.procedure) == dft::capture_hash(forward.procedure),
+           "a cycle's group order is not identity when edges are explicit");
+
+    // Without explicit edges the position decides the edge, so the order is
+    // procedure there and the hashes must differ.
+    const dft::CaptureProfileResult reversed_defaults = read(R"({
+      "capture": {"kind": "grouped", "cycles": [{"groups": [
+        {"clocks": ["clk_b"]},
+        {"clocks": ["clk_a"]}
+      ]}]}
+    })",
+                                                             constraints);
+    const dft::CaptureProfileResult defaults = read(grouped_default_edges, constraints);
+    expect(reversed_defaults.ok && defaults.ok, "both default layouts parse");
+    expect(dft::capture_hash(reversed_defaults.procedure) != dft::capture_hash(defaults.procedure),
+           "the default layout takes its edges from the written order");
+}
+
 void test_clock_errors() {
     const dft::CaptureProfileResult unknown = read(R"({
       "capture": {"kind": "simultaneous", "cycles": [{"groups": [
@@ -357,6 +390,7 @@ int main() {
     test_grouped();
     test_grouped_errors();
     test_sequential();
+    test_group_order_identity();
     test_clock_errors();
     test_repeated_clock_accepted();
     test_unknown_keys_ignored();
