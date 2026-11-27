@@ -428,15 +428,25 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     // after the constraint checks and before the fault list is read, so a refused
     // run prints no fault count and writes no report. ExitCode::Design is the same
     // status a load failure and an incomplete set use; refusals add no new code.
+    // ADR-013 section 3: a declared clock that clocks no state-holding gate is
+    // dropped from the procedure before it is applied, so the procedure the run
+    // grades is the one without it. A drop that leaves another clock is a warning;
+    // a drop that empties the list is section 4's condition 5.
+    const std::vector<db::ClockGateCount> clock_gates =
+        db::clock_gate_counts(database.constraints(), database.flat(), database.strings());
+    std::vector<std::string> dropped_clocks;
     const gmax::dft::CaptureProcedure capture_procedure =
-        gmax::dft::resolve_capture_procedure(database.constraints());
+        gmax::dft::exclude_idle_clocks(gmax::dft::resolve_capture_procedure(database.constraints()),
+                                       database.constraints(), clock_gates, dropped_clocks);
     const std::vector<gmax::dft::CaptureRefusal> capture_refusals =
-        gmax::dft::find_capture_refusals(
-            capture_procedure, database.constraints(),
-            db::clock_gate_counts(database.constraints(), database.flat(), database.strings()));
+        gmax::dft::find_capture_refusals(capture_procedure, database.constraints(), clock_gates);
     if (!capture_refusals.empty()) {
         gmax::dft::write_capture_refusals(err, capture_refusals);
         return ExitCode::Design;
+    }
+    for (const std::string& clock : dropped_clocks) {
+        err << "gmax: warning: clock '" << clock
+            << "' clocks no state-holding gate and was left out of the capture procedure\n";
     }
 
     atpg::FaultListFile faults;

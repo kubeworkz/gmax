@@ -1,7 +1,7 @@
-# ADR-013 section 4's granularity boundary for condition 5: the clock-level
-# exclusion refuses only when it empties the clock list. Here clk_a clocks the
-# design's only flop and clk_b clocks nothing, so the procedure is still
-# appliable and the run grades normally.
+# ADR-013 section 3's granularity boundary: the clock-level exclusion refuses only
+# when it empties the clock list. Here clk_a clocks the design's only flop and
+# clk_b clocks nothing, so clk_b is dropped, the drop is reported as a warning,
+# and the run grades normally.
 #
 # This is the boundary the ADR calls out: a fix that counted any dropped clock
 # instead of an emptied list would turn this run into a refusal.
@@ -37,8 +37,22 @@ if(NOT "${result}" STREQUAL "0")
     message(FATAL_ERROR
         "one non-clocking clock must not refuse the run: returned ${result}: ${err}${out}")
 endif()
-if(NOT "${err}" STREQUAL "")
-    message(FATAL_ERROR "the boundary run wrote to stderr: ${err}")
+# The drop is reported rather than refused: exactly one warning, naming the idle
+# clock and not the one that clocks state.
+string(REGEX MATCHALL "warning:" warnings "${err}")
+list(LENGTH warnings warning_count)
+if(NOT warning_count EQUAL 1)
+    message(FATAL_ERROR "expected one warning, found ${warning_count}: ${err}")
+endif()
+string(FIND "${err}"
+    "gmax: warning: clock 'clk_b' clocks no state-holding gate and was left out of the capture procedure"
+    warning_position)
+if(warning_position EQUAL -1)
+    message(FATAL_ERROR "the warning does not name the idle clock: ${err}")
+endif()
+string(FIND "${err}" "clock 'clk_a'" wrong_position)
+if(NOT wrong_position EQUAL -1)
+    message(FATAL_ERROR "the warning names a clock that clocks state: ${err}")
 endif()
 if(NOT out MATCHES "raw faults:")
     message(FATAL_ERROR "the boundary run printed no fault count: ${out}")

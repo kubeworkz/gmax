@@ -302,6 +302,52 @@ void test_group_order() {
            "an edge tie is broken by the clock list");
 }
 
+void test_clock_exclusion() {
+    const db::Constraints constraints = make_constraints();
+    const dft::CaptureProcedure derived = dft::resolve_capture_procedure(constraints);
+    std::vector<std::string> dropped;
+
+    const dft::CaptureProcedure kept =
+        dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 2}, {"clk_b", 0}}, dropped);
+    expect(dropped == (std::vector<std::string>{"clk_b"}), "only the idle clock is dropped");
+    expect(kept.cycles.size() == 1, "a cycle whose clock was dropped goes with it");
+    expect(kept.cycles.size() == 1 && kept.cycles[0].groups.size() == 1 &&
+               kept.cycles[0].groups[0].timing.clocks == (std::vector<std::string>{"clk_a"}),
+           "the surviving cycle keeps its clock");
+    expect(kept.cycles.size() == 1 && kept.cycles[0].intermediate.empty(),
+           "the surviving final cycle carries no intermediate state");
+
+    const dft::CaptureProcedure emptied =
+        dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 0}, {"clk_b", 0}}, dropped);
+    expect(emptied.cycles.empty(), "dropping every clock empties the procedure");
+    expect(dropped == (std::vector<std::string>{"clk_a", "clk_b"}),
+           "both drops are reported in name order");
+
+    const dft::CaptureProcedure untouched =
+        dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 1}, {"clk_b", 1}}, dropped);
+    expect(untouched == derived && dropped.empty(), "a clock that clocks state is kept");
+
+    // A group keeps the clocks that still clock state and recomputes its timing
+    // from them, so the payload describes the group the run actually pulses.
+    dft::CaptureGroup mixed;
+    mixed.timing = dft::capture_timing_set(constraints, {"clk_a", "clk_b"}, 0.0);
+    dft::CaptureCycle cycle;
+    cycle.groups = {mixed};
+    dft::CaptureProcedure grouped;
+    grouped.kind = dft::CaptureKind::Grouped;
+    grouped.derived = false;
+    grouped.cycles = {cycle};
+    const dft::CaptureProcedure pruned =
+        dft::exclude_idle_clocks(grouped, constraints, {{"clk_a", 0}, {"clk_b", 1}}, dropped);
+    expect(pruned.cycles.size() == 1 && pruned.cycles[0].groups.size() == 1,
+           "a group with one surviving clock stays");
+    expect(pruned.cycles.size() == 1 &&
+               pruned.cycles[0].groups[0].timing.clocks == (std::vector<std::string>{"clk_b"}),
+           "the dropped clock leaves the timing set");
+    expect(pruned.cycles.size() == 1 && pruned.cycles[0].groups[0].timing.period == 20.0,
+           "the timing set is recomputed from the surviving clock");
+}
+
 void test_constraints_hash_unchanged() {
     db::Constraints constraints = make_constraints();
     const std::uint32_t before = db::constraints_hash(constraints);
@@ -327,6 +373,7 @@ int main() {
     test_edge_layout();
     test_canonical_payload();
     test_group_order();
+    test_clock_exclusion();
     test_constraints_hash_unchanged();
 
     if (failures != 0) {

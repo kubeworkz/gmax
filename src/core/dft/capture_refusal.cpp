@@ -241,23 +241,27 @@ void check_clock_repeated(const CaptureProcedure& procedure,
     }
 }
 
-// Condition 5: every declared clock clocks no state-holding gate, so nothing is
-// left to pulse. Section 3's clock-level exclusion is what drops such a clock and
-// warns while other clocks keep the run alive; that slice is not implemented yet,
-// so this pass refuses without dropping anything and the finding states only what
-// the design shows. ADR-013 section 4 refuses only once the list is emptied.
-void check_no_capture_clock(const std::vector<db::ClockGateCount>& clock_gates,
+// Condition 5: section 3's clock-level exclusion emptied the procedure, so nothing
+// is left to pulse. `procedure` is the excluded procedure the run would apply;
+// each clock the exclusion dropped gets its own line, in name order, and a run
+// that keeps even one clock is warned about the others instead of refused.
+void check_no_capture_clock(const CaptureProcedure& procedure,
+                            const std::vector<db::ClockGateCount>& clock_gates,
                             std::vector<CaptureRefusal>& refusals) {
-    bool any = false;
-    for (const db::ClockGateCount& clock : clock_gates) {
-        any = any || clock.gates > 0;
+    for (const CaptureCycle& cycle : procedure.cycles) {
+        if (!cycle.groups.empty()) {
+            return;
+        }
     }
-    if (any || clock_gates.empty()) {
+    if (clock_gates.empty()) {
         return;
     }
     for (const db::ClockGateCount& clock : clock_gates) {
+        if (clock.gates != 0) {
+            continue;
+        }
         add(refusals, CaptureRefusalCode::NoCaptureClock,
-            "'" + clock.clock + "' clocks no state-holding gate");
+            "'" + clock.clock + "' clocks no state-holding gate and was dropped");
     }
 }
 
@@ -291,7 +295,7 @@ find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& 
     check_shared_edge(procedure, refusals);
     check_group_timing(procedure, constraints, refusals);
     check_clock_repeated(procedure, refusals);
-    check_no_capture_clock(clock_gates, refusals);
+    check_no_capture_clock(procedure, clock_gates, refusals);
 
     // Contract order: condition, then the line, so fixing one finding never
     // reshuffles the others.

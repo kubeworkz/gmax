@@ -128,4 +128,20 @@ bool capture_group_timing_agrees(const db::Constraints& constraints,
 // edges stay zero when no group has a period.
 void assign_capture_edges(std::vector<CaptureGroup>& groups);
 
+// ADR-013 section 3's clock-level exclusion: a declared clock that clocks no
+// state-holding gate is left out of the procedure. `clock_gates` is the
+// declared-clock view of the design (db::clock_gate_counts), and `dropped`
+// receives the excluded clock names in name order so the caller can report them.
+//
+// A clock leaves every timing set that names it and the set is recomputed from
+// the clocks that remain; a group left with no clock is removed, and a cycle left
+// with no group is removed with it. An intermediate state whose domain is gone
+// goes too, and the cycle that is last after the drop carries none, because no
+// final cycle owns an intermediate value. The returned procedure is the one the
+// run applies, so the capture identity describes what is actually pulsed.
+CaptureProcedure exclude_idle_clocks(const CaptureProcedure& procedure,
+                                     const db::Constraints& constraints,
+                                     const std::vector<db::ClockGateCount>& clock_gates,
+                                     std::vector<std::string>& dropped);
+
 }  // namespace gmax::dft

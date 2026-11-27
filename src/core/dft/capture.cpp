@@ -259,6 +259,61 @@ bool capture_group_timing_agrees(const db::Constraints& constraints,
     return true;
 }
 
+CaptureProcedure exclude_idle_clocks(const CaptureProcedure& procedure,
+                                     const db::Constraints& constraints,
+                                     const std::vector<db::ClockGateCount>& clock_gates,
+                                     std::vector<std::string>& dropped) {
+    dropped.clear();
+    for (const db::ClockGateCount& clock : clock_gates) {
+        if (clock.gates == 0) {
+            dropped.push_back(clock.clock);
+        }
+    }
+    if (dropped.empty()) {
+        return procedure;
+    }
+    std::sort(dropped.begin(), dropped.end());
+
+    CaptureProcedure kept;
+    kept.kind = procedure.kind;
+    kept.derived = procedure.derived;
+    for (const CaptureCycle& cycle : procedure.cycles) {
+        CaptureCycle next;
+        for (const CaptureGroup& group : cycle.groups) {
+            std::vector<std::string> clocks;
+            for (const std::string& clock : group.timing.clocks) {
+                if (!std::binary_search(dropped.begin(), dropped.end(), clock)) {
+                    clocks.push_back(clock);
+                }
+            }
+            if (clocks.empty()) {
+                continue;
+            }
+            CaptureGroup kept_group;
+            kept_group.name = group.name;
+            // The period and waveform come from the clocks that remain, so the
+            // encoding never describes a clock the run does not pulse.
+            kept_group.timing = capture_timing_set(constraints, clocks, group.timing.edge);
+            next.groups.push_back(std::move(kept_group));
+        }
+        if (next.groups.empty()) {
+            continue;
+        }
+        for (const auto& entry : cycle.intermediate) {
+            if (!std::binary_search(dropped.begin(), dropped.end(), entry.first)) {
+                next.intermediate.push_back(entry);
+            }
+        }
+        kept.cycles.push_back(std::move(next));
+    }
+    // A different cycle can be last after the drop, and no final cycle carries an
+    // intermediate state (section 2).
+    if (!kept.cycles.empty()) {
+        kept.cycles.back().intermediate.clear();
+    }
+    return kept;
+}
+
 void assign_capture_edges(std::vector<CaptureGroup>& groups) {
     double slowest = 0.0;
     for (const CaptureGroup& group : groups) {

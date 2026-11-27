@@ -140,7 +140,7 @@ run_gmax(2 run_atpg "${flat_attached}" "${faults}" 100000 0 "${report}")
 check_text("${GMAX_ERR}" "gmax: cannot apply the capture procedure; refusing to grade"
     "flat ATPG refusal")
 check_text("${GMAX_ERR}"
-    "gmax:   no-capture-clock: 'a' clocks no state-holding gate"
+    "gmax:   no-capture-clock: 'a' clocks no state-holding gate and was dropped"
     "flat ATPG refusal")
 if(NOT "${GMAX_OUT}" STREQUAL "")
     message(FATAL_ERROR "a refused flat run graded: ${GMAX_OUT}")

@@ -273,21 +273,32 @@ void test_clock_repeated() {
 
 void test_no_capture_clock() {
     const db::Constraints constraints = make_constraints();
-    const dft::CaptureProcedure procedure = dft::resolve_capture_procedure(constraints);
+    const dft::CaptureProcedure derived = dft::resolve_capture_procedure(constraints);
+    std::vector<std::string> dropped;
 
-    const std::vector<dft::CaptureRefusal> emptied =
-        dft::find_capture_refusals(procedure, constraints, gates(0, 0));
-    expect(emptied.size() == 2, "every dropped clock gets its own finding");
-    expect(emptied.size() == 2 && emptied[0].code == dft::CaptureRefusalCode::NoCaptureClock,
+    // The exclusion runs before the refusal, so the procedure the pass sees is the
+    // one the run would apply.
+    const dft::CaptureProcedure emptied =
+        dft::exclude_idle_clocks(derived, constraints, gates(0, 0), dropped);
+    const std::vector<dft::CaptureRefusal> refusals =
+        dft::find_capture_refusals(emptied, constraints, gates(0, 0));
+    expect(refusals.size() == 2, "every dropped clock gets its own finding");
+    expect(refusals.size() == 2 && refusals[0].code == dft::CaptureRefusalCode::NoCaptureClock,
            "the findings carry condition 5");
-    expect(emptied.size() == 2 && emptied[0].detail == "'clk_a' clocks no state-holding gate",
+    expect(refusals.size() == 2 &&
+               refusals[0].detail == "'clk_a' clocks no state-holding gate and was dropped",
            "the first finding is the first clock in name order");
-    expect(emptied.size() == 2 && emptied[1].detail == "'clk_b' clocks no state-holding gate",
+    expect(refusals.size() == 2 &&
+               refusals[1].detail == "'clk_b' clocks no state-holding gate and was dropped",
            "the second finding is the second clock in name order");
 
-    expect(dft::find_capture_refusals(procedure, constraints, gates(0, 3)).empty(),
+    const dft::CaptureProcedure partial =
+        dft::exclude_idle_clocks(derived, constraints, gates(0, 3), dropped);
+    expect(!partial.cycles.empty(), "the clock that does clock state survives the drop");
+    expect(dft::find_capture_refusals(partial, constraints, gates(0, 3)).empty(),
            "one clock that does clock state is enough to run");
-    expect(dft::find_capture_refusals(procedure, constraints, {}).empty(),
+
+    expect(dft::find_capture_refusals(derived, constraints, {}).empty(),
            "without a design view condition 5 says nothing");
 }
 
