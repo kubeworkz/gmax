@@ -18,11 +18,12 @@ namespace gmax::db::dfdb {
 // byte-identical to what the previous release wrote.
 //
 // The additive minor sections are async (DFF/DLAT clear and preset, 1.1), enable
-// (DFF hold, 1.2), clock edge (DFF capture edge, 1.3) and constraints (the
-// canonical SDC model, 1.4), so older files still load: an absent section means
-// the default (no control, a rising edge, or no constraints).
+// (DFF hold, 1.2), clock edge (DFF capture edge, 1.3), constraints (the canonical
+// SDC model, 1.4) and false-path clock provenance (which endpoints the SDC wrote as
+// [get_clocks], 1.5), so older files still load: absent provenance means every
+// endpoint was written as an object.
 inline constexpr std::uint16_t kSchemaMajor = 1;
-inline constexpr std::uint16_t kSchemaMinor = 4;
+inline constexpr std::uint16_t kSchemaMinor = 5;
 // What a database without a constraints section is written as (ADR-012: "may
 // continue to use the 1.3 container layout").
 inline constexpr std::uint16_t kSchemaMinorWithoutConstraints = 3;

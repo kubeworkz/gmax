@@ -169,6 +169,17 @@ void test_schema_round_trip() {
 
     expect(database.save(bare.string()).ok(), "an unconstrained database saves");
     database.constraints() = make_constraints();
+    {
+        // ADR-013 section 5: which endpoints the SDC wrote as [get_clocks] is stored
+        // with the path, so a reloaded database still tells a clock endpoint from an
+        // object endpoint of the same name. It stays out of the canonical payload.
+        db::ConstraintFalsePath provenance;
+        provenance.from = {"clk_a"};
+        provenance.to = {"clk_b"};
+        provenance.from_clocks = {"clk_a"};
+        provenance.to_clocks = {"clk_b"};
+        database.constraints().false_paths.push_back(provenance);
+    }
     expect(database.save(attached.string()).ok(), "a constrained database saves");
 
     const auto bytes = [](const std::filesystem::path& path) {
@@ -180,18 +191,22 @@ void test_schema_round_trip() {
     const std::vector<std::uint8_t> attached_bytes = bytes(attached);
     expect(bare_bytes.size() > 8 && bare_bytes[6] == 3,
            "a database without constraints is still written as 1.3");
-    expect(attached_bytes.size() > 8 && attached_bytes[6] == 4,
-           "a database with constraints is written as 1.4");
+    expect(attached_bytes.size() > 8 && attached_bytes[6] == 5,
+           "a database with constraints is written as 1.5");
 
     db::DesignDb reloaded_bare;
     expect(db::DesignDb::load(bare.string(), reloaded_bare).ok(), "the 1.3 file loads");
     expect(!reloaded_bare.has_constraints(), "a 1.3 file loads with no constraints");
 
     db::DesignDb reloaded;
-    expect(db::DesignDb::load(attached.string(), reloaded).ok(), "the 1.4 file loads");
+    expect(db::DesignDb::load(attached.string(), reloaded).ok(), "the 1.5 file loads");
     expect(reloaded.has_constraints(), "a 1.4 file loads with constraints");
     expect(reloaded.constraints() == database.constraints(),
            "constraints survive the round trip exactly");
+    expect(!reloaded.constraints().false_paths.empty() &&
+               reloaded.constraints().false_paths.back().from_clocks ==
+                   std::vector<std::string>{"clk_a"},
+           "false-path clock provenance survives the database");
     expect(db::constraints_hash(reloaded.constraints()) ==
                db::constraints_hash(database.constraints()),
            "the reloaded constraints have the same hash");
@@ -375,6 +390,25 @@ void test_sat_applies_case_analysis() {
            "the case value makes the miter UNSAT, which is untestable not unknown");
 }
 
+// ADR-013 section 6: the clock provenance of a false-path endpoint is part of the
+// model but not of the canonical payload, so recording it never moves the hash.
+void test_false_path_provenance() {
+    db::Constraints plain;
+    plain.present = true;
+    plain.complete = true;
+    db::ConstraintFalsePath path;
+    path.from = {"clk_a"};
+    path.to = {"clk_b"};
+    plain.false_paths = {path};
+
+    db::Constraints tagged = plain;
+    tagged.false_paths[0].from_clocks = {"clk_a"};
+    tagged.false_paths[0].to_clocks = {"clk_b"};
+    expect(tagged != plain, "the provenance is part of the model");
+    expect(db::constraints_hash(tagged) == db::constraints_hash(plain),
+           "clock provenance does not move the constraint hash");
+}
+
 // ADR-012: constraints carry their own identity in the report, and this slice
 // claims no enforced construct until the engines apply the resolved values.
 void test_report_claims_no_enforcement() {
@@ -507,6 +541,7 @@ int main() {
     test_sat_applies_case_analysis();
     test_report_claims_no_enforcement();
     test_report_capture_object();
+    test_false_path_provenance();
     test_enforced_constructs();
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed" << std::endl;

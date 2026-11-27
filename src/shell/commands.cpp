@@ -27,6 +27,7 @@
 #include "core/db/design.h"
 #include "core/db/status.h"
 #include "core/dft/capture.h"
+#include "core/dft/capture_crossing.h"
 #include "core/dft/capture_refusal.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/sdc.h"
@@ -438,8 +439,17 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     const gmax::dft::CaptureProcedure capture_procedure =
         gmax::dft::exclude_idle_clocks(gmax::dft::resolve_capture_procedure(database.constraints()),
                                        database.constraints(), clock_gates, dropped_clocks);
-    const std::vector<gmax::dft::CaptureRefusal> capture_refusals =
+    // ADR-013 section 5: DFT003 is a question about the design, so it is a second
+    // pass over the same procedure. Both passes are merged before the block is
+    // written, so one run reports every reason instead of one reason per run.
+    std::vector<gmax::dft::CaptureRefusal> capture_refusals =
         gmax::dft::find_capture_refusals(capture_procedure, database.constraints(), clock_gates);
+    const std::vector<gmax::dft::CaptureRefusal> crossing_refusals =
+        gmax::dft::find_crossing_refusals(capture_procedure, database.constraints(),
+                                          database.flat(), database.strings());
+    capture_refusals.insert(capture_refusals.end(), crossing_refusals.begin(),
+                            crossing_refusals.end());
+    gmax::dft::sort_capture_refusals(capture_refusals);
     if (!capture_refusals.empty()) {
         gmax::dft::write_capture_refusals(err, capture_refusals);
         return ExitCode::Design;

@@ -74,6 +74,14 @@ target_link_libraries(capture_refusal_fixture PRIVATE gmax_core)
 gmax_set_warnings(capture_refusal_fixture)
 gmax_set_sanitizers(capture_refusal_fixture)
 
+add_executable(cross_domain_fixture
+  cross_domain_fixture.cpp)
+
+target_link_libraries(cross_domain_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(cross_domain_fixture)
+gmax_set_sanitizers(cross_domain_fixture)
+
 add_executable(fault_cli_test
   fault_cli_test.cpp)
 

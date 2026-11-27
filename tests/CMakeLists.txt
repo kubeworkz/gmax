@@ -72,6 +72,17 @@ add_test(NAME cli.capture-refusal-boundary
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-boundary
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_boundary.cmake)
 
+# ADR-013 section 5: DFT003 across a sequential clock boundary. A crossing with no
+# lockup latch and no excusing false path refuses; a lockup latch grades; an object
+# false path excuses; a false path between the two pulsed clocks does not, because it
+# removes the capture edge the procedure creates.
+add_test(NAME cli.capture-crossing
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-crossing
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_crossing.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.

@@ -45,7 +45,9 @@ struct CaptureRefusal {
 // means the procedure may be applied.
 //
 // Conditions 2 (`intermediate-state`) and 6 (`crossing-without-lockup`) are not
-// evaluated yet, because their inputs do not exist in this tree. Section 2 needs
+// evaluated by this pass. Condition 6 needs the netlist, so it lives in
+// capture_crossing.h and covers the sequential pairs a derived procedure can
+// produce. Section 2 needs
 // the scan-cell observability model (WP-104) to decide whether a domain is fully
 // scanned, and condition 6 needs the DFT003 crossing evaluation with its
 // lockup-latch and false-path excuses (ADR-013 section 5). A check that cannot
@@ -54,6 +56,11 @@ struct CaptureRefusal {
 std::vector<CaptureRefusal>
 find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& constraints,
                       const std::vector<db::ClockGateCount>& clock_gates);
+
+// Sorts findings into contract order (condition, then the line) and drops duplicates.
+// A caller that merges findings from more than one pass normalizes them again here,
+// so the printed block stays deterministic.
+void sort_capture_refusals(std::vector<CaptureRefusal>& refusals);
 
 // Writes the refusal block: the header once, then one `gmax:   <code>: <detail>`
 // line per finding. Writes nothing at all when there is nothing to refuse, so a

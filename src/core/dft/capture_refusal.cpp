@@ -301,6 +301,11 @@ find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& 
     check_clock_repeated(procedure, refusals);
     check_no_capture_clock(procedure, clock_gates, refusals);
 
+    sort_capture_refusals(refusals);
+    return refusals;
+}
+
+void sort_capture_refusals(std::vector<CaptureRefusal>& refusals) {
     // Contract order: condition, then the line, so fixing one finding never
     // reshuffles the others.
     std::sort(refusals.begin(), refusals.end(),
@@ -311,7 +316,6 @@ find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& 
                   return left.detail < right.detail;
               });
     refusals.erase(std::unique(refusals.begin(), refusals.end()), refusals.end());
-    return refusals;
 }
 
 void write_capture_refusals(std::ostream& out, const std::vector<CaptureRefusal>& refusals) {

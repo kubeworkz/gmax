@@ -387,6 +387,10 @@ std::vector<std::uint8_t> build_constraints(const Constraints& constraints) {
         write_names(writer, path.from);
         write_names(writer, path.through);
         write_names(writer, path.to);
+        // 1.5: which of those names came from a [get_clocks] query.
+        write_names(writer, path.from_clocks);
+        write_names(writer, path.through_clocks);
+        write_names(writer, path.to_clocks);
     }
 
     writer.u32(static_cast<std::uint32_t>(constraints.case_analysis.size()));
@@ -891,7 +895,7 @@ Status read_names(Reader& reader, std::vector<std::string>& out) {
     return Status{};
 }
 
-Status parse_constraints(Reader& reader, Constraints& constraints) {
+Status parse_constraints(Reader& reader, Constraints& constraints, const std::uint16_t minor) {
     constraints = Constraints{};
     constraints.present = true;
     constraints.complete = reader.u8() != 0;
@@ -974,6 +978,20 @@ Status parse_constraints(Reader& reader, Constraints& constraints) {
         status = read_names(reader, path.to);
         if (!status) {
             return status;
+        }
+        if (minor >= 5) {
+            status = read_names(reader, path.from_clocks);
+            if (!status) {
+                return status;
+            }
+            status = read_names(reader, path.through_clocks);
+            if (!status) {
+                return status;
+            }
+            status = read_names(reader, path.to_clocks);
+            if (!status) {
+                return status;
+            }
         }
         constraints.false_paths.push_back(std::move(path));
     }
@@ -1395,7 +1413,7 @@ Status parse(std::span<const std::uint8_t> bytes, Design& design, FlatNetlist& f
         constraints->present = false;
         if (const Entry* entry = find(Section::Constraints); entry != nullptr) {
             Reader section = open(*entry);
-            const Status status = parse_constraints(section, *constraints);
+            const Status status = parse_constraints(section, *constraints, minor);
             if (!status) {
                 return status;
             }

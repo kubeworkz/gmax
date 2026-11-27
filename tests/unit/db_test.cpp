@@ -437,7 +437,7 @@ int main() {
     };
 
     std::vector<std::uint8_t> newer = good;
-    newer[6] = 5;  // minor version, one past what this build writes (1.4)
+    newer[6] = 6;  // minor version, one past what this build writes (1.5)
     expect(load_error(newer) == Error::NewerSchema, "a newer minor is refused, not guessed");
 
     std::vector<std::uint8_t> foreign = good;

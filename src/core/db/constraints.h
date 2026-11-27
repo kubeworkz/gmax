@@ -69,6 +69,17 @@ struct ConstraintFalsePath {
     std::vector<std::string> from;
     std::vector<std::string> through;
     std::vector<std::string> to;
+    // The endpoints the SDC wrote as [get_clocks], which is how the reader classified
+    // them; `from`/`through`/`to` keep every name. The distinction matters because a
+    // false path between two pulsed clocks is exactly the capture edge DFT019 reports,
+    // while an object endpoint can excuse a crossing (ADR-013 section 5). Provenance
+    // stays out of the canonical constraint payload, so attaching it never moves
+    // `constraints_hash` (section 6), but it survives the database so a run can tell
+    // `-from [get_clocks clk_a]` from `-from [get_ports clk_a]` when the clock took
+    // the port's name.
+    std::vector<std::string> from_clocks;
+    std::vector<std::string> through_clocks;
+    std::vector<std::string> to_clocks;
 
     friend bool operator==(const ConstraintFalsePath&, const ConstraintFalsePath&) = default;
 };
