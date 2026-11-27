@@ -126,6 +126,18 @@ void capture_entry(std::ostringstream& out, const CaptureReport& capture, const 
     out << '}';
 }
 
+std::vector<std::string> enforced_constructs(const bool case_analysis,
+                                             const CaptureReport& capture) {
+    std::vector<std::string> enforced;
+    if (case_analysis) {
+        enforced.emplace_back("case_analysis");
+    }
+    if (!capture.absent) {
+        enforced.emplace_back("clock_groups");
+    }
+    return enforced;
+}
+
 std::string coverage_json(const CoverageReport& report) {
     const CoverageSummary& summary = report.summary;
     std::ostringstream out;

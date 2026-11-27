@@ -90,6 +90,14 @@ struct CoverageReport {
     std::vector<FaultOutcome> faults;
 };
 
+// The construct names the run applied, in a fixed order so two runs over one input
+// report byte-identical coverage. `case_analysis` is what PODEM and the SAT miter
+// consume; a `capture` object that is not absent means a procedure ran and applied
+// the clock-group model (ADR-013 sections 1 and 6). False paths stay out: ADR-012
+// section 4 retains them rather than applying them, and the engine that uses them
+// adds the name here when it does.
+std::vector<std::string> enforced_constructs(bool case_analysis, const CaptureReport& capture);
+
 // Stable, compact JSON. It is deliberately built by hand here rather than by a
 // general JSON writer: the shape is tiny, and keeping field order fixed makes
 // repeated runs byte-identical.

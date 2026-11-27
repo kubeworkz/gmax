@@ -399,6 +399,30 @@ void test_report_claims_no_enforcement() {
            "a report with no procedure claims no capture");
 }
 
+// ADR-013 section 6: the enforced list names what ran, in a fixed order, and an
+// enforced capture names the clock-group model it applied.
+void test_enforced_constructs() {
+    gmax::report::CaptureReport absent;
+    expect(gmax::report::enforced_constructs(false, absent).empty(),
+           "a run that applied nothing claims nothing");
+
+    gmax::report::CaptureReport capture;
+    capture.absent = false;
+    capture.procedure = "sequential";
+    const std::vector<std::string> both = gmax::report::enforced_constructs(true, capture);
+    expect(both == (std::vector<std::string>{"case_analysis", "clock_groups"}),
+           "case analysis comes first and the applied capture follows");
+    expect(gmax::report::enforced_constructs(false, capture) ==
+               (std::vector<std::string>{"clock_groups"}),
+           "a capture-only run names the clock-group model");
+    expect(gmax::report::enforced_constructs(true, absent) ==
+               (std::vector<std::string>{"case_analysis"}),
+           "a case-only run names only case analysis");
+    for (const std::string& name : both) {
+        expect(name != "false_paths", "false paths stay retained, not enforced");
+    }
+}
+
 // ADR-013 section 6: the capture object names the procedure the run applied, its
 // provenance and its payload hash, and only the manifest carries the body.
 void test_report_capture_object() {
@@ -483,6 +507,7 @@ int main() {
     test_sat_applies_case_analysis();
     test_report_claims_no_enforcement();
     test_report_capture_object();
+    test_enforced_constructs();
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed" << std::endl;
         return 1;

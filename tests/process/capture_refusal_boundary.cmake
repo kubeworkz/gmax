@@ -71,6 +71,17 @@ string(FIND "${coverage_text}"
 if(capture_position EQUAL -1)
     message(FATAL_ERROR "the coverage report claims no enforced procedure: ${coverage_text}")
 endif()
+# ADR-013 section 6: the run applied the procedure, so the enforced list names the
+# clock-group model beside whatever else ran.
+string(FIND "${coverage_text}" "\"enforced\":[\"clock_groups\"]" enforced_position)
+if(enforced_position EQUAL -1)
+    message(FATAL_ERROR "the coverage report claims no applied clock groups: ${coverage_text}")
+endif()
+string(FIND "${coverage_text}" "false_paths" false_path_position)
+if(NOT false_path_position EQUAL -1)
+    message(FATAL_ERROR "the report claims false paths the run never applied: ${coverage_text}")
+endif()
+
 if(NOT EXISTS "${reports}/manifest.json")
     message(FATAL_ERROR "the boundary run wrote no manifest")
 endif()

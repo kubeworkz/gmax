@@ -85,7 +85,8 @@ add_test(NAME cli.iscas85
 
 # ADR-012: the attachment path against a real Yosys netlist. read_verilog
 # ingests c432, read_sdc --design/--output attaches a case-analysis set, and
-# run_atpg must report that set's status and hash with an empty enforced list.
+# run_atpg must report that set's status and hash, naming case_analysis in the
+# enforced list and claiming no capture because no clock is declared.
 # It shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made
 # mandatory by GMAX_G0_1_GATE=1 in the gate job.
 add_test(NAME cli.sdc-attach
