@@ -207,9 +207,18 @@ ClockDomains clock_domains(const Constraints& constraints, const FlatNetlist& fl
 // are sorted and unique; two names on one net appear separately and report the
 // same gates, because they are one domain with two names. A clock whose source
 // resolves to no net is left out, as in `clock_domains`.
+//
+// `gates` is every state-holding element that samples the net, which is the count
+// section 4's condition 5 asks about. A capture cycle can pulse only an
+// edge-triggered element, so `captured` counts the DFFs and scan cells and leaves
+// lockup latches out, and `scan_cells` is the subset of those the netlist marks as
+// scan cells -- the numerator section 4's condition 2 needs to decide whether a
+// domain is fully scanned.
 struct ClockGateCount {
     std::string clock;
     std::size_t gates = 0;
+    std::size_t captured = 0;
+    std::size_t scan_cells = 0;
 
     friend bool operator==(const ClockGateCount&, const ClockGateCount&) = default;
 };

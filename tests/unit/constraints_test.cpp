@@ -332,6 +332,96 @@ void test_clock_sources_and_domains() {
            "a clock with no source is not part of the per-clock view");
 }
 
+// ADR-013 section 2: only an edge-triggered element can be captured, so the
+// per-clock view separates every state-holding element that samples the net from
+// the ones a capture cycle can pulse, and counts how many of those the netlist
+// marks as scan cells. A lockup latch is state but is captured by no cycle, so it
+// raises `gates` alone; that is what keeps a design with a latch on a crossing
+// from reading as a partially scanned domain.
+void test_scan_cell_counts() {
+    const auto flop = [](const db::GateType type, const std::string& name,
+                         const std::string& clock) {
+        db::Gate gate;
+        gate.type = type;
+        gate.name = name;
+        gate.fanins = {"d", clock};
+        gate.out = "n_" + name;
+        return gate;
+    };
+    const auto buffer = [](const std::string& name) {
+        db::Gate gate;
+        gate.type = db::GateType::Buf;
+        gate.name = "g_" + name;
+        gate.fanins = {"n_" + name};
+        gate.out = "q_" + name;
+        return gate;
+    };
+
+    db::Module top;
+    top.name = "top";
+    top.inputs = {"clk_a", "clk_b", "clk_c", "d"};
+    const auto add = [&top, &flop, &buffer](const db::GateType type, const std::string& name,
+                                            const std::string& clock) {
+        top.gates.push_back(flop(type, name, clock));
+        top.gates.push_back(buffer(name));
+        top.outputs.push_back("q_" + name);
+    };
+    // clk_a: three scan cells, five flops and one lockup latch.
+    add(db::GateType::ScanCell, "sc_a0", "clk_a");
+    add(db::GateType::ScanCell, "sc_a1", "clk_a");
+    add(db::GateType::ScanCell, "sc_a2", "clk_a");
+    add(db::GateType::Dff, "ff_a0", "clk_a");
+    add(db::GateType::Dff, "ff_a1", "clk_a");
+    add(db::GateType::Dff, "ff_a2", "clk_a");
+    add(db::GateType::Dff, "ff_a3", "clk_a");
+    add(db::GateType::Dff, "ff_a4", "clk_a");
+    add(db::GateType::Dlat, "dl_a", "clk_a");
+    // clk_b: unscanned; clk_c: fully scanned.
+    add(db::GateType::Dff, "ff_b", "clk_b");
+    add(db::GateType::ScanCell, "sc_c0", "clk_c");
+    add(db::GateType::ScanCell, "sc_c1", "clk_c");
+
+    db::Design design;
+    design.top = "top";
+    design.modules = {top};
+
+    db::DesignDb database;
+    database.design() = std::move(design);
+    expect(database.flatten().ok(), "the partially scanned design flattens");
+
+    db::ConstraintClock clk_a;
+    clk_a.name = "clk_a";
+    clk_a.source = "clk_a";
+    db::ConstraintClock clk_b;
+    clk_b.name = "clk_b";
+    clk_b.source = "clk_b";
+    db::ConstraintClock clk_c;
+    clk_c.name = "clk_c";
+    clk_c.source = "clk_c";
+    db::Constraints constraints;
+    constraints.clocks = {clk_a, clk_b, clk_c};
+
+    const std::vector<db::ClockGateCount> counts =
+        db::clock_gate_counts(constraints, database.flat(), database.strings());
+    expect(counts.size() == 3, "every declared clock is reported");
+    expect(counts.size() == 3 && counts[0].clock == "clk_a" && counts[0].gates == 9 &&
+               counts[0].captured == 8 && counts[0].scan_cells == 3,
+           "a partially scanned domain reports all three counts");
+    expect(counts.size() == 3 && counts[1].clock == "clk_b" && counts[1].gates == 1 &&
+               counts[1].captured == 1 && counts[1].scan_cells == 0,
+           "an unscanned domain captures one element and scans none");
+    expect(counts.size() == 3 && counts[2].clock == "clk_c" && counts[2].gates == 2 &&
+               counts[2].captured == 2 && counts[2].scan_cells == 2,
+           "a fully scanned domain captures only scan cells");
+
+    // The domain view keeps its old meaning: every state-holding element, latches
+    // included, so a counted latch still reaches the reported flop total.
+    const db::ClockDomains domains =
+        db::clock_domains(constraints, database.flat(), database.strings());
+    expect(domains.domains == 3 && domains.flops == 12,
+           "the domain view still counts every state-holding gate");
+}
+
 // ADR-012 section 4: a case value is a hard assignment applied before the fault
 // is activated. y = ~a with y stuck-at 1 activates only when a = 1, so a case
 // value of 0 makes the fault untestable without touching the unconstrained
@@ -654,6 +744,7 @@ int main() {
     test_incomplete_sets();
     test_status_and_absent();
     test_clock_sources_and_domains();
+    test_scan_cell_counts();
     test_schema_round_trip();
     test_podem_applies_case_analysis();
     test_sat_applies_case_analysis();

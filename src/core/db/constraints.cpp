@@ -265,6 +265,12 @@ bool state_holding(const GateType type) {
     return type == GateType::Dff || type == GateType::Dlat || type == GateType::ScanCell;
 }
 
+// The state-holding elements a capture cycle can pulse. A DLAT holds a value for
+// a crossing rather than for a capture edge, so it is state but never captured.
+bool edge_triggered(const GateType type) {
+    return type == GateType::Dff || type == GateType::ScanCell;
+}
+
 // The net a declared clock drives, or kInvalidId when the design has no net of
 // that name. A clock names the object it drives, so that net is the domain key.
 NetId declared_clock_net(const FlatNetlist& flat, const StringTable& strings,
@@ -291,12 +297,23 @@ NetId sampled_clock(const FlatNetlist& flat, const std::uint32_t gate) {
     return flat.fanins[begin + 1];
 }
 
+// What one clock net drives, split the way section 4 asks: every state-holding
+// gate that samples the net, the edge-triggered ones a capture cycle can pulse,
+// and how many of those the netlist marks as scan cells.
+struct DomainCounts {
+    std::size_t gates = 0;
+    std::size_t captured = 0;
+    std::size_t scan_cells = 0;
+};
+
 // One declared clock bound to the design: the clock itself, the net it drives,
-// and how many state-holding gates sample that net.
+// and that net's counts.
 struct ClockBinding {
     const ConstraintClock* clock = nullptr;
     NetId net = kInvalidId;
     std::size_t gates = 0;
+    std::size_t captured = 0;
+    std::size_t scan_cells = 0;
 };
 
 // Resolves each declared clock once and counts the gates sampling its net in one
@@ -307,13 +324,13 @@ std::vector<ClockBinding> bind_declared_clocks(const Constraints& constraints,
                                                const StringTable& strings) {
     std::vector<ClockBinding> bindings;
     bindings.reserve(constraints.clocks.size());
-    std::map<NetId, std::size_t> gates_per_net;
+    std::map<NetId, DomainCounts> counts_per_net;
     for (const ConstraintClock& clock : constraints.clocks) {
         ClockBinding binding;
         binding.clock = &clock;
         binding.net = declared_clock_net(flat, strings, clock.source);
         if (binding.net != kInvalidId) {
-            gates_per_net.emplace(binding.net, 0);
+            counts_per_net.emplace(binding.net, DomainCounts{});
         }
         bindings.push_back(std::move(binding));
     }
@@ -321,15 +338,24 @@ std::vector<ClockBinding> bind_declared_clocks(const Constraints& constraints,
         if (!state_holding(flat.type[gate])) {
             continue;
         }
-        const auto found = gates_per_net.find(sampled_clock(flat, gate));
-        if (found != gates_per_net.end()) {
-            ++found->second;
+        const auto found = counts_per_net.find(sampled_clock(flat, gate));
+        if (found == counts_per_net.end()) {
+            continue;
+        }
+        ++found->second.gates;
+        if (edge_triggered(flat.type[gate])) {
+            ++found->second.captured;
+        }
+        if (flat.type[gate] == GateType::ScanCell) {
+            ++found->second.scan_cells;
         }
     }
     for (ClockBinding& binding : bindings) {
-        const auto found = gates_per_net.find(binding.net);
-        if (found != gates_per_net.end()) {
-            binding.gates = found->second;
+        const auto found = counts_per_net.find(binding.net);
+        if (found != counts_per_net.end()) {
+            binding.gates = found->second.gates;
+            binding.captured = found->second.captured;
+            binding.scan_cells = found->second.scan_cells;
         }
     }
     return bindings;
@@ -368,6 +394,8 @@ std::vector<ClockGateCount> clock_gate_counts(const Constraints& constraints,
         ClockGateCount count;
         count.clock = binding.clock->name;
         count.gates = binding.gates;
+        count.captured = binding.captured;
+        count.scan_cells = binding.scan_cells;
         counts.push_back(std::move(count));
     }
     std::sort(counts.begin(), counts.end(),
