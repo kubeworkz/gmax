@@ -170,8 +170,8 @@ run_gmax(2 run_atpg "${incomplete_db}" "${faults}" 100000 0 "${incomplete_report
 check_text("${GMAX_ERR}" "design constraints are incomplete" "c432 incomplete refusal")
 check_text("${GMAX_ERR}" "refusing to grade" "c432 incomplete refusal")
 check_absent("${GMAX_OUT}" "raw faults:" "c432 incomplete refusal")
-if(EXISTS "${incomplete_report}/coverage.json" OR EXISTS "${incomplete_report}/manifest.json")
-    message(FATAL_ERROR "run_atpg wrote reports for an incomplete constraint set")
+if(EXISTS "${incomplete_report}")
+    message(FATAL_ERROR "run_atpg left a report directory for an incomplete constraint set")
 endif()
 
 file(MAKE_DIRECTORY "${GMAX_REPORTS_DIR}/sdc-attach")

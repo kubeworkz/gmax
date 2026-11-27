@@ -373,13 +373,19 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         err << "gmax: report-dir must not be empty\n";
         return ExitCode::Usage;
     }
+    // ADR-013 section 4: a refusal writes nothing, so the report directory is not created
+    // during argument handling, where a later refusal would leave it behind. Only a path
+    // that can never hold the reports is rejected here, and that check creates nothing.
     if (write_reports) {
         std::error_code directory_error;
-        std::filesystem::create_directories(report_directory, directory_error);
-        if (directory_error || !std::filesystem::is_directory(report_directory, directory_error)) {
+        const std::filesystem::file_status report_status =
+            std::filesystem::status(report_directory, directory_error);
+        const std::filesystem::file_type report_type = report_status.type();
+        if (report_type != std::filesystem::file_type::not_found &&
+            report_type != std::filesystem::file_type::none &&
+            !std::filesystem::is_directory(report_status)) {
             err << "gmax: cannot use report directory '" << report_directory
-                << "': " << (directory_error ? directory_error.message() : "not a directory")
-                << '\n';
+                << "': not a directory\n";
             return ExitCode::Design;
         }
     }
@@ -651,6 +657,16 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     const std::string coverage_text = report::coverage_json(coverage);
 
     if (write_reports) {
+        // ADR-013 section 4: the directory appears only when the reports are about to be
+        // written, so every refusal above leaves no trace on disk.
+        std::error_code directory_error;
+        std::filesystem::create_directories(report_directory, directory_error);
+        if (directory_error || !std::filesystem::is_directory(report_directory, directory_error)) {
+            err << "gmax: cannot use report directory '" << report_directory
+                << "': " << (directory_error ? directory_error.message() : "not a directory")
+                << '\n';
+            return ExitCode::Design;
+        }
         const std::filesystem::path coverage_path =
             std::filesystem::path(report_directory) / "coverage.json";
         const std::filesystem::path manifest_path =

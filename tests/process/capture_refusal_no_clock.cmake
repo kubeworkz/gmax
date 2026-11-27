@@ -72,15 +72,33 @@ if(out MATCHES "raw faults:")
     message(FATAL_ERROR "a refused run printed fault counts: ${out}")
 endif()
 
-# Section 3: a refusal writes no coverage report and no manifest. The report
-# directory itself is still created during argument handling on this branch, so
-# this test asserts the artifacts rather than the directory; the deferred-creation
-# change asserts the directory elsewhere.
-foreach(artifact coverage.json manifest.json)
-    if(EXISTS "${reports}/${artifact}")
-        message(FATAL_ERROR "a refused run wrote ${artifact}")
-    endif()
-endforeach()
+# Section 4: a refusal writes nothing, so the report directory must not exist
+# either. Argument handling rejects only an unusable path; creation is deferred to
+# the point where the reports are about to be written, which a refusal never reaches.
+if(EXISTS "${reports}")
+    message(FATAL_ERROR "a refused run left a report directory: ${reports}")
+endif()
+
+# The up-front check still rejects a path that can never hold the reports, before the
+# design is loaded and without creating or touching anything.
+set(not_a_directory "${WORK_DIR}/not-a-directory")
+file(WRITE "${not_a_directory}" "occupied\n")
+execute_process(
+    COMMAND "${GMAX_BINARY}" run_atpg "${database}" "${faults}" 100000 0 "${not_a_directory}"
+    RESULT_VARIABLE blocked_result
+    OUTPUT_VARIABLE blocked_out
+    ERROR_VARIABLE blocked_err)
+if(NOT "${blocked_result}" STREQUAL "2")
+    message(FATAL_ERROR
+        "an unusable report path returned ${blocked_result}, expected 2: ${blocked_err}${blocked_out}")
+endif()
+check_contains("${blocked_err}"
+    "gmax: cannot use report directory '${not_a_directory}': not a directory"
+    "unusable report path")
+file(READ "${not_a_directory}" blocked_content)
+if(NOT "${blocked_content}" STREQUAL "occupied\n")
+    message(FATAL_ERROR "the refused report path was modified: ${blocked_content}")
+endif()
 
 file(SHA256 "${database}" hash_after)
 if(NOT hash_before STREQUAL hash_after)

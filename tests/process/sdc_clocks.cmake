@@ -146,8 +146,8 @@ check_text("${GMAX_ERR}"
 if(NOT "${GMAX_OUT}" STREQUAL "")
     message(FATAL_ERROR "a refused flat run graded: ${GMAX_OUT}")
 endif()
-if(EXISTS "${report}/coverage.json")
-    message(FATAL_ERROR "a refused flat run wrote a coverage report")
+if(EXISTS "${report}")
+    message(FATAL_ERROR "a refused flat run left a report directory")
 endif()
 
 file(REMOVE_RECURSE "${WORK_DIR}")

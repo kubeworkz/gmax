@@ -107,8 +107,8 @@ check_contains("${RUN_ERR}" "gmax: cannot apply the capture procedure; refusing 
     "crossing header")
 check_contains("${RUN_ERR}" "${finding_head}" "crossing finding head")
 check_contains("${RUN_ERR}" "${finding_tail}" "crossing finding tail")
-if(EXISTS "${WORK_DIR}/crossing-report/coverage.json")
-    message(FATAL_ERROR "a refused crossing wrote a coverage report")
+if(EXISTS "${WORK_DIR}/crossing-report")
+    message(FATAL_ERROR "a refused crossing left a report directory")
 endif()
 
 # 2. The same procedure with a lockup latch on the path grades.
