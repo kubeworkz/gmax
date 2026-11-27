@@ -280,11 +280,9 @@ void test_no_capture_clock() {
     expect(emptied.size() == 2, "every dropped clock gets its own finding");
     expect(emptied.size() == 2 && emptied[0].code == dft::CaptureRefusalCode::NoCaptureClock,
            "the findings carry condition 5");
-    expect(emptied.size() == 2 &&
-               emptied[0].detail == "'clk_a' clocks no state-holding gate",
+    expect(emptied.size() == 2 && emptied[0].detail == "'clk_a' clocks no state-holding gate",
            "the first finding is the first clock in name order");
-    expect(emptied.size() == 2 &&
-               emptied[1].detail == "'clk_b' clocks no state-holding gate",
+    expect(emptied.size() == 2 && emptied[1].detail == "'clk_b' clocks no state-holding gate",
            "the second finding is the second clock in name order");
 
     expect(dft::find_capture_refusals(procedure, constraints, gates(0, 3)).empty(),
