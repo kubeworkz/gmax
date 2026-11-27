@@ -269,6 +269,51 @@ void test_clock_sources_and_domains() {
     misplaced.clocks.push_back(clk_ra);
     const db::ClockDomains reported = db::clock_domains(misplaced, flat, strings);
     expect(reported.domains == 1 && reported.flops == 1, "a clock on a non-input binds no domain");
+
+    // Two names on one net are one domain, counted once, while each name still
+    // reports the gates that net clocks.
+    db::ConstraintClock alias;
+    alias.name = "clk_alias";
+    alias.source = "clk_a";
+    db::Constraints aliased = one;
+    aliased.clocks.push_back(alias);
+    const db::ClockDomains deduped = db::clock_domains(aliased, flat, strings);
+    expect(deduped.domains == 1 && deduped.flops == 1, "two names on one net are one domain");
+
+    const std::vector<db::ClockGateCount> aliased_gates =
+        db::clock_gate_counts(aliased, flat, strings);
+    expect(aliased_gates.size() == 2, "both names of one net are reported");
+    expect(aliased_gates.size() == 2 && aliased_gates[0].clock == "clk_a" &&
+               aliased_gates[0].gates == 1,
+           "the first name reports its net's gates");
+    expect(aliased_gates.size() == 2 && aliased_gates[1].clock == "clk_alias" &&
+               aliased_gates[1].gates == 1,
+           "the second name reports the same net's gates");
+
+    // A clock whose source names no net still appears with zero gates, so a
+    // refusal can name it; a clock with no source is not part of the view.
+    db::ConstraintClock absent;
+    absent.name = "clk_absent";
+    absent.source = "absent";
+    db::Constraints unresolvable = one;
+    unresolvable.clocks.push_back(absent);
+    const std::vector<db::ClockGateCount> unresolved =
+        db::clock_gate_counts(unresolvable, flat, strings);
+    expect(unresolved.size() == 2 && unresolved[0].clock == "clk_a" && unresolved[0].gates == 1,
+           "a resolvable clock keeps its gate count beside an unresolvable one");
+    expect(unresolved.size() == 2 && unresolved[1].clock == "clk_absent" &&
+               unresolved[1].gates == 0,
+           "a clock whose source names no net reports zero gates");
+    const db::ClockDomains still = db::clock_domains(unresolvable, flat, strings);
+    expect(still.domains == 1 && still.flops == 1, "an unresolvable clock adds no domain");
+
+    db::ConstraintClock sourceless;
+    sourceless.name = "clk_bare";
+    db::Constraints bare = one;
+    bare.clocks.push_back(sourceless);
+    const std::vector<db::ClockGateCount> bare_gates = db::clock_gate_counts(bare, flat, strings);
+    expect(bare_gates.size() == 1 && bare_gates[0].clock == "clk_a",
+           "a clock with no source is not part of the per-clock view");
 }
 
 // ADR-012 section 4: a case value is a hard assignment applied before the fault
