@@ -46,6 +46,13 @@ namespace gmax::dft {
 // zeroed timing set, because the profile may only name clocks the SDC creates.
 // A clock repeated across the procedure is accepted here and refused later:
 // section 4 condition 4 is a run-level refusal over a well-formed procedure.
+//
+// The same split applies to a group that holds clocks the SDC keeps apart, which
+// JSON can express and this reader therefore accepts: the document is well formed,
+// and whether the capture it describes is legal is condition 1's question, answered
+// over every group of the procedure whatever its shape. Reading it as a syntax
+// error would put one verdict in two places and would refuse at load a document
+// whose only problem section 4 already names precisely.
 
 struct CaptureProfileResult {
     // False when any error diagnostic was raised. `procedure` is unspecified

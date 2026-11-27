@@ -119,13 +119,17 @@ void add(std::vector<CaptureRefusal>& refusals, const CaptureRefusalCode code, s
     refusals.push_back(std::move(refusal));
 }
 
-// Condition 1, first trigger: a simultaneous cycle pulses clocks the SDC keeps
-// apart. Grouped cycles reach the second trigger below rather than this one.
-void check_simultaneous(const CaptureProcedure& procedure, const db::Constraints& constraints,
-                        std::vector<CaptureRefusal>& refusals) {
-    if (procedure.kind != CaptureKind::Simultaneous) {
-        return;
-    }
+// Condition 1, first trigger: one group captures clocks the SDC keeps apart. A
+// group is one capture edge in every shape -- section 1 separates the groups of a
+// grouped cycle by edge, never the clocks inside one group -- so every group of
+// every cycle is asked, not only a simultaneous procedure's single group.
+//
+// Gating this on the kind let a grouped profile declare a group spanning two
+// declared groups, and section 3's exclusion could then flip the verdict just by
+// dropping a neighbouring clock and leaving that group alone. The verdict belongs
+// to the group, so it does not depend on the shape or on the drop.
+void check_group_domains(const CaptureProcedure& procedure, const db::Constraints& constraints,
+                         std::vector<CaptureRefusal>& refusals) {
     for (std::size_t c = 0; c < procedure.cycles.size(); ++c) {
         for (const CaptureGroup& group : procedure.cycles[c].groups) {
             const std::vector<std::string>& clocks = group.timing.clocks;
@@ -291,7 +295,7 @@ find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& 
     std::vector<CaptureRefusal> refusals;
     // Every decidable condition is evaluated before anything is printed, so one
     // run reports every reason instead of one reason per run.
-    check_simultaneous(procedure, constraints, refusals);
+    check_group_domains(procedure, constraints, refusals);
     check_shared_edge(procedure, refusals);
     check_group_timing(procedure, constraints, refusals);
     check_clock_repeated(procedure, refusals);

@@ -12,6 +12,7 @@
 
 #include "core/db/constraints.h"
 #include "core/dft/capture.h"
+#include "core/dft/capture_profile.h"
 #include "core/dft/capture_refusal.h"
 
 namespace db = gmax::db;
@@ -302,26 +303,15 @@ void test_no_capture_clock() {
            "without a design view condition 5 says nothing");
 }
 
-// The re-derived kind can hand a grouped procedure to condition 1. Here a grouped
-// cycle keeps clk_a and clk_b in one group while the SDC puts them in two, which
-// is allowed while the cycle has a second group: the shape is grouped, so the
-// first trigger does not look at the group. Dropping clk_c's idle clock leaves one
-// group, the shape becomes simultaneous, and the same group is now a capture of two
-// domains on one edge.
-//
-// The behaviour is chosen, not incidental: the exclusion neither splits nor
-// re-groups a surviving group, and condition 1 refuses it. Grading it instead would
-// accept a simultaneous capture across declared groups that the ADR refuses, and
-// keeping the old kind only to avoid the refusal would describe a shape the cycles
-// no longer have.
-void test_exclusion_into_simultaneous() {
-    db::Constraints split;
-    split.present = true;
-    split.complete = true;
+// A profile file can declare one group holding clocks the SDC keeps apart -- see the
+// mixed-group note in capture_profile.h -- so the verdict belongs to condition 1 and
+// must not depend on whether section 3 happens to drop a neighbouring clock. Condition
+// 1 asks every group of every shape, because a group is one capture edge whether its
+// cycle has a second group or not; the drop below only changes the shape, and the
+// finding is identical before and after it.
+void test_group_spanning_declared_groups() {
     // One period and no waveform, so condition 3 has nothing to disagree about and
-    // the only thing separating them is the declared group.
-    split.clocks = {make_clock("clk_a", 10.0), make_clock("clk_b", 10.0),
-                    make_clock("clk_c", 20.0)};
+    // the only thing separating clk_a from clk_b is the declared group.
     db::ConstraintClockGroup fast;
     fast.kind = db::ClockGroupKind::Asynchronous;
     fast.name = "fast";
@@ -334,50 +324,66 @@ void test_exclusion_into_simultaneous() {
     third.kind = db::ClockGroupKind::Asynchronous;
     third.name = "third";
     third.groups = {{"clk_c"}};
+
+    db::Constraints split;
+    split.present = true;
+    split.complete = true;
+    split.clocks = {make_clock("clk_a", 10.0), make_clock("clk_b", 10.0),
+                    make_clock("clk_c", 20.0)};
     split.clock_groups = {fast, slow, third};
 
-    const dft::CaptureProcedure grouped = make_procedure(
-        dft::CaptureKind::Grouped, {cycle_of({make_group(split, {"clk_a", "clk_b"}, 0.0),
-                                              make_group(split, {"clk_c"}, 20.0)})});
-    expect(dft::find_capture_refusals(grouped, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 1}})
-               .empty(),
-           "a grouped cycle may hold clocks the SDC keeps apart");
+    const dft::CaptureProfileResult profile =
+        dft::read_capture_profile(R"({"capture": {"kind": "grouped", "cycles": [{"groups": [)"
+                                  R"({"name": "mixed", "clocks": ["clk_a", "clk_b"], "edge": 0},)"
+                                  R"({"clocks": ["clk_c"], "edge": 20}]}]}})",
+                                  split, "capture.json");
+    expect(profile.ok && profile.declared,
+           "a profile can declare a group spanning declared groups");
+    expect(profile.procedure.kind == dft::CaptureKind::Grouped, "the declared shape is grouped");
+
+    const std::string detail =
+        "cycle 0 pulses 'clk_a' (group 'fast') and 'clk_b' (group 'slow'), which "
+        "set_clock_groups keeps apart";
+    const std::vector<dft::CaptureRefusal> declared = dft::find_capture_refusals(
+        profile.procedure, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 1}});
+    expect(declared.size() == 1, "the grouped procedure refuses before any drop");
+    expect(declared.size() == 1 &&
+               declared[0].code == dft::CaptureRefusalCode::SimultaneousAcrossGroups,
+           "condition 1 is what refuses the group");
+    expect(declared.size() == 1 && declared[0].detail == detail,
+           "the finding names the two declared groups of the mixed group");
 
     std::vector<std::string> dropped;
     const dft::CaptureProcedure simultaneous = dft::exclude_idle_clocks(
-        grouped, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 0}}, dropped);
+        profile.procedure, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 0}}, dropped);
     expect(dropped == (std::vector<std::string>{"clk_c"}), "only the idle clock is dropped");
     expect(simultaneous.kind == dft::CaptureKind::Simultaneous,
-           "one group left makes the procedure simultaneous");
-
-    const std::vector<dft::CaptureRefusal> refusals =
-        dft::find_capture_refusals(simultaneous, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 0}});
-    expect(refusals.size() == 1, "the mixed group refuses once the shape is simultaneous");
-    expect(refusals.size() == 1 &&
-               refusals[0].code == dft::CaptureRefusalCode::SimultaneousAcrossGroups,
-           "condition 1 is what refuses it");
-    expect(refusals.size() == 1 &&
-               refusals[0].detail ==
-                   "cycle 0 pulses 'clk_a' (group 'fast') and 'clk_b' (group 'slow'), which "
-                   "set_clock_groups keeps apart",
-           "the finding names the two declared groups the survivor would pulse together");
+           "the drop still re-derives the shape");
+    expect(dft::find_capture_refusals(simultaneous, split,
+                                      {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 0}}) == declared,
+           "the drop does not change the verdict or duplicate the finding");
 }
 
 void test_order() {
     const db::Constraints constraints = make_constraints();
     // One cycle whose group mixes periods, and a later cycle repeating a clock:
     // condition 3 has to come before condition 4 regardless of which the
-    // evaluator happens to find first.
+    // evaluator happens to find first. That group also holds the two clocks the
+    // SDC keeps apart, so condition 1 fires ahead of both: the test pins the
+    // order, so it counts three findings and names each position.
     const dft::CaptureProcedure procedure = make_procedure(
         dft::CaptureKind::Sequential, {cycle_of({make_group(constraints, {"clk_a", "clk_b"}, 0.0)}),
                                        cycle_of({make_group(constraints, {"clk_a"}, 0.0)})});
     const std::vector<dft::CaptureRefusal> refusals =
         dft::find_capture_refusals(procedure, constraints, gates(1, 1));
-    expect(refusals.size() == 2, "both conditions fire");
-    expect(refusals.size() == 2 &&
-               refusals[0].code == dft::CaptureRefusalCode::GroupTimingDisagrees,
+    expect(refusals.size() == 3, "every condition fires");
+    expect(refusals.size() == 3 &&
+               refusals[0].code == dft::CaptureRefusalCode::SimultaneousAcrossGroups,
+           "condition 1 comes first");
+    expect(refusals.size() == 3 &&
+               refusals[1].code == dft::CaptureRefusalCode::GroupTimingDisagrees,
            "findings are ordered by condition");
-    expect(refusals.size() == 2 && refusals[1].code == dft::CaptureRefusalCode::ClockRepeated,
+    expect(refusals.size() == 3 && refusals[2].code == dft::CaptureRefusalCode::ClockRepeated,
            "the later condition follows");
 
     const std::vector<dft::CaptureRefusal> again =
@@ -416,7 +422,7 @@ int main() {
     test_group_timing();
     test_clock_repeated();
     test_no_capture_clock();
-    test_exclusion_into_simultaneous();
+    test_group_spanning_declared_groups();
     test_order();
     test_render();
 
