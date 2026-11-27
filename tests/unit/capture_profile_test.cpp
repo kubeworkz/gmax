@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/db/constraints.h"
+#include "core/db/crc32.h"
 #include "core/dft/capture.h"
 #include "core/dft/capture_profile.h"
 #include "core/frontend/diagnostics.h"
@@ -143,6 +144,14 @@ void test_unknown_kind() {
     expect(has_code(result, fe::DiagnosticCode::CaptureProfileInvalid), "the finding is invalid");
     expect(names_object(result, "capture.kind"), "the finding names the kind key");
     expect(result.declared, "a refused capture still counts as declared");
+
+    // `none` is the empty procedure's marker, not a capture kind a profile may
+    // declare: a declared procedure always has cycles.
+    const dft::CaptureProfileResult marker =
+        read(R"({"capture": {"kind": "none", "cycles": []}})", make_constraints());
+    expect(!marker.ok, "a profile cannot declare the empty-procedure marker");
+    expect(has_code(marker, fe::DiagnosticCode::CaptureProfileInvalid),
+           "the marker is refused as an invalid kind");
 }
 
 void test_simultaneous() {
@@ -380,6 +389,187 @@ void test_identity() {
     expect(same.procedure != derived, "the procedures differ only in provenance");
 }
 
+void test_intermediate_state() {
+    const db::Constraints constraints = make_constraints();
+
+    // Absent: the cycle keeps the scanned default and materialises nothing, which
+    // is what the payload writes for every domain the cycle captures.
+    const dft::CaptureProfileResult none = read(sequential_profile, constraints);
+    expect(none.ok, "a sequential profile without intermediate state parses");
+    expect(none.ok && none.procedure.cycles[0].intermediate.empty(),
+           "an absent intermediate state materialises nothing");
+
+    // The scalar shorthand states one value for every domain of the cycle.
+    const dft::CaptureProfileResult scalar = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a"]}], "intermediate": "masked"},
+        {"groups": [{"clocks": ["clk_b"]}]}
+      ]}
+    })",
+                                                  constraints);
+    expect(scalar.ok, "the scalar intermediate shorthand parses");
+    if (scalar.ok) {
+        const dft::CaptureCycle& first_cycle = scalar.procedure.cycles[0];
+        expect(first_cycle.intermediate.size() == 1, "the shorthand states one domain");
+        expect(!first_cycle.intermediate.empty() && first_cycle.intermediate[0].first == "clk_a",
+               "the shorthand keys the domain the cycle captures");
+        expect(!first_cycle.intermediate.empty() &&
+                   first_cycle.intermediate[0].second == dft::CaptureIntermediateState::Masked,
+               "the shorthand keeps masked");
+        expect(scalar.procedure.cycles[1].intermediate.empty(), "the final cycle stays unstated");
+
+        // A masked domain is a different procedure from a scanned one, so the
+        // capture identity separates them.
+        const dft::CaptureProfileResult scanned = read(R"({
+          "capture": {"kind": "sequential", "cycles": [
+            {"groups": [{"clocks": ["clk_a"]}], "intermediate": "scanned"},
+            {"groups": [{"clocks": ["clk_b"]}]}
+          ]}
+        })",
+                                                       constraints);
+        expect(scanned.ok, "an explicit scanned state parses");
+        expect(scanned.ok &&
+                   dft::capture_hash(scanned.procedure) != dft::capture_hash(scalar.procedure),
+               "masked and scanned are different procedures");
+
+        // The exact mapping says the same thing as the shorthand when it names
+        // the one captured domain.
+        const dft::CaptureProfileResult mapped = read(R"({
+          "capture": {"kind": "sequential", "cycles": [
+            {"groups": [{"clocks": ["clk_a"]}], "intermediate": {"clk_a": "masked"}},
+            {"groups": [{"clocks": ["clk_b"]}]}
+          ]}
+        })",
+                                                      constraints);
+        expect(mapped.ok, "the exact mapping parses");
+        expect(mapped.ok &&
+                   dft::capture_hash(mapped.procedure) == dft::capture_hash(scalar.procedure),
+               "the shorthand and the exact mapping agree");
+    }
+
+    // A mapping over two domains has to name both, so no domain silently keeps a
+    // default the profile did not choose.
+    const dft::CaptureProfileResult pair = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a", "clk_b"]}],
+         "intermediate": {"clk_a": "masked", "clk_b": "scanned"}},
+        {"groups": [{"clocks": ["clk_a"]}]}
+      ]}
+    })",
+                                                constraints);
+    expect(pair.ok, "a mapping over two domains parses");
+    expect(pair.ok && pair.procedure.cycles[0].intermediate.size() == 2, "both domains are stated");
+
+    const dft::CaptureProfileResult partial = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a", "clk_b"]}], "intermediate": {"clk_a": "masked"}},
+        {"groups": [{"clocks": ["clk_a"]}]}
+      ]}
+    })",
+                                                   constraints);
+    expect(!partial.ok, "a mapping that omits a domain is refused");
+    expect(names_object(partial, "capture.cycles[0].intermediate"),
+           "the finding names the intermediate key");
+
+    const dft::CaptureProfileResult extra = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a"]}],
+         "intermediate": {"clk_a": "masked", "clk_b": "masked"}},
+        {"groups": [{"clocks": ["clk_b"]}]}
+      ]}
+    })",
+                                                 constraints);
+    expect(!extra.ok, "a mapping that names a domain the cycle does not capture is refused");
+    expect(names_object(extra, "capture.cycles[0].intermediate.clk_b"),
+           "the finding names the stray domain");
+
+    const dft::CaptureProfileResult unknown_state = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a"]}], "intermediate": "partial"},
+        {"groups": [{"clocks": ["clk_b"]}]}
+      ]}
+    })",
+                                                         constraints);
+    expect(!unknown_state.ok, "an unknown state is refused");
+    expect(names_object(unknown_state, "capture.cycles[0].intermediate"),
+           "the finding names the intermediate key");
+
+    const dft::CaptureProfileResult final_cycle = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a"]}]},
+        {"groups": [{"clocks": ["clk_b"]}], "intermediate": "masked"}
+      ]}
+    })",
+                                                       constraints);
+    expect(!final_cycle.ok, "the final cycle cannot state an intermediate value");
+    expect(names_object(final_cycle, "capture.cycles[1].intermediate"),
+           "the finding names the final cycle");
+
+    // A single-cycle procedure has no non-final cycle at all.
+    const dft::CaptureProfileResult grouped = read(R"({
+      "capture": {"kind": "grouped", "cycles": [{"groups": [
+        {"clocks": ["clk_a"]},
+        {"clocks": ["clk_b"]}
+      ], "intermediate": "masked"}]}
+    })",
+                                                   constraints);
+    expect(!grouped.ok, "a grouped procedure cannot state an intermediate value");
+
+    const dft::CaptureProfileResult not_a_state = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a"]}], "intermediate": true},
+        {"groups": [{"clocks": ["clk_b"]}]}
+      ]}
+    })",
+                                                       constraints);
+    expect(!not_a_state.ok, "a non-string, non-object state is refused");
+    expect(has_code(not_a_state, fe::DiagnosticCode::CaptureProfileSyntax),
+           "the finding is syntax");
+
+    // Null says nothing, as with `capture`, so a generated profile can clear it.
+    const dft::CaptureProfileResult null_state = read(R"({
+      "capture": {"kind": "sequential", "cycles": [
+        {"groups": [{"clocks": ["clk_a"]}], "intermediate": null},
+        {"groups": [{"clocks": ["clk_b"]}]}
+      ]}
+    })",
+                                                      constraints);
+    expect(null_state.ok, "a null intermediate state is the default");
+    expect(null_state.ok && null_state.procedure.cycles[0].intermediate.empty(),
+           "a null intermediate state materialises nothing");
+}
+
+// A profile that cannot be opened is a diagnostic rather than an exception, so the
+// caller has one way to report a document it cannot use.
+// ADR-013 section 6: the profile is a run input, so the reader reports the document
+// it parsed and the CRC32 of its bytes. The text API names the source it was given,
+// so a test and a file read describe the same identity the same way.
+void test_parsed_identity() {
+    const std::string text = "{\"capture\": {\"kind\": \"simultaneous\", \"cycles\": "
+                             "[{\"groups\": [{\"clocks\": [\"clk_a\"]}]}]}}";
+    const dft::CaptureProfileResult result = read(text, make_constraints());
+    expect(result.ok && result.declared, "the declared procedure reads");
+    expect(result.path == "profile.json", "the reader reports the source it was given");
+    expect(result.hash == db::crc32(text), "the reader reports the CRC32 of the bytes it parsed");
+
+    // A document with no capture object is still an input the run read, so it keeps
+    // its identity even though the engine derives the procedure from it.
+    const std::string empty = "{}";
+    const dft::CaptureProfileResult none = read(empty, make_constraints());
+    expect(none.ok && !none.declared, "no capture object is a valid profile");
+    expect(none.path == "profile.json" && none.hash == db::crc32(empty),
+           "a profile that declares nothing keeps its identity");
+}
+
+void test_unreadable_file() {
+    const db::Constraints constraints = make_constraints();
+    const dft::CaptureProfileResult missing =
+        dft::read_capture_profile_file("capture-profile-does-not-exist.json", constraints);
+    expect(!missing.ok, "a missing profile is not readable");
+    expect(!missing.declared, "a missing profile declares nothing");
+    expect(has_code(missing, fe::DiagnosticCode::IoError), "the finding is an I/O error");
+}
+
 }  // namespace
 
 int main() {
@@ -395,6 +585,9 @@ int main() {
     test_repeated_clock_accepted();
     test_unknown_keys_ignored();
     test_identity();
+    test_intermediate_state();
+    test_parsed_identity();
+    test_unreadable_file();
 
     if (failures != 0) {
         std::cerr << failures << " failure(s)" << std::endl;

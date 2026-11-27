@@ -66,6 +66,22 @@ target_link_libraries(atpg_cli_fixture PRIVATE gmax_core)
 gmax_set_warnings(atpg_cli_fixture)
 gmax_set_sanitizers(atpg_cli_fixture)
 
+add_executable(capture_refusal_fixture
+  capture_refusal_fixture.cpp)
+
+target_link_libraries(capture_refusal_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(capture_refusal_fixture)
+gmax_set_sanitizers(capture_refusal_fixture)
+
+add_executable(cross_domain_fixture
+  cross_domain_fixture.cpp)
+
+target_link_libraries(cross_domain_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(cross_domain_fixture)
+gmax_set_sanitizers(cross_domain_fixture)
+
 add_executable(fault_cli_test
   fault_cli_test.cpp)
 
@@ -205,3 +221,23 @@ gmax_set_warnings(capture_profile_test)
 gmax_set_sanitizers(capture_profile_test)
 
 add_test(NAME capture_profile COMMAND capture_profile_test)
+
+add_executable(capture_refusal_test
+  capture_refusal_test.cpp)
+
+target_link_libraries(capture_refusal_test PRIVATE gmax_core)
+
+gmax_set_warnings(capture_refusal_test)
+gmax_set_sanitizers(capture_refusal_test)
+
+add_test(NAME capture_refusal COMMAND capture_refusal_test)
+
+add_executable(capture_mask_test
+  capture_mask_test.cpp)
+
+target_link_libraries(capture_mask_test PRIVATE gmax_core)
+
+gmax_set_warnings(capture_mask_test)
+gmax_set_sanitizers(capture_mask_test)
+
+add_test(NAME capture_mask COMMAND capture_mask_test)

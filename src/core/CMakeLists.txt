@@ -12,6 +12,9 @@ add_library(gmax_core STATIC
   db/dfdb.cpp
   db/string_table.cpp
   dft/capture.cpp
+  dft/capture_refusal.cpp
+  dft/capture_crossing.cpp
+  dft/capture_mask.cpp
   dft/capture_profile.cpp
   frontend/decompose.cpp
   frontend/diagnostics.cpp

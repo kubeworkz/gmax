@@ -80,6 +80,10 @@ db::Constraints to_constraints(const SdcConstraints& sdc,
         out.from = path.from;
         out.through = path.through;
         out.to = path.to;
+        out.from_clocks = path.from_clocks;
+        out.through_clocks = path.through_clocks;
+        out.to_clocks = path.to_clocks;
+        out.line = path.line;
         constraints.false_paths.push_back(std::move(out));
     }
 

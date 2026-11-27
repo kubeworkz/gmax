@@ -52,6 +52,103 @@ add_test(NAME cli.run-atpg
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-run-atpg
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/run_atpg.cmake)
 
+# ADR-013 section 4: a procedure the run cannot apply refuses the run with exit 2,
+# no fault count, no report and an untouched database. Condition 5 is the clock-level
+# exclusion emptying the procedure; condition 2 stays silent until the scan model can
+# decide it.
+add_test(NAME cli.capture-refusal-no-clock
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-no-clock
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_no_clock.cmake)
+
+# The granularity boundary of the same condition: one clock that does clock state
+# keeps the run alive, so only an emptied clock list refuses.
+add_test(NAME cli.capture-refusal-boundary
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-boundary
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_boundary.cmake)
+
+# ADR-013 section 5: DFT003 across a sequential clock boundary. A crossing with no
+# lockup latch and no excusing false path refuses; a lockup latch grades; an object
+# false path excuses; a false path between the two pulsed clocks does not, because it
+# removes the capture edge the procedure creates.
+add_test(NAME cli.capture-crossing
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-crossing
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_crossing.cmake)
+
+# ADR-013 sections 1 and 5: --profile makes a declared grouped procedure reachable,
+# so the same-cycle DFT003 pair, a shape the constraints forbid, an unreadable
+# profile and a profile that declares nothing are pinned here.
+add_test(NAME cli.capture-profile
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-profile
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_profile.cmake)
+
+# ADR-013 section 4 condition 1: clocks captured together that the SDC keeps apart, in
+# both shapes the condition names -- one group spanning declared groups, and two groups
+# of one cycle sharing an edge time.
+add_test(NAME cli.capture-refusal-simultaneous
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-simultaneous
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_simultaneous.cmake)
+
+# Condition 3: one declared group whose clocks disagree on period or waveform.
+add_test(NAME cli.capture-refusal-group-timing
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-group-timing
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_group_timing.cmake)
+
+# The condition 1/3 boundary: the same two-clock group with agreeing timing and a
+# grouping SDC grades, so neither condition keys off the number of clocks alone.
+add_test(NAME cli.capture-refusal-timing-boundary
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-timing-boundary
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_timing_boundary.cmake)
+
+# Condition 4: a clock in two cycles or twice in one cycle, and the determinism
+# companion that fires it beside condition 3.
+add_test(NAME cli.capture-refusal-clock-repeated
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-clock-repeated
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_clock_repeated.cmake)
+
+# Condition 2: a domain the first cycle captures is usable only when it is fully
+# scanned or declared masked, so a partial scan refuses with its counts and the same
+# procedure grades on the fully scanned design.
+add_test(NAME cli.capture-refusal-intermediate
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-intermediate
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_intermediate.cmake)
+
+# ADR-013 section 2's masked state: a masked domain's observation becomes X, so the
+# faults that needed it are counted masked inside untestable, with the denominators
+# and the per-fault distinction the ADR's test list names.
+add_test(NAME cli.capture-mask
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-mask
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_mask.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.
@@ -65,7 +162,8 @@ add_test(NAME cli.iscas85
 
 # ADR-012: the attachment path against a real Yosys netlist. read_verilog
 # ingests c432, read_sdc --design/--output attaches a case-analysis set, and
-# run_atpg must report that set's status and hash with an empty enforced list.
+# run_atpg must report that set's status and hash, naming case_analysis in the
+# enforced list and claiming no capture because no clock is declared.
 # It shares the pinned-Yosys prerequisite with the ISCAS'85 test and is made
 # mandatory by GMAX_G0_1_GATE=1 in the gate job.
 add_test(NAME cli.sdc-attach

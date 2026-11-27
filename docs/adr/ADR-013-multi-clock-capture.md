@@ -54,6 +54,12 @@ Three kinds are defined, and no others:
 - **sequential**: two or more cycles, one group each, in order. Legal only when
   every domain captured before the last cycle is scanned or masked (section 2).
 
+A procedure with no cycle is none of these kinds. A design whose constraints
+declare no capture clock makes no capture claim, which section 6 reports as
+`absent`; the model marks its kind `none`, a value no profile can declare and no
+procedure with a cycle carries. The three kinds stay the whole vocabulary of
+capture.
+
 The profile (TBD-06) chooses the kind and the order; the SDC decides which
 clocks exist, their groups and their waveforms. When the profile declares no
 procedure, the engine derives one and marks it `derived`: sequential, one
@@ -79,6 +85,14 @@ later cycles read. That value is usable in exactly two ways:
 Anything else is refused (section 4). A mask is recorded in the pattern IR
 (ADR-010) on the cycle and observation it applies to, so replay reproduces it
 exactly.
+
+A masked domain is applied to the run's observation points: every observation
+its state elements reach through combinational logic is forced X, and a fault is
+counted `masked` when it is detected with those observations restored and not
+without them. `masked` sits inside `untestable` in both the collapsed and the raw
+counts, so no coverage denominator moves, and the per-fault list names `masked`
+where an untestable fault names `untestable`. Recording the mask on the pattern
+IR's cycle and observation is part of the pattern IR's own slice.
 
 ### 3. Per-group timing sets
 
@@ -162,13 +176,21 @@ The coverage and manifest reports gain one `capture` object inside the existing
 - `hash`: CRC32 of the canonical procedure payload.
 - In the manifest only, `cycles`: the canonical procedure, one entry per cycle
   with its groups, clocks and edge times.
+- In the manifest only, `inputs.profile`: the profile the run read, as its path
+  and the CRC32 of its bytes, or null when the run had none and the procedure
+  was derived. A masked run is auditable from its own report, because the
+  declaration that excuses it is named there.
 
-The procedure payload is canonical: cycles in order, groups in cycle order,
+The procedure payload is canonical: cycles in order, groups in edge order,
 clocks sorted bytewise within a group, numeric fields in one canonical decimal
-encoding. It excludes source paths, comments, whitespace, line and column
-numbers, resolved database IDs, and the `derived` flag, which is provenance
-rather than procedure. Two procedures that differ only in those respects have
-the same `capture.hash`.
+encoding, and one `intermediate <cycle> <clock> <state>` line per clock, sorted
+by clock name, for each domain a non-final cycle captures. The state is keyed by
+the captured domain because that is the domain a later cycle reads; a domain the
+cycle leaves unpulsed is not intermediate at that cycle and is not written, and
+the final cycle writes no such line. It excludes source paths, comments,
+whitespace, line and column numbers, resolved database IDs, and the `derived`
+flag, which is provenance rather than procedure. Two procedures that differ only
+in those respects have the same `capture.hash`.
 
 `constraints_hash` does not change. A procedure is how constraints are used, not
 a constraint, so it stays out of the payload in ADR-012 section 2; every

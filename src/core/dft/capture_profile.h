@@ -33,13 +33,26 @@ namespace gmax::dft {
 // optional diagnostic label and is not part of the procedure identity. `edge` is
 // optional per group, but
 // a cycle gives it for every group or for none: when it gives none, the
-// deterministic default layout of section 3 applies. Unknown keys are ignored so
-// that a newer profile does not fail an older reader.
+// deterministic default layout of section 3 applies. `intermediate` is optional
+// on every cycle but the last, where it is a refusal: it is either one state for
+// the whole cycle (`"intermediate": "masked"`) or the exact mapping from captured
+// clock to state (`{"clk_a": "masked"}`), which names every clock the cycle
+// captures and no other. `scanned` and `masked` are the only states (section 2),
+// and a cycle without the key keeps the `scanned` default, so a profile that does
+// not mention intermediate state reads as fully scanned. Unknown keys are
+// ignored so that a newer profile does not fail an older reader.
 //
 // A clock the constraints do not declare is a parse error rather than a silent
 // zeroed timing set, because the profile may only name clocks the SDC creates.
 // A clock repeated across the procedure is accepted here and refused later:
 // section 4 condition 4 is a run-level refusal over a well-formed procedure.
+//
+// The same split applies to a group that holds clocks the SDC keeps apart, which
+// JSON can express and this reader therefore accepts: the document is well formed,
+// and whether the capture it describes is legal is condition 1's question, answered
+// over every group of the procedure whatever its shape. Reading it as a syntax
+// error would put one verdict in two places and would refuse at load a document
+// whose only problem section 4 already names precisely.
 
 struct CaptureProfileResult {
     // False when any error diagnostic was raised. `procedure` is unspecified
@@ -50,11 +63,23 @@ struct CaptureProfileResult {
     bool declared = false;
     CaptureProcedure procedure;
     std::vector<frontend::Diagnostic> diagnostics;
+    // ADR-013 section 6: the document the run read is a run input, so its path and
+    // the CRC32 of the bytes that were parsed travel with the result. Both are set
+    // even when the document carries no capture object, because the profile is an
+    // input then too; empty and zero only when there was no document at all.
+    std::string path;
+    std::uint32_t hash = 0;
 };
 
 // Parses one profile document against the constraints the SDC produced. `source`
 // names the file in diagnostics and defaults to a placeholder for tests.
 CaptureProfileResult read_capture_profile(std::string_view text, const db::Constraints& constraints,
                                           std::string_view source = "<capture-profile>");
+
+// Reads one profile document from `path`. A file that cannot be opened is a
+// diagnostic like any other, so the caller reports I/O and syntax the same way
+// instead of distinguishing them at the call site.
+CaptureProfileResult read_capture_profile_file(const std::string& path,
+                                               const db::Constraints& constraints);
 
 }  // namespace gmax::dft

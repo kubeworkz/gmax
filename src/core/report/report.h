@@ -26,6 +26,10 @@ struct FaultOutcome {
     // "podem" for a structural result, "sat" when a PODEM budget abort was
     // resolved by the complete SAT miter.
     std::string method = "podem";
+    // ADR-013 section 2: the capture mask forced the observations this fault needed
+    // to X, and restoring them detects it, so it is counted as masked rather than
+    // untestable. `status` keeps the outcome the masked observations produced.
+    bool masked = false;
 };
 
 struct CoverageSummary {
@@ -33,7 +37,10 @@ struct CoverageSummary {
     // search reports directly.
     std::size_t collapsed = 0;
     std::size_t detected = 0;
+    // `untestable` already counts the `masked` faults below, so the coverage
+    // denominators do not move when a procedure masks a domain.
     std::size_t untestable = 0;
+    std::size_t masked = 0;
     std::size_t aborted = 0;
 
     // Raw-fault counts, obtained by mapping every raw fault to the outcome of
@@ -41,10 +48,47 @@ struct CoverageSummary {
     std::size_t raw = 0;
     std::size_t raw_detected = 0;
     std::size_t raw_untestable = 0;
+    std::size_t raw_masked = 0;
     std::size_t raw_aborted = 0;
 
     std::size_t decisions = 0;
     std::size_t backtracks = 0;
+};
+
+// ADR-013 section 6: one group of one capture cycle, as the manifest lists it.
+struct CaptureGroupReport {
+    std::vector<std::string> clocks;  // bytewise sorted, as the payload writes them
+    double edge = 0.0;
+};
+
+struct CaptureCycleReport {
+    std::vector<CaptureGroupReport> groups;  // in edge order, as section 1 orders them
+};
+
+// ADR-013 section 6's `capture` object. `absent` is the run's word for no capture
+// claim: no constraints section, or no capture clock, so no procedure ran. Otherwise
+// a procedure ran and the remaining fields describe it. A refused run writes no
+// report at all, so a refusal never appears here.
+struct CaptureReport {
+    bool absent = true;
+    // The capture kind's name: `simultaneous`, `grouped` or `sequential`. Empty when
+    // absent, because a procedure with no cycle claims no capture and carries no kind.
+    std::string procedure;
+    bool derived = false;
+    std::uint32_t hash = 0;
+    // The canonical procedure body. The coverage report carries the object without
+    // it; the manifest writes it, one entry per cycle.
+    std::vector<CaptureCycleReport> cycles;
+};
+
+// ADR-013 section 5's DFT019 finding: both endpoints of a false path are clocks the
+// run captures apart, so the path removes the capture edge between them. It is a
+// warning, so the run still grades; `line` is the SDC line the path was written on,
+// and both reports list the findings so a run can be audited without the file.
+struct FalsePathWarningReport {
+    std::string from;
+    std::string to;
+    std::uint32_t line = 0;
 };
 
 struct CoverageReport {
@@ -58,10 +102,22 @@ struct CoverageReport {
     db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
     std::uint32_t constraints_hash = 0;
     std::vector<std::string> enforced;
+    std::vector<FalsePathWarningReport> false_paths;
+    CaptureReport capture;
     atpg::PodemBudget budget;
     CoverageSummary summary;
     std::vector<FaultOutcome> faults;
 };
+
+// The construct names the run applied, in a fixed order so two runs over one input
+// report byte-identical coverage. `case_analysis` is what PODEM and the SAT miter
+// consume; a `capture` object that is not absent means a procedure ran and applied
+// the clock-group model (ADR-013 sections 1 and 6). `false_paths` appears when that
+// procedure also examined a retained false-path set, which is the DFT003 excuse and
+// the DFT019 finding: the paths are read, never applied to the fault grading, so the
+// name says the run looked at them.
+std::vector<std::string> enforced_constructs(bool case_analysis, const CaptureReport& capture,
+                                             bool false_paths);
 
 // Stable, compact JSON. It is deliberately built by hand here rather than by a
 // general JSON writer: the shape is tiny, and keeping field order fixed makes
@@ -82,6 +138,15 @@ struct RunManifest {
     std::string constraints_path;
     db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
     std::uint32_t constraints_hash = 0;
+    // ADR-013 section 6: the capture profile is a run input of its own, so it is
+    // reported with the path the run read and the CRC32 of its bytes. Empty when the
+    // run had no profile, which the reader writes as a null input.
+    std::string profile_path;
+    std::uint32_t profile_hash = 0;
+    // The same object as the coverage report's, plus the procedure body.
+    CaptureReport capture;
+    // The same DFT019 findings the coverage report carries.
+    std::vector<FalsePathWarningReport> false_paths;
     std::uint32_t gates = 0;
     std::uint32_t nets = 0;
     atpg::PodemBudget budget;

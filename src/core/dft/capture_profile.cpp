@@ -1,13 +1,16 @@
 #include "core/dft/capture_profile.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "core/db/constraints.h"
+#include "core/db/crc32.h"
 #include "core/dft/capture.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/json.h"
@@ -47,6 +50,17 @@ void add(std::vector<Diagnostic>& diagnostics, const DiagnosticCode code, std::s
 bool declares_clock(const db::Constraints& constraints, const std::string_view name) {
     for (const db::ConstraintClock& clock : constraints.clocks) {
         if (clock.name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool parse_intermediate_state(const std::string_view name, CaptureIntermediateState& state) {
+    for (const CaptureIntermediateState candidate :
+         {CaptureIntermediateState::Scanned, CaptureIntermediateState::Masked}) {
+        if (capture_intermediate_state_name(candidate) == name) {
+            state = candidate;
             return true;
         }
     }
@@ -180,12 +194,97 @@ void read_groups(const JsonValue& cycle_value, const db::Constraints& constraint
     }
 }
 
+// Section 2's intermediate state on one cycle. The domains are the clocks the
+// cycle captures, because those are the domains a later cycle reads. The scalar
+// shorthand states one value for all of them; the mapping has to name every
+// domain and nothing else, so a mask can never silently cover only the domain
+// its author happened to remember.
+void read_intermediate(const JsonValue& cycle_value, const std::string& cycle_path,
+                       const std::size_t cycle_index, const std::size_t cycle_count,
+                       CaptureCycle& cycle, std::vector<Diagnostic>& diagnostics,
+                       const std::string_view source) {
+    const JsonValue* value = cycle_value.find("intermediate");
+    if (value == nullptr || value->kind == JsonValue::Kind::Null) {
+        return;
+    }
+    const std::string where = at(cycle_path, "intermediate");
+    // Only a cycle another cycle reads has an intermediate value, so the last
+    // cycle cannot carry one and saying so is better than ignoring the key.
+    if (cycle_index + 1 >= cycle_count) {
+        add(diagnostics, DiagnosticCode::CaptureProfileInvalid, where,
+            "the final cycle has no intermediate state", source);
+        return;
+    }
+
+    std::vector<std::string> domains;
+    for (const CaptureGroup& group : cycle.groups) {
+        for (const std::string& clock : group.timing.clocks) {
+            if (std::find(domains.begin(), domains.end(), clock) == domains.end()) {
+                domains.push_back(clock);
+            }
+        }
+    }
+    // A cycle the group reader already refused has no domain to key a state on.
+    if (domains.empty()) {
+        return;
+    }
+    std::sort(domains.begin(), domains.end());
+
+    if (value->is_string()) {
+        CaptureIntermediateState state = CaptureIntermediateState::Scanned;
+        if (!parse_intermediate_state(value->text, state)) {
+            add(diagnostics, DiagnosticCode::CaptureProfileInvalid, where,
+                "unknown intermediate state '" + value->text + "'", source);
+            return;
+        }
+        for (const std::string& domain : domains) {
+            cycle.intermediate.push_back({domain, state});
+        }
+        return;
+    }
+    if (!value->is_object()) {
+        add(diagnostics, DiagnosticCode::CaptureProfileSyntax, where,
+            "intermediate must be a state or an object of clock to state", source);
+        return;
+    }
+
+    for (const std::string& domain : domains) {
+        const JsonValue* state_value = value->find(domain);
+        if (state_value == nullptr) {
+            add(diagnostics, DiagnosticCode::CaptureProfileInvalid, where,
+                "intermediate omits the domain '" + domain + "'", source);
+            continue;
+        }
+        if (!state_value->is_string()) {
+            add(diagnostics, DiagnosticCode::CaptureProfileSyntax, at(where, domain),
+                "intermediate state must be a string", source);
+            continue;
+        }
+        CaptureIntermediateState state = CaptureIntermediateState::Scanned;
+        if (!parse_intermediate_state(state_value->text, state)) {
+            add(diagnostics, DiagnosticCode::CaptureProfileInvalid, at(where, domain),
+                "unknown intermediate state '" + state_value->text + "'", source);
+            continue;
+        }
+        cycle.intermediate.push_back({domain, state});
+    }
+    for (const auto& member : value->object) {
+        if (std::find(domains.begin(), domains.end(), member.first) == domains.end()) {
+            add(diagnostics, DiagnosticCode::CaptureProfileInvalid, at(where, member.first),
+                "intermediate names '" + member.first + "', which the cycle does not capture",
+                source);
+        }
+    }
+}
+
 }  // namespace
 
 CaptureProfileResult read_capture_profile(const std::string_view text,
                                           const db::Constraints& constraints,
                                           const std::string_view source) {
     CaptureProfileResult result;
+    result.path = std::string(source);
+    result.hash = db::crc32(text);
 
     JsonValue root;
     std::string error;
@@ -241,6 +340,8 @@ CaptureProfileResult read_capture_profile(const std::string_view text,
         }
         CaptureCycle cycle;
         read_groups(*cycle_value, constraints, cycle_path, cycle, result.diagnostics, source);
+        read_intermediate(*cycle_value, cycle_path, c, cycles->array.size(), cycle,
+                          result.diagnostics, source);
         if (cycle.groups.empty()) {
             continue;
         }
@@ -253,6 +354,25 @@ CaptureProfileResult read_capture_profile(const std::string_view text,
     check_shape(result.procedure, result.diagnostics, source);
     result.ok = !frontend::has_errors(result.diagnostics);
     return result;
+}
+
+CaptureProfileResult read_capture_profile_file(const std::string& path,
+                                               const db::Constraints& constraints) {
+    CaptureProfileResult result;
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        // The document is named in the message as well as the source, because a
+        // caller prints one line per finding and a reader has to know which file.
+        add(result.diagnostics, DiagnosticCode::IoError, {},
+            "cannot open capture profile '" + path + "'", path);
+        return result;
+    }
+    std::string text;
+    char buffer[4096];
+    while (file.read(buffer, static_cast<std::streamsize>(sizeof(buffer))) || file.gcount() > 0) {
+        text.append(buffer, static_cast<std::size_t>(file.gcount()));
+    }
+    return read_capture_profile(text, constraints, path);
 }
 
 }  // namespace gmax::dft

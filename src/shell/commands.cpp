@@ -26,6 +26,11 @@
 #include "core/db/db.h"
 #include "core/db/design.h"
 #include "core/db/status.h"
+#include "core/dft/capture.h"
+#include "core/dft/capture_crossing.h"
+#include "core/dft/capture_mask.h"
+#include "core/dft/capture_profile.h"
+#include "core/dft/capture_refusal.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/sdc.h"
 #include "core/frontend/sdc_constraints.h"
@@ -125,6 +130,33 @@ bool parse_threads(const Invocation& invocation, std::size_t& threads, std::stri
         threads = static_cast<std::size_t>(value);
     }
     return true;
+}
+
+// The option named `name`, or nullptr when the command line did not carry it. The
+// parser rejects a repeated option, so at most one match exists.
+const OptionValue* find_option(const Invocation& invocation, const std::string_view name) {
+    for (const OptionValue& option : invocation.options) {
+        if (option.name == name) {
+            return &option;
+        }
+    }
+    return nullptr;
+}
+
+// ADR-013 section 4: a profile the reader rejects is an unreadable procedure, which is
+// a run-level failure without a refusal code -- none of the six conditions judged a
+// procedure that never existed. The object path inside the document names the place to
+// fix, and the message already names the file, so no zero line number is printed.
+void print_profile_diagnostics(const std::vector<frontend::Diagnostic>& diagnostics,
+                               std::ostream& err) {
+    for (const frontend::Diagnostic& diagnostic : diagnostics) {
+        err << "gmax: " << frontend::diagnostic_code_name(diagnostic.code) << ": "
+            << diagnostic.message;
+        if (!diagnostic.object.empty()) {
+            err << " (" << diagnostic.object << ')';
+        }
+        err << '\n';
+    }
 }
 
 bool parse_budget(const std::vector<std::string>& positionals, atpg::PodemBudget& budget,
@@ -370,13 +402,19 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         err << "gmax: report-dir must not be empty\n";
         return ExitCode::Usage;
     }
+    // ADR-013 section 4: a refusal writes nothing, so the report directory is not created
+    // during argument handling, where a later refusal would leave it behind. Only a path
+    // that can never hold the reports is rejected here, and that check creates nothing.
     if (write_reports) {
         std::error_code directory_error;
-        std::filesystem::create_directories(report_directory, directory_error);
-        if (directory_error || !std::filesystem::is_directory(report_directory, directory_error)) {
+        const std::filesystem::file_status report_status =
+            std::filesystem::status(report_directory, directory_error);
+        const std::filesystem::file_type report_type = report_status.type();
+        if (report_type != std::filesystem::file_type::not_found &&
+            report_type != std::filesystem::file_type::none &&
+            !std::filesystem::is_directory(report_status)) {
             err << "gmax: cannot use report directory '" << report_directory
-                << "': " << (directory_error ? directory_error.message() : "not a directory")
-                << '\n';
+                << "': not a directory\n";
             return ExitCode::Design;
         }
     }
@@ -422,6 +460,73 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         return ExitCode::Design;
     }
 
+    // ADR-013 section 4: a procedure the run cannot apply refuses it here,
+    // after the constraint checks and before the fault list is read, so a refused
+    // run prints no fault count and writes no report. ExitCode::Design is the same
+    // status a load failure and an incomplete set use; refusals add no new code.
+    // ADR-013 section 3: a declared clock that clocks no state-holding gate is
+    // dropped from the procedure before it is applied, so the procedure the run
+    // grades is the one without it. A drop that leaves another clock is a warning;
+    // a drop that empties the list is section 4's condition 5.
+    // ADR-013 section 1: the profile declares the procedure and the SDC decides which
+    // clocks exist, their groups and their waveforms, so the document is read against
+    // the constraints the run already loaded. Without one the engine derives the
+    // procedure, and a profile that carries no capture object derives it too.
+    const OptionValue* profile_option = find_option(invocation, "profile");
+    if (profile_option != nullptr && profile_option->value.empty()) {
+        err << "gmax: profile path must not be empty\n";
+        return ExitCode::Usage;
+    }
+    gmax::dft::CaptureProfileResult profile;
+    if (profile_option != nullptr) {
+        profile =
+            gmax::dft::read_capture_profile_file(profile_option->value, database.constraints());
+        if (!profile.ok) {
+            // Section 4: the findings print, the run exits 2 and writes nothing. The
+            // check runs before the fault list is read, like every other refusal.
+            print_profile_diagnostics(profile.diagnostics, err);
+            return ExitCode::Design;
+        }
+    }
+    const gmax::dft::CaptureProcedure declared_procedure =
+        profile.declared ? profile.procedure
+                         : gmax::dft::resolve_capture_procedure(database.constraints());
+
+    const std::vector<db::ClockGateCount> clock_gates =
+        db::clock_gate_counts(database.constraints(), database.flat(), database.strings());
+    std::vector<std::string> dropped_clocks;
+    const gmax::dft::CaptureProcedure capture_procedure = gmax::dft::exclude_idle_clocks(
+        declared_procedure, database.constraints(), clock_gates, dropped_clocks);
+    // ADR-013 section 5: DFT003 is a question about the design, so it is a second
+    // pass over the same procedure. Both passes are merged before the block is
+    // written, so one run reports every reason instead of one reason per run.
+    std::vector<gmax::dft::CaptureRefusal> capture_refusals =
+        gmax::dft::find_capture_refusals(capture_procedure, database.constraints(), clock_gates);
+    const std::vector<gmax::dft::CaptureRefusal> crossing_refusals =
+        gmax::dft::find_crossing_refusals(capture_procedure, database.constraints(),
+                                          database.flat(), database.strings());
+    capture_refusals.insert(capture_refusals.end(), crossing_refusals.begin(),
+                            crossing_refusals.end());
+    gmax::dft::sort_capture_refusals(capture_refusals);
+    if (!capture_refusals.empty()) {
+        gmax::dft::write_capture_refusals(err, capture_refusals);
+        return ExitCode::Design;
+    }
+    for (const std::string& clock : dropped_clocks) {
+        err << "gmax: warning: clock '" << clock
+            << "' clocks no state-holding gate and was left out of the capture procedure\n";
+    }
+
+    // ADR-013 section 2: a masked domain's intermediate value is X, so the run may
+    // not observe anything that depends on it. An empty mask leaves the observation
+    // points exactly as the design declares them, and a mask that reaches no
+    // observation changes nothing, so neither re-grades a fault.
+    const gmax::dft::CaptureMask capture_mask =
+        gmax::dft::apply_capture_mask(capture_procedure, database.constraints(), database.flat(),
+                                      database.strings(), observables);
+    const std::vector<db::NetId>& graded_observables = capture_mask.observables;
+    const bool mask_applied = graded_observables.size() != observables.size();
+
     atpg::FaultListFile faults;
     const db::Status read = atpg::read_faults(faults_path, database, faults);
     if (!read.ok()) {
@@ -442,8 +547,8 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         const std::size_t end = std::min(begin + kFaultChunk, grade_count);
         for (std::size_t index = begin; index < end; ++index) {
             try {
-                grades[index] = grade_fault(database.flat(), faults.collapsed[index], observables,
-                                            budget, case_assignments);
+                grades[index] = grade_fault(database.flat(), faults.collapsed[index],
+                                            graded_observables, budget, case_assignments);
             } catch (...) {
                 grade_errors[index] = std::current_exception();
             }
@@ -483,33 +588,55 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
 
     std::size_t detected = 0;
     std::size_t untestable = 0;
+    std::size_t masked = 0;
     std::size_t aborted = 0;
     std::size_t backtracks = 0;
     std::size_t decisions = 0;
+    // One flag per collapsed fault, in the same order as `outcomes`, so a raw fault
+    // can inherit its representative's masked state.
+    std::vector<char> masked_outcome;
+    masked_outcome.reserve(grade_count);
     std::vector<report::FaultOutcome> outcomes;
     outcomes.reserve(grade_count);
     for (std::size_t index = 0; index < grade_count; ++index) {
         const sim::Fault& fault = faults.collapsed[index];
         const FaultGrade& grade = grades[index];
-        switch (grade.status) {
-        case atpg::PodemStatus::Detected:
-            ++detected;
-            break;
-        case atpg::PodemStatus::Untestable:
+        // ADR-013 section 2: the mask forced the observations this fault needed to X,
+        // so the run did not detect it. It is `masked` only when the same fault is
+        // detected with those observations restored: that re-grade is the proof the
+        // mask, not redundancy, removed it. A masked fault counts inside `untestable`
+        // and never as aborted, so the coverage denominators do not move.
+        const bool is_masked =
+            mask_applied && grade.status != atpg::PodemStatus::Detected &&
+            grade_fault(database.flat(), fault, observables, budget, case_assignments).status ==
+                atpg::PodemStatus::Detected;
+        if (is_masked) {
+            ++masked;
             ++untestable;
-            break;
-        case atpg::PodemStatus::Aborted:
-            ++aborted;
-            break;
+        } else {
+            switch (grade.status) {
+            case atpg::PodemStatus::Detected:
+                ++detected;
+                break;
+            case atpg::PodemStatus::Untestable:
+                ++untestable;
+                break;
+            case atpg::PodemStatus::Aborted:
+                ++aborted;
+                break;
+            }
         }
+        masked_outcome.push_back(is_masked ? 1 : 0);
         backtracks += grade.backtracks;
         decisions += grade.decisions;
         outcomes.push_back(report::FaultOutcome{fault, net_name(database, fault.net), grade.status,
                                                 grade.decisions, grade.backtracks,
-                                                grade.sat_fallback ? "sat" : "podem"});
+                                                grade.sat_fallback ? "sat" : "podem", is_masked});
 
+        const std::string_view status_name =
+            is_masked ? std::string_view("masked") : atpg::podem_status_name(grade.status);
         out << "fault " << fault.net << ' ' << (fault.stuck == sim::StuckValue::One ? '1' : '0')
-            << ": " << atpg::podem_status_name(grade.status) << " decisions=" << grade.decisions
+            << ": " << status_name << " decisions=" << grade.decisions
             << " backtracks=" << grade.backtracks << (grade.sat_fallback ? " [sat]" : "") << '\n';
     }
 
@@ -518,6 +645,7 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     summary.collapsed = faults.collapsed.size();
     summary.detected = detected;
     summary.untestable = untestable;
+    summary.masked = masked;
     summary.aborted = aborted;
     summary.decisions = decisions;
     summary.backtracks = backtracks;
@@ -527,9 +655,17 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         collapsed_status.push_back(outcome.status);
     }
     for (const std::uint32_t collapsed_id : faults.raw_to_collapsed) {
-        const atpg::PodemStatus status = collapsed_id < collapsed_status.size()
-                                             ? collapsed_status[collapsed_id]
-                                             : atpg::PodemStatus::Aborted;
+        const bool known = collapsed_id < collapsed_status.size();
+        // A raw fault inherits its representative's masked state, so `raw_masked`
+        // stays a subset of `raw_untestable` just as `masked` stays inside
+        // `untestable`.
+        if (known && masked_outcome[collapsed_id] != 0) {
+            ++summary.raw_masked;
+            ++summary.raw_untestable;
+            continue;
+        }
+        const atpg::PodemStatus status =
+            known ? collapsed_status[collapsed_id] : atpg::PodemStatus::Aborted;
         switch (status) {
         case atpg::PodemStatus::Detected:
             ++summary.raw_detected;
@@ -545,6 +681,7 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
 
     out << "detected: " << detected << "\n";
     out << "untestable: " << untestable << "\n";
+    out << "masked: " << masked << "\n";
     out << "aborted: " << aborted << "\n";
     out << "backtracks: " << backtracks << "\n";
     out << "decisions: " << decisions << "\n";
@@ -566,18 +703,64 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     coverage.fault_list_hash = faults.header.fault_list_hash;
     coverage.constraints_status = constraints_status;
     coverage.constraints_hash = constraints_hash_value;
-    // The enforced list names what the run actually used, so it is filled only
-    // when a complete set was resolved and handed to the engines. Capture
-    // constraints stay not-enforced.
-    if (!case_assignments.empty()) {
-        coverage.enforced.emplace_back("case_analysis");
+    // ADR-013 section 6: the capture object. A procedure with no cycle makes no
+    // capture claim, which the report calls `absent`; anything else reached grading,
+    // so its procedure is `enforced` and the hash covers the canonical payload the
+    // run actually applied.
+    report::CaptureReport capture_report;
+    capture_report.absent = capture_procedure.cycles.empty();
+    if (!capture_report.absent) {
+        capture_report.procedure =
+            std::string(gmax::dft::capture_kind_name(capture_procedure.kind));
+        capture_report.derived = capture_procedure.derived;
+        capture_report.hash = gmax::dft::capture_hash(capture_procedure);
+        for (const gmax::dft::CaptureCycle& cycle : capture_procedure.cycles) {
+            report::CaptureCycleReport cycle_report;
+            for (const gmax::dft::CaptureGroup& group : cycle.groups) {
+                report::CaptureGroupReport group_report;
+                group_report.clocks = group.timing.clocks;
+                group_report.edge = group.timing.edge;
+                cycle_report.groups.push_back(std::move(group_report));
+            }
+            capture_report.cycles.push_back(std::move(cycle_report));
+        }
     }
+    // ADR-013 section 5's DFT019: a false path between two clocks the procedure
+    // captures apart hides the capture edge between them. It is a warning, so the run
+    // grades and records it rather than refusing.
+    std::vector<report::FalsePathWarningReport> false_path_warnings;
+    for (const gmax::dft::FalsePathWarning& warning :
+         gmax::dft::find_false_path_warnings(capture_procedure, database.constraints())) {
+        report::FalsePathWarningReport finding;
+        finding.from = warning.from_clock;
+        finding.to = warning.to_clock;
+        finding.line = warning.line;
+        false_path_warnings.push_back(std::move(finding));
+    }
+    coverage.false_paths = false_path_warnings;
+    coverage.capture = capture_report;
+    // ADR-013 section 6: the enforced list names what the run actually used, never
+    // what the database holds. A procedure that ran applied the clock-group model,
+    // so an enforced capture cannot be reported without it, and a run that examined
+    // a retained false-path set names that too.
+    coverage.enforced = report::enforced_constructs(!case_assignments.empty(), capture_report,
+                                                    !database.constraints().false_paths.empty());
     coverage.budget = budget;
     coverage.summary = summary;
     coverage.faults = std::move(outcomes);
     const std::string coverage_text = report::coverage_json(coverage);
 
     if (write_reports) {
+        // ADR-013 section 4: the directory appears only when the reports are about to be
+        // written, so every refusal above leaves no trace on disk.
+        std::error_code directory_error;
+        std::filesystem::create_directories(report_directory, directory_error);
+        if (directory_error || !std::filesystem::is_directory(report_directory, directory_error)) {
+            err << "gmax: cannot use report directory '" << report_directory
+                << "': " << (directory_error ? directory_error.message() : "not a directory")
+                << '\n';
+            return ExitCode::Design;
+        }
         const std::filesystem::path coverage_path =
             std::filesystem::path(report_directory) / "coverage.json";
         const std::filesystem::path manifest_path =
@@ -603,6 +786,10 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         // path is provenance only and is never part of the hash.
         manifest.constraints_status = constraints_status;
         manifest.constraints_hash = constraints_hash_value;
+        manifest.profile_path = profile.path;
+        manifest.profile_hash = profile.hash;
+        manifest.capture = capture_report;
+        manifest.false_paths = false_path_warnings;
         manifest.gates = database.flat().gate_count();
         manifest.nets = database.flat().net_count();
         manifest.budget = budget;
@@ -1015,6 +1202,7 @@ bool register_commands(Cli& cli, std::string& error) {
         {"report-dir", "directory for coverage.json and manifest.json", false},
     };
     run_spec.options = {
+        {"profile", "capture.json", "capture procedure declaration; derived when absent"},
         {"threads", "N", "worker threads; 1 (the default) stays single-threaded"},
     };
     if (!cli.add_command(std::move(run_spec), run_atpg_handler, error)) {

@@ -131,20 +131,55 @@ void test_derived_procedure() {
         expect(procedure.cycles[0].groups[0].timing.period == 10.0, "cycle keeps clk_a period");
         expect(procedure.cycles[0].groups[0].timing.edge == 0.0, "derived cycle starts at zero");
         expect(procedure.cycles[0].groups[0].name.empty(), "a derived group has no SDC name");
+        // Section 2: a non-final cycle states the domain it captures, which is
+        // the domain a later cycle reads, and the engine's default is to scan it.
+        expect(procedure.cycles[0].intermediate.size() == 1,
+               "a non-final cycle records one intermediate state");
+        expect(procedure.cycles[0].intermediate[0].first == "clk_a",
+               "the state names the cycle's own domain");
+        expect(procedure.cycles[0].intermediate[0].second == dft::CaptureIntermediateState::Scanned,
+               "the derived default is scanned");
+        expect(procedure.cycles[1].intermediate.empty(), "the final cycle records no state");
     }
 
     const dft::CaptureProcedure again = dft::resolve_capture_procedure(constraints);
     expect(again == procedure, "resolution is deterministic");
     expect(dft::capture_hash(again) == dft::capture_hash(procedure), "same input, same hash");
+    // Section 1 reads the kind off the cycles, so a design with one clock is one
+    // cycle of one group: simultaneous, never a sequential procedure with a single
+    // cycle. This is the shape the library returns, not only the excluded one.
+    db::Constraints single = make_constraints();
+    single.clocks = {constraints.clocks[0]};
+    const dft::CaptureProcedure alone = dft::resolve_capture_procedure(single);
+    expect(alone.cycles.size() == 1, "a one-clock design derives one cycle");
+    expect(alone.kind == dft::CaptureKind::Simultaneous,
+           "a one-clock derived procedure is simultaneous");
 }
 
 void test_empty_procedure() {
     db::Constraints absent;
-    expect(dft::resolve_capture_procedure(absent).cycles.empty(), "no constraints, no cycles");
+    const dft::CaptureProcedure unconstrained = dft::resolve_capture_procedure(absent);
+    expect(unconstrained.cycles.empty(), "no constraints, no cycles");
+    expect(unconstrained.kind == dft::CaptureKind::None,
+           "a design with no constraints claims no capture kind");
 
     db::Constraints declared;
     declared.present = true;
-    expect(dft::resolve_capture_procedure(declared).cycles.empty(), "no clocks, no cycles");
+    const dft::CaptureProcedure clockless = dft::resolve_capture_procedure(declared);
+    expect(clockless.cycles.empty(), "no clocks, no cycles");
+    expect(clockless.kind == dft::CaptureKind::None,
+           "a design with no capture clock claims no capture kind");
+    expect(dft::capture_kind_name(clockless.kind) == "none", "the marker names itself none");
+
+    // None of section 1's shapes fits, so the identity says so instead of naming a
+    // shape the procedure cannot have, and the two empty procedures agree.
+    const std::string payload = dft::canonical_capture_payload(clockless);
+    expect(payload.rfind("gmax-capture-4\nkind\tnone\n", 0) == 0,
+           "the payload marks a procedure that claims no capture");
+    expect(dft::canonical_capture_payload(unconstrained) == payload,
+           "no constraints and no clocks have one identity");
+    expect(dft::capture_hash(clockless) == db::crc32(std::string_view(payload)),
+           "the marker is what the hash covers");
 }
 
 void test_duplicate_clock_kept() {
@@ -179,7 +214,7 @@ void test_canonical_payload() {
     const dft::CaptureProcedure procedure = dft::resolve_capture_procedure(constraints);
     const std::string payload = dft::canonical_capture_payload(procedure);
 
-    expect(payload.rfind("gmax-capture-3\n", 0) == 0, "payload carries its own version");
+    expect(payload.rfind("gmax-capture-4\n", 0) == 0, "payload carries its own version");
     expect(payload.find("sequential") != std::string::npos, "payload names the kind");
     expect(payload.find("clk_a") != std::string::npos, "payload names the clocks");
     expect(payload.find("derived") == std::string::npos, "provenance is excluded from the payload");
@@ -225,6 +260,32 @@ void test_canonical_payload() {
            "a group label is not hashed");
     expect(dft::canonical_capture_payload(labelled).find("fast_domain") == std::string::npos,
            "the label text never reaches the payload");
+
+    // Section 2: the state belongs to the domains the cycle captures, so only a
+    // non-final cycle writes a line, the default is written rather than omitted,
+    // and a domain the cycle leaves unpulsed is not intermediate there.
+    expect(payload.find("intermediate\t0\tclk_a\tscanned") != std::string::npos,
+           "a non-final cycle writes its default state");
+    expect(payload.find("intermediate\t0\tclk_b") == std::string::npos,
+           "an unpulsed domain is not intermediate at this cycle");
+    expect(payload.find("intermediate\t1\t") == std::string::npos,
+           "the final cycle writes no intermediate state");
+
+    dft::CaptureProcedure masked = procedure;
+    masked.cycles[0].intermediate[0].second = dft::CaptureIntermediateState::Masked;
+    expect(dft::capture_hash(masked) != dft::capture_hash(procedure),
+           "the intermediate state is part of the hash");
+    expect(dft::canonical_capture_payload(masked).find("intermediate\t0\tclk_a\tmasked") !=
+               std::string::npos,
+           "a masked domain is written as masked");
+
+    // The state is keyed by captured domains, so a cycle whose one group pulses
+    // two domains states both of them.
+    dft::CaptureProcedure both = procedure;
+    both.cycles[0].groups[0].timing.clocks = {"clk_a", "clk_b"};
+    expect(dft::canonical_capture_payload(both).find("intermediate\t0\tclk_b\tscanned") !=
+               std::string::npos,
+           "every domain of a cycle is stated");
 }
 
 void test_group_order() {
@@ -267,6 +328,113 @@ void test_group_order() {
            "an edge tie is broken by the clock list");
 }
 
+void test_clock_exclusion_shape() {
+    const db::Constraints constraints = make_constraints();
+    std::vector<std::string> dropped;
+
+    // Two sequential cycles minus one clock is one cycle with one group, which
+    // section 1 calls simultaneous.
+    const dft::CaptureProcedure from_sequential =
+        dft::exclude_idle_clocks(dft::resolve_capture_procedure(constraints), constraints,
+                                 {{"clk_a", 1}, {"clk_b", 0}}, dropped);
+    expect(from_sequential.cycles.size() == 1, "one cycle survives the drop");
+    expect(from_sequential.kind == dft::CaptureKind::Simultaneous,
+           "one surviving cycle with one group is simultaneous");
+    expect(dft::canonical_capture_payload(from_sequential)
+                   .rfind("gmax-capture-4\nkind\tsimultaneous\n", 0) == 0,
+           "the payload names the re-derived kind");
+
+    // Three cycles minus one still leaves two, so the shape stays sequential.
+    db::Constraints three = constraints;
+    three.clocks.push_back(make_clock("clk_c", 30.0));
+    const dft::CaptureProcedure from_three =
+        dft::exclude_idle_clocks(dft::resolve_capture_procedure(three), three,
+                                 {{"clk_a", 1}, {"clk_b", 0}, {"clk_c", 1}}, dropped);
+    expect(from_three.cycles.size() == 2, "two cycles survive the drop");
+    expect(from_three.kind == dft::CaptureKind::Sequential, "two surviving cycles are sequential");
+
+    // A grouped cycle that loses one of its groups is left with one group.
+    dft::CaptureGroup fast;
+    fast.timing = dft::capture_timing_set(constraints, {"clk_a"}, 0.0);
+    dft::CaptureGroup slow;
+    slow.timing = dft::capture_timing_set(constraints, {"clk_b"}, 20.0);
+    dft::CaptureCycle cycle;
+    cycle.groups = {fast, slow};
+    dft::CaptureProcedure grouped;
+    grouped.kind = dft::CaptureKind::Grouped;
+    grouped.derived = false;
+    grouped.cycles = {cycle};
+    const dft::CaptureProcedure kept_one =
+        dft::exclude_idle_clocks(grouped, constraints, {{"clk_a", 1}, {"clk_b", 0}}, dropped);
+    expect(kept_one.cycles.size() == 1 && kept_one.cycles[0].groups.size() == 1,
+           "the emptied group goes with its clock");
+    expect(kept_one.kind == dft::CaptureKind::Simultaneous,
+           "one group left in one cycle is simultaneous");
+    expect(dft::exclude_idle_clocks(grouped, constraints, {{"clk_a", 1}, {"clk_b", 1}}, dropped)
+                   .kind == dft::CaptureKind::Grouped,
+           "two groups in one cycle stay grouped");
+
+    // A single-clock design is already simultaneous when it is resolved, so the
+    // exclusion hands it back untouched instead of repairing its shape.
+    db::Constraints single = constraints;
+    single.clocks = {constraints.clocks[0]};
+    const dft::CaptureProcedure resolved = dft::resolve_capture_procedure(single);
+    expect(resolved.kind == dft::CaptureKind::Simultaneous,
+           "a one-clock design resolves as simultaneous");
+    const dft::CaptureProcedure one_clock =
+        dft::exclude_idle_clocks(resolved, single, {{"clk_a", 1}}, dropped);
+    expect(dropped.empty(), "nothing is dropped from a one-clock design");
+    expect(one_clock.kind == resolved.kind, "the exclusion leaves a shape it does not change");
+}
+
+void test_clock_exclusion() {
+    const db::Constraints constraints = make_constraints();
+    const dft::CaptureProcedure derived = dft::resolve_capture_procedure(constraints);
+    std::vector<std::string> dropped;
+
+    const dft::CaptureProcedure kept =
+        dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 2}, {"clk_b", 0}}, dropped);
+    expect(dropped == (std::vector<std::string>{"clk_b"}), "only the idle clock is dropped");
+    expect(kept.cycles.size() == 1, "a cycle whose clock was dropped goes with it");
+    expect(kept.cycles.size() == 1 && kept.cycles[0].groups.size() == 1 &&
+               kept.cycles[0].groups[0].timing.clocks == (std::vector<std::string>{"clk_a"}),
+           "the surviving cycle keeps its clock");
+    expect(kept.cycles.size() == 1 && kept.cycles[0].intermediate.empty(),
+           "the surviving final cycle carries no intermediate state");
+
+    const dft::CaptureProcedure emptied =
+        dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 0}, {"clk_b", 0}}, dropped);
+    expect(emptied.cycles.empty(), "dropping every clock empties the procedure");
+    expect(emptied.kind == dft::CaptureKind::None,
+           "an emptied procedure claims no capture kind either");
+    expect(dropped == (std::vector<std::string>{"clk_a", "clk_b"}),
+           "both drops are reported in name order");
+
+    const dft::CaptureProcedure untouched =
+        dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 1}, {"clk_b", 1}}, dropped);
+    expect(untouched == derived && dropped.empty(), "a clock that clocks state is kept");
+
+    // A group keeps the clocks that still clock state and recomputes its timing
+    // from them, so the payload describes the group the run actually pulses.
+    dft::CaptureGroup mixed;
+    mixed.timing = dft::capture_timing_set(constraints, {"clk_a", "clk_b"}, 0.0);
+    dft::CaptureCycle cycle;
+    cycle.groups = {mixed};
+    dft::CaptureProcedure grouped;
+    grouped.kind = dft::CaptureKind::Grouped;
+    grouped.derived = false;
+    grouped.cycles = {cycle};
+    const dft::CaptureProcedure pruned =
+        dft::exclude_idle_clocks(grouped, constraints, {{"clk_a", 0}, {"clk_b", 1}}, dropped);
+    expect(pruned.cycles.size() == 1 && pruned.cycles[0].groups.size() == 1,
+           "a group with one surviving clock stays");
+    expect(pruned.cycles.size() == 1 &&
+               pruned.cycles[0].groups[0].timing.clocks == (std::vector<std::string>{"clk_b"}),
+           "the dropped clock leaves the timing set");
+    expect(pruned.cycles.size() == 1 && pruned.cycles[0].groups[0].timing.period == 20.0,
+           "the timing set is recomputed from the surviving clock");
+}
+
 void test_constraints_hash_unchanged() {
     db::Constraints constraints = make_constraints();
     const std::uint32_t before = db::constraints_hash(constraints);
@@ -292,6 +460,8 @@ int main() {
     test_edge_layout();
     test_canonical_payload();
     test_group_order();
+    test_clock_exclusion();
+    test_clock_exclusion_shape();
     test_constraints_hash_unchanged();
 
     if (failures != 0) {

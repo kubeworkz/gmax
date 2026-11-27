@@ -137,13 +137,16 @@ endif()
 file(READ "${coverage}" coverage_text)
 check_text("${coverage_text}" "\"netlist_hash\":\"413dd789\"" "c432 coverage netlist hash")
 check_text("${coverage_text}"
-    "\"constraints\":{\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"enforced\":[\"case_analysis\"],\"capture\":\"not-enforced\"}"
+    "\"constraints\":{\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"enforced\":[\"case_analysis\"],\"false_paths\":[],\"capture\":{\"status\":\"absent\",\"procedure\":null,\"derived\":false,\"hash\":null}}"
     "c432 coverage constraints")
-check_absent("${coverage_text}" "\"status\":\"absent\"" "c432 coverage constraints status")
+# No declared clock means no capture claim, which ADR-013 section 6 reports as
+# `absent` inside the constraints object rather than as a constraint status.
+check_absent("${coverage_text}" "\"constraints\":{\"status\":\"absent\""
+    "c432 coverage constraints status")
 
 file(READ "${manifest}" manifest_text)
 check_text("${manifest_text}"
-    "\"constraints\":{\"path\":\"\",\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\"}"
+    "\"constraints\":{\"path\":\"\",\"status\":\"complete\",\"hash\":\"${constraints_hash}\",\"algorithm\":\"crc32\",\"false_paths\":[],\"capture\":{\"status\":\"absent\",\"procedure\":null,\"derived\":false,\"hash\":null,\"cycles\":[]}}"
     "c432 manifest constraints")
 
 # A target that cannot be applied must never be graded. N118 is an internal net
@@ -167,8 +170,8 @@ run_gmax(2 run_atpg "${incomplete_db}" "${faults}" 100000 0 "${incomplete_report
 check_text("${GMAX_ERR}" "design constraints are incomplete" "c432 incomplete refusal")
 check_text("${GMAX_ERR}" "refusing to grade" "c432 incomplete refusal")
 check_absent("${GMAX_OUT}" "raw faults:" "c432 incomplete refusal")
-if(EXISTS "${incomplete_report}/coverage.json" OR EXISTS "${incomplete_report}/manifest.json")
-    message(FATAL_ERROR "run_atpg wrote reports for an incomplete constraint set")
+if(EXISTS "${incomplete_report}")
+    message(FATAL_ERROR "run_atpg left a report directory for an incomplete constraint set")
 endif()
 
 file(MAKE_DIRECTORY "${GMAX_REPORTS_DIR}/sdc-attach")

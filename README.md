@@ -118,7 +118,15 @@ The bootstrap scripts are developer caches, not frozen dependencies; see [`third
 ./build/debug/gmax run_atpg design-sdc.dfdb design.faults 200 10000 reports/
 ```
 
-`run_atpg` accepts optional per-fault backtrack and wall-clock limits, and `--threads N` for deterministic multi-threaded grading. It returns `4` (`ATPG incomplete`) if any fault aborts. Run `gmax help <command>` for the exact arguments.
+`run_atpg` accepts optional per-fault backtrack and wall-clock limits, `--threads N` for deterministic multi-threaded grading, and `--profile <file>` to declare the capture procedure instead of letting the engine derive one. The profile is a small JSON document because TBD-06 has not frozen the profile format yet (ADR-013 section 1):
+
+```json
+{"capture": {"kind": "grouped", "cycles": [{"groups": [
+  {"name": "fast", "clocks": ["clk_a"], "edge": 0},
+  {"clocks": ["clk_b"], "edge": 20}]}]}}
+```
+
+`kind` is `simultaneous`, `grouped` or `sequential`, and the order of `cycles` and of each cycle's `groups` is the procedure. A group may carry `edge`; a cycle places every group or none, and with none the groups are one slowest period apart. A non-final cycle may carry `intermediate` (`"masked"`, or one state per captured clock), which is recorded in the procedure identity and not yet enforced, because whether a domain is fully scanned needs the scan model (WP-104). Unknown keys are ignored, a clock the SDC does not declare is refused, and a procedure section 4 refuses exits `2` and writes nothing. It returns `4` (`ATPG incomplete`) if any fault aborts. Run `gmax help <command>` for the exact arguments.
 
 ## Constraints
 
