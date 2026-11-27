@@ -60,6 +60,12 @@ std::string_view diagnostic_code_name(const DiagnosticCode code) {
         return "sdc-generated-clock-master-cycle";
     case DiagnosticCode::SdcFalsePathUnknownClock:
         return "sdc-false-path-unknown-clock";
+    case DiagnosticCode::CaptureProfileSyntax:
+        return "capture-profile-syntax";
+    case DiagnosticCode::CaptureProfileInvalid:
+        return "capture-profile-invalid";
+    case DiagnosticCode::CaptureProfileUnknownClock:
+        return "capture-profile-unknown-clock";
     }
     return "unknown";
 }

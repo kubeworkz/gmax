@@ -69,7 +69,11 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
     // the clock list inside a timing set is sorted, here rather than at
     // construction, because a group is a set and the bytes must not depend on
     // how the procedure was built.
-    std::string out = "gmax-capture-1\n";
+    // Version 2 dropped the group label: section 6 excludes provenance, and a
+    // label is a diagnostic rather than part of the procedure. Version 3 writes
+    // each cycle's groups in edge order, so the same groups listed differently
+    // by a profile produce the same bytes.
+    std::string out = "gmax-capture-3\n";
     append(out, "kind");
     out.append(capture_kind_name(procedure.kind));
     out.push_back('\n');
@@ -83,23 +87,49 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
         header.push_back('\n');
         out.append(header);
 
-        for (std::size_t g = 0; g < cycle.groups.size(); ++g) {
-            const CaptureGroup& group = cycle.groups[g];
+        // The edge time is what places a group, so two orderings of one cycle
+        // are one procedure. Writing the groups in edge order makes their bytes
+        // identical and the index below a canonical position rather than the
+        // position the profile happened to use. Edges are strictly increasing in
+        // a valid procedure; the clock list breaks an edge tie so the order stays
+        // total even for one the refusal pass would reject.
+        struct Entry {
+            double edge = 0.0;
+            std::string clocks;
+            const CaptureGroup* group = nullptr;
+        };
+        std::vector<Entry> entries;
+        entries.reserve(cycle.groups.size());
+        for (const CaptureGroup& group : cycle.groups) {
+            Entry entry;
+            entry.edge = group.timing.edge;
+            std::vector<std::string> clocks = group.timing.clocks;
+            std::sort(clocks.begin(), clocks.end());
+            entry.clocks = join(clocks);
+            entry.group = &group;
+            entries.push_back(std::move(entry));
+        }
+        std::sort(entries.begin(), entries.end(), [](const Entry& left, const Entry& right) {
+            if (left.edge != right.edge) {
+                return left.edge < right.edge;
+            }
+            return left.clocks < right.clocks;
+        });
+
+        for (std::size_t g = 0; g < entries.size(); ++g) {
+            const CaptureTimingSet& timing = entries[g].group->timing;
             std::string line;
             append(line, "group");
             append_number(line, c);
             append_number(line, g);
-            append(line, group.name);
-            append_number(line, group.timing.edge);
-            append_number(line, group.timing.period);
+            append_number(line, timing.edge);
+            append_number(line, timing.period);
             // The waveform flag is always written, so a group's field count
             // never depends on the source text, as in section 2 of ADR-012.
-            append(line, group.timing.has_waveform ? "waveform" : "nowaveform");
-            append_number(line, group.timing.rise);
-            append_number(line, group.timing.fall);
-            std::vector<std::string> clocks = group.timing.clocks;
-            std::sort(clocks.begin(), clocks.end());
-            append(line, join(clocks));
+            append(line, timing.has_waveform ? "waveform" : "nowaveform");
+            append_number(line, timing.rise);
+            append_number(line, timing.fall);
+            append(line, entries[g].clocks);
             line.push_back('\n');
             out.append(line);
         }

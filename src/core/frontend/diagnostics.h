@@ -40,6 +40,9 @@ enum class DiagnosticCode : std::uint8_t {
     SdcGeneratedClockAmbiguousSource,
     SdcGeneratedClockMasterCycle,
     SdcFalsePathUnknownClock,
+    CaptureProfileSyntax,
+    CaptureProfileInvalid,
+    CaptureProfileUnknownClock,
 };
 
 std::string_view diagnostic_code_name(DiagnosticCode code);
