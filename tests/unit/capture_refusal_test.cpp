@@ -302,6 +302,67 @@ void test_no_capture_clock() {
            "without a design view condition 5 says nothing");
 }
 
+// The re-derived kind can hand a grouped procedure to condition 1. Here a grouped
+// cycle keeps clk_a and clk_b in one group while the SDC puts them in two, which
+// is allowed while the cycle has a second group: the shape is grouped, so the
+// first trigger does not look at the group. Dropping clk_c's idle clock leaves one
+// group, the shape becomes simultaneous, and the same group is now a capture of two
+// domains on one edge.
+//
+// The behaviour is chosen, not incidental: the exclusion neither splits nor
+// re-groups a surviving group, and condition 1 refuses it. Grading it instead would
+// accept a simultaneous capture across declared groups that the ADR refuses, and
+// keeping the old kind only to avoid the refusal would describe a shape the cycles
+// no longer have.
+void test_exclusion_into_simultaneous() {
+    db::Constraints split;
+    split.present = true;
+    split.complete = true;
+    // One period and no waveform, so condition 3 has nothing to disagree about and
+    // the only thing separating them is the declared group.
+    split.clocks = {make_clock("clk_a", 10.0), make_clock("clk_b", 10.0),
+                    make_clock("clk_c", 20.0)};
+    db::ConstraintClockGroup fast;
+    fast.kind = db::ClockGroupKind::Asynchronous;
+    fast.name = "fast";
+    fast.groups = {{"clk_a"}};
+    db::ConstraintClockGroup slow;
+    slow.kind = db::ClockGroupKind::Asynchronous;
+    slow.name = "slow";
+    slow.groups = {{"clk_b"}};
+    db::ConstraintClockGroup third;
+    third.kind = db::ClockGroupKind::Asynchronous;
+    third.name = "third";
+    third.groups = {{"clk_c"}};
+    split.clock_groups = {fast, slow, third};
+
+    const dft::CaptureProcedure grouped = make_procedure(
+        dft::CaptureKind::Grouped, {cycle_of({make_group(split, {"clk_a", "clk_b"}, 0.0),
+                                              make_group(split, {"clk_c"}, 20.0)})});
+    expect(dft::find_capture_refusals(grouped, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 1}})
+               .empty(),
+           "a grouped cycle may hold clocks the SDC keeps apart");
+
+    std::vector<std::string> dropped;
+    const dft::CaptureProcedure simultaneous = dft::exclude_idle_clocks(
+        grouped, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 0}}, dropped);
+    expect(dropped == (std::vector<std::string>{"clk_c"}), "only the idle clock is dropped");
+    expect(simultaneous.kind == dft::CaptureKind::Simultaneous,
+           "one group left makes the procedure simultaneous");
+
+    const std::vector<dft::CaptureRefusal> refusals =
+        dft::find_capture_refusals(simultaneous, split, {{"clk_a", 1}, {"clk_b", 1}, {"clk_c", 0}});
+    expect(refusals.size() == 1, "the mixed group refuses once the shape is simultaneous");
+    expect(refusals.size() == 1 &&
+               refusals[0].code == dft::CaptureRefusalCode::SimultaneousAcrossGroups,
+           "condition 1 is what refuses it");
+    expect(refusals.size() == 1 &&
+               refusals[0].detail ==
+                   "cycle 0 pulses 'clk_a' (group 'fast') and 'clk_b' (group 'slow'), which "
+                   "set_clock_groups keeps apart",
+           "the finding names the two declared groups the survivor would pulse together");
+}
+
 void test_order() {
     const db::Constraints constraints = make_constraints();
     // One cycle whose group mixes periods, and a later cycle repeating a clock:
@@ -355,6 +416,7 @@ int main() {
     test_group_timing();
     test_clock_repeated();
     test_no_capture_clock();
+    test_exclusion_into_simultaneous();
     test_order();
     test_render();
 
