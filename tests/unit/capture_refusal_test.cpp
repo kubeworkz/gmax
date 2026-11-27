@@ -59,8 +59,12 @@ db::Constraints make_constraints() {
     return constraints;
 }
 
-std::vector<db::ClockGateCount> gates(const std::size_t a, const std::size_t b) {
-    return {{"clk_a", a}, {"clk_b", b}};
+// The per-clock view conditions 2 and 5 read. These fixtures clock edge-triggered
+// elements only, so `captured` equals `gates`; the `scan_*` counts say how many of
+// them the netlist marks as scan cells.
+std::vector<db::ClockGateCount> gates(const std::size_t a, const std::size_t b,
+                                      const std::size_t scan_a = 0, const std::size_t scan_b = 0) {
+    return {{"clk_a", a, a, scan_a}, {"clk_b", b, b, scan_b}};
 }
 
 dft::CaptureGroup make_group(const db::Constraints& constraints,
@@ -105,6 +109,16 @@ std::string detail_of(const std::vector<dft::CaptureRefusal>& refusals,
     return std::string();
 }
 
+std::string fact_of(const std::vector<dft::CaptureRefusal>& refusals,
+                    const dft::CaptureRefusalCode code) {
+    for (const dft::CaptureRefusal& refusal : refusals) {
+        if (refusal.code == code) {
+            return refusal.fact;
+        }
+    }
+    return std::string();
+}
+
 bool contains(const std::string& text, const std::string_view needle) {
     return text.find(needle) != std::string::npos;
 }
@@ -132,9 +146,17 @@ void test_code_names() {
 void test_clean_procedure() {
     const db::Constraints constraints = make_constraints();
     const dft::CaptureProcedure procedure = dft::resolve_capture_procedure(constraints);
-    expect(dft::find_capture_refusals(procedure, constraints, gates(2, 1)).empty(),
+    // The derived procedure captures clk_a before clk_b, so section 2 asks whether
+    // clk_a is fully scanned; answering yes is part of what makes this procedure run.
+    expect(dft::find_capture_refusals(procedure, constraints, gates(2, 1, 2, 0)).empty(),
            "a procedure the design supports is not refused");
-    expect(dft::find_capture_refusals(procedure, constraints, gates(1, 0)).empty(),
+    // A clock that clocks nothing is dropped before the pass runs, so the procedure
+    // it sees has one cycle and no intermediate state to ask about.
+    std::vector<std::string> dropped;
+    const dft::CaptureProcedure single =
+        dft::exclude_idle_clocks(procedure, constraints, gates(1, 0), dropped);
+    expect(dropped == (std::vector<std::string>{"clk_b"}), "the idle clock is dropped");
+    expect(dft::find_capture_refusals(single, constraints, gates(1, 0)).empty(),
            "one dropped clock is not a refusal");
 }
 
@@ -201,6 +223,62 @@ void test_shared_edge() {
                                               make_group(constraints, {"clk_b"}, 20.0)})});
     expect(dft::find_capture_refusals(ok, constraints, gates(1, 1)).empty(),
            "groups at different edges are not a refusal");
+}
+
+// ADR-013 section 2: a domain captured before the last cycle holds a value later
+// cycles read, so a partial scan is refused with the counts that say how partial. A
+// cycle that states nothing keeps the `scanned` default, a masked domain is not asked,
+// and the final cycle owns no intermediate value at all.
+void test_intermediate_state() {
+    using dft::CaptureRefusalCode;
+    const db::Constraints constraints = make_constraints();
+    const dft::CaptureProcedure sequence = make_procedure(
+        dft::CaptureKind::Sequential, {cycle_of({make_group(constraints, {"clk_a"}, 0.0)}),
+                                       cycle_of({make_group(constraints, {"clk_b"}, 0.0)})});
+
+    // A latch on clk_a keeps `gates` above `captured`; the finding counts only what a
+    // capture cycle can pulse, which is the eight edge elements.
+    const std::vector<db::ClockGateCount> partial = {
+        {"clk_a", 9, 8, 3},
+        {"clk_b", 1, 1, 0},
+    };
+    const std::vector<dft::CaptureRefusal> refusals =
+        dft::find_capture_refusals(sequence, constraints, partial);
+    expect(has_code(refusals, CaptureRefusalCode::IntermediateState),
+           "a partially scanned domain is refused");
+    expect(detail_of(refusals, CaptureRefusalCode::IntermediateState) ==
+               "domain 'clk_a' in cycle 0 is neither fully scanned nor masked",
+           "the finding names the cycle and the clock");
+    expect(fact_of(refusals, CaptureRefusalCode::IntermediateState) ==
+               "3 of 8 flops on 'clk_a' are scan cells",
+           "the fact states how far the domain is from scanned");
+
+    const std::vector<db::ClockGateCount> scanned = {
+        {"clk_a", 8, 8, 8},
+        {"clk_b", 1, 1, 0},
+    };
+    expect(!has_code(dft::find_capture_refusals(sequence, constraints, scanned),
+                     CaptureRefusalCode::IntermediateState),
+           "a fully scanned domain needs no mask");
+
+    // The final cycle owns no intermediate value, so its domain is never asked.
+    const std::vector<db::ClockGateCount> late = {
+        {"clk_a", 8, 8, 8},
+        {"clk_b", 4, 4, 0},
+    };
+    expect(!has_code(dft::find_capture_refusals(sequence, constraints, late),
+                     CaptureRefusalCode::IntermediateState),
+           "the final cycle is not asked about");
+
+    dft::CaptureProcedure masked = sequence;
+    masked.cycles[0].intermediate = {{"clk_a", dft::CaptureIntermediateState::Masked}};
+    expect(!has_code(dft::find_capture_refusals(masked, constraints, partial),
+                     CaptureRefusalCode::IntermediateState),
+           "a masked domain is not refused");
+
+    expect(!has_code(dft::find_capture_refusals(sequence, constraints, {}),
+                     CaptureRefusalCode::IntermediateState),
+           "without a design view condition 2 says nothing");
 }
 
 void test_group_timing() {
@@ -375,8 +453,9 @@ void test_order() {
     const dft::CaptureProcedure procedure = make_procedure(
         dft::CaptureKind::Sequential, {cycle_of({make_group(constraints, {"clk_a", "clk_b"}, 0.0)}),
                                        cycle_of({make_group(constraints, {"clk_a"}, 0.0)})});
+    // clk_a is fully scanned, so condition 2 is not one of the three.
     const std::vector<dft::CaptureRefusal> refusals =
-        dft::find_capture_refusals(procedure, constraints, gates(1, 1));
+        dft::find_capture_refusals(procedure, constraints, gates(1, 1, 1, 1));
     expect(refusals.size() == 3, "every condition fires");
     expect(refusals.size() == 3 &&
                refusals[0].code == dft::CaptureRefusalCode::SimultaneousAcrossGroups,
@@ -388,7 +467,7 @@ void test_order() {
            "the later condition follows");
 
     const std::vector<dft::CaptureRefusal> again =
-        dft::find_capture_refusals(procedure, constraints, gates(1, 1));
+        dft::find_capture_refusals(procedure, constraints, gates(1, 1, 1, 1));
     expect(again == refusals, "evaluation is deterministic");
 }
 
@@ -482,6 +561,7 @@ int main() {
     test_clean_procedure();
     test_simultaneous_across_groups();
     test_shared_edge();
+    test_intermediate_state();
     test_group_timing();
     test_clock_repeated();
     test_no_capture_clock();

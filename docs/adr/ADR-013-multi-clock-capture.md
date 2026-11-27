@@ -86,6 +86,12 @@ Anything else is refused (section 4). A mask is recorded in the pattern IR
 (ADR-010) on the cycle and observation it applies to, so replay reproduces it
 exactly.
 
+Until the masking slice lands, the refusal accepts a masked declaration but the
+grading path does not apply it: a run whose procedure masks a domain grades
+without forcing the observations that depend on it, so the `masked` count and its
+per-fault list do not exist yet. A masked domain is an accepted declaration, not
+yet a counted one.
+
 ### 3. Per-group timing sets
 
 Each group of a cycle contributes one timing set, and the pattern IR carries one

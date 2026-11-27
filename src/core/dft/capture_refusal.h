@@ -31,6 +31,9 @@ std::string_view capture_refusal_code_name(CaptureRefusalCode code);
 struct CaptureRefusal {
     CaptureRefusalCode code = CaptureRefusalCode::SimultaneousAcrossGroups;
     std::string detail;
+    // Optional fact printed one level under the detail, for the numbers that make
+    // the finding actionable (condition 2's scan counts). Empty when there are none.
+    std::string fact;
 
     friend bool operator==(const CaptureRefusal&, const CaptureRefusal&) = default;
 };
@@ -44,15 +47,14 @@ struct CaptureRefusal {
 // runs over one input print byte-identical output (ADR-011). An empty result
 // means the procedure may be applied.
 //
-// Conditions 2 (`intermediate-state`) and 6 (`crossing-without-lockup`) are not
-// evaluated by this pass. Condition 6 needs the netlist, so it lives in
+// Condition 2 (`intermediate-state`) is decided here from the per-clock scan
+// counts: a domain a non-final cycle captures is usable only when every element
+// that captures it is a scan cell, or when the cycle declares it masked. Condition
+// 6 (`crossing-without-lockup`) needs the netlist, so it lives in
 // capture_crossing.h, which covers both the same-cycle group pairs and the
-// sequential pairs section 5 names. Section 2 needs
-// the scan-cell observability model (WP-104) to decide whether a domain is fully
-// scanned, and condition 6 needs the DFT003 crossing evaluation with its
-// lockup-latch and false-path excuses (ADR-013 section 5). A check that cannot
-// decide must not refuse a run, so both stay silent rather than guessing at a
-// coverage claim; they arrive with their models, not before.
+// sequential pairs section 5 names, with the lockup-latch and false-path excuses.
+// Neither pass guesses: condition 2 stays silent without a design view, and
+// condition 6 without a crossing.
 std::vector<CaptureRefusal>
 find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& constraints,
                       const std::vector<db::ClockGateCount>& clock_gates);

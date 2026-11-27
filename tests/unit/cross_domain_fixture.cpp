@@ -77,8 +77,11 @@ int main(int argc, char** argv) {
     top.name = "top";
     top.inputs = {"clk_a", "clk_b", "d_a", "d_b"};
     top.outputs = {"q_a", "q_b"};
+    // ADR-013 section 2: every mode's procedure captures clk_a before clk_b, so
+    // clk_a's element is a scan cell and the run is legal on intermediate state. The
+    // property each mode is named for is then the only thing the run can refuse.
     top.gates = {
-        gate(db::GateType::Dff, "ff_a", {"d_a", "clk_a"}, "q_a"),
+        gate(db::GateType::ScanCell, "ff_a", {"d_a", "clk_a"}, "q_a"),
         gate(db::GateType::Dff, "ff_b", {"n_cross", "clk_b"}, "q_b"),
     };
     if (mode == "independent") {
@@ -87,9 +90,9 @@ int main(int argc, char** argv) {
         top.inputs = {"clk_a", "clk_b", "clk_c", "d_a", "d_b", "d_c"};
         top.outputs = {"q_a", "q_b", "q_c"};
         top.gates = {
-            gate(db::GateType::Dff, "ff_a", {"d_a", "clk_a"}, "q_a"),
-            gate(db::GateType::Dff, "ff_b", {"d_b", "clk_b"}, "q_b"),
-            gate(db::GateType::Dff, "ff_c", {"d_c", "clk_c"}, "q_c"),
+            gate(db::GateType::ScanCell, "ff_a", {"d_a", "clk_a"}, "q_a"),
+            gate(db::GateType::ScanCell, "ff_b", {"d_b", "clk_b"}, "q_b"),
+            gate(db::GateType::ScanCell, "ff_c", {"d_c", "clk_c"}, "q_c"),
         };
     } else if (mode == "lockup") {
         // clk_a's flop holds in a latch before clk_b samples it: the lockup latch.

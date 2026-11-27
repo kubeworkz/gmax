@@ -178,6 +178,69 @@ void check_shared_edge(const CaptureProcedure& procedure, std::vector<CaptureRef
     }
 }
 
+// The state section 2 gives one domain of a cycle: the entry the profile wrote, or
+// the `scanned` default when it wrote none.
+CaptureIntermediateState intermediate_state(const CaptureCycle& cycle, const std::string& clock) {
+    for (const auto& entry : cycle.intermediate) {
+        if (entry.first == clock) {
+            return entry.second;
+        }
+    }
+    return CaptureIntermediateState::Scanned;
+}
+
+const db::ClockGateCount* find_clock_gates(const std::vector<db::ClockGateCount>& clock_gates,
+                                           const std::string& clock) {
+    for (const db::ClockGateCount& count : clock_gates) {
+        if (count.clock == clock) {
+            return &count;
+        }
+    }
+    return nullptr;
+}
+
+// Condition 2: a domain a non-final cycle captures holds a value later cycles read,
+// so it is usable only when every element that captures it is a scan cell, or when
+// the cycle declares that domain masked. A cycle that states nothing keeps section
+// 2's `scanned` default, so the question is asked of the domains the cycle captures
+// rather than of the entries the profile happened to write.
+//
+// The counts are `captured` and `scan_cells`, never `gates`: a lockup latch samples
+// the same clock but no capture cycle pulses it, so counting it would refuse the
+// designs section 5 accepts. Without a design view the pass says nothing, like
+// condition 5.
+void check_intermediate_state(const CaptureProcedure& procedure,
+                              const std::vector<db::ClockGateCount>& clock_gates,
+                              std::vector<CaptureRefusal>& refusals) {
+    if (clock_gates.empty()) {
+        return;
+    }
+    for (std::size_t c = 0; c + 1 < procedure.cycles.size(); ++c) {
+        const CaptureCycle& cycle = procedure.cycles[c];
+        for (const CaptureGroup& group : cycle.groups) {
+            for (const std::string& clock : group.timing.clocks) {
+                const CaptureIntermediateState state = intermediate_state(cycle, clock);
+                if (state == CaptureIntermediateState::Masked) {
+                    continue;
+                }
+                const db::ClockGateCount* counts = find_clock_gates(clock_gates, clock);
+                if (counts == nullptr || counts->captured == 0 ||
+                    counts->scan_cells == counts->captured) {
+                    continue;
+                }
+                CaptureRefusal refusal;
+                refusal.code = CaptureRefusalCode::IntermediateState;
+                refusal.detail = "domain '" + clock + "' in cycle " + std::to_string(c) +
+                                 " is neither fully scanned nor masked";
+                refusal.fact = std::to_string(counts->scan_cells) + " of " +
+                               std::to_string(counts->captured) + " flops on '" + clock +
+                               "' are scan cells";
+                refusals.push_back(std::move(refusal));
+            }
+        }
+    }
+}
+
 // Condition 3: a group's clocks disagree on period or waveform.
 void check_group_timing(const CaptureProcedure& procedure, const db::Constraints& constraints,
                         std::vector<CaptureRefusal>& refusals) {
@@ -304,6 +367,7 @@ find_capture_refusals(const CaptureProcedure& procedure, const db::Constraints& 
     // run reports every reason instead of one reason per run.
     check_group_domains(procedure, constraints, refusals);
     check_shared_edge(procedure, refusals);
+    check_intermediate_state(procedure, clock_gates, refusals);
     check_group_timing(procedure, constraints, refusals);
     check_clock_repeated(procedure, refusals);
     check_no_capture_clock(procedure, clock_gates, refusals);
@@ -333,6 +397,9 @@ void write_capture_refusals(std::ostream& out, const std::vector<CaptureRefusal>
     for (const CaptureRefusal& refusal : refusals) {
         out << "gmax:   " << capture_refusal_code_name(refusal.code) << ": " << refusal.detail
             << '\n';
+        if (!refusal.fact.empty()) {
+            out << "gmax:     " << refusal.fact << '\n';
+        }
     }
 }
 

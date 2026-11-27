@@ -129,6 +129,16 @@ add_test(NAME cli.capture-refusal-clock-repeated
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-clock-repeated
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_clock_repeated.cmake)
 
+# Condition 2: a domain the first cycle captures is usable only when it is fully
+# scanned or declared masked, so a partial scan refuses with its counts and the same
+# procedure grades on the fully scanned design.
+add_test(NAME cli.capture-refusal-intermediate
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-intermediate
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_intermediate.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.

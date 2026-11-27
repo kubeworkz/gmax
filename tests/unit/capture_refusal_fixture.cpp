@@ -58,13 +58,13 @@ db::ConstraintClock clock(const std::string& name, const double period) {
 
 int main(int argc, char** argv) {
     if (argc != 4) {
-        std::cerr << "usage: capture_refusal_fixture <no-clock|boundary> <output.dfdb> "
-                     "<output.faults>"
+        std::cerr << "usage: capture_refusal_fixture <no-clock|boundary|partial-scan|full-scan> "
+                     "<output.dfdb> <output.faults>"
                   << std::endl;
         return 1;
     }
     const std::string mode = argv[1];
-    if (mode != "no-clock" && mode != "boundary") {
+    if (mode != "no-clock" && mode != "boundary" && mode != "partial-scan" && mode != "full-scan") {
         std::cerr << "unknown mode '" << mode << "'" << std::endl;
         return 1;
     }
@@ -79,10 +79,32 @@ int main(int argc, char** argv) {
     top.gates = {
         gate(db::GateType::And2, "g_and", {"a", "b"}, "n1"),
     };
+    const bool scan_design = mode == "partial-scan" || mode == "full-scan";
     if (mode == "boundary") {
         // clk_a clocks the only state-holding gate; clk_b clocks nothing.
         top.gates.push_back(gate(db::GateType::Dff, "ff", {"n1", "clk_a"}, "q"));
         top.gates.push_back(gate(db::GateType::Buf, "g_y", {"q"}, "y"));
+    } else if (scan_design) {
+        // Eight edge elements on clk_a and one on clk_b, with a lockup latch on the
+        // path from a clk_a element: a sequential capture is DFT003-clean, so the
+        // only question left is section 2's intermediate state. `full-scan` marks all
+        // eight elements as scan cells; `partial-scan` marks three.
+        const db::GateType repeated =
+            mode == "full-scan" ? db::GateType::ScanCell : db::GateType::Dff;
+        top.inputs = {"clk_a", "clk_b", "d"};
+        top.outputs.clear();
+        top.gates.clear();
+        for (std::size_t i = 0; i < 8; ++i) {
+            const std::string name = "a" + std::to_string(i);
+            top.gates.push_back(gate(i < 3 ? db::GateType::ScanCell : repeated, "ff_" + name,
+                                     {"d", "clk_a"}, "n_" + name));
+            top.gates.push_back(gate(db::GateType::Buf, "g_" + name, {"n_" + name}, "q_" + name));
+            top.outputs.push_back("q_" + name);
+        }
+        top.gates.push_back(gate(db::GateType::Dlat, "dl_cross", {"n_a0", "clk_b"}, "n_hold"));
+        top.gates.push_back(gate(db::GateType::Dff, "ff_b", {"n_hold", "clk_b"}, "n_b"));
+        top.gates.push_back(gate(db::GateType::Buf, "g_b", {"n_b"}, "q_b"));
+        top.outputs.push_back("q_b");
     } else {
         top.gates.push_back(gate(db::GateType::Buf, "g_y", {"n1"}, "y"));
     }
@@ -108,20 +130,29 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const db::NetId y = net_named(database, "y");
-    const db::NetId n1 = net_named(database, "n1");
-    if (y == db::kInvalidId || n1 == db::kInvalidId) {
-        std::cerr << "fixture is missing an expected net" << std::endl;
-        return 1;
+    std::vector<db::NetId> nets;
+    if (scan_design) {
+        nets = {net_named(database, "q_a0"), net_named(database, "n_a0"),
+                net_named(database, "q_b")};
+    } else {
+        nets = {net_named(database, "y"), net_named(database, "n1")};
+    }
+    for (const db::NetId net : nets) {
+        if (net == db::kInvalidId) {
+            std::cerr << "fixture is missing an expected net" << std::endl;
+            return 1;
+        }
     }
 
-    const std::vector<sim::Fault> raw = {
-        {y, sim::StuckValue::Zero},
-        {n1, sim::StuckValue::Zero},
-    };
+    std::vector<sim::Fault> raw;
+    std::vector<std::uint32_t> mapping;
+    for (std::size_t i = 0; i < nets.size(); ++i) {
+        raw.push_back({nets[i], sim::StuckValue::Zero});
+        mapping.push_back(static_cast<std::uint32_t>(i));
+    }
     atpg::CollapsedFaultList collapsed;
     collapsed.faults = raw;
-    collapsed.raw_to_collapsed = {0, 1};
+    collapsed.raw_to_collapsed = mapping;
     const db::Status written = atpg::write_faults(argv[3], database, raw, collapsed);
     if (!written.ok()) {
         std::cerr << "fixture write_faults failed: " << written.message() << std::endl;
