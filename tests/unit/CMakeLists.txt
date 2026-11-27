@@ -66,6 +66,14 @@ target_link_libraries(atpg_cli_fixture PRIVATE gmax_core)
 gmax_set_warnings(atpg_cli_fixture)
 gmax_set_sanitizers(atpg_cli_fixture)
 
+add_executable(capture_refusal_fixture
+  capture_refusal_fixture.cpp)
+
+target_link_libraries(capture_refusal_fixture PRIVATE gmax_core)
+
+gmax_set_warnings(capture_refusal_fixture)
+gmax_set_sanitizers(capture_refusal_fixture)
+
 add_executable(fault_cli_test
   fault_cli_test.cpp)
 
@@ -205,3 +213,13 @@ gmax_set_warnings(capture_profile_test)
 gmax_set_sanitizers(capture_profile_test)
 
 add_test(NAME capture_profile COMMAND capture_profile_test)
+
+add_executable(capture_refusal_test
+  capture_refusal_test.cpp)
+
+target_link_libraries(capture_refusal_test PRIVATE gmax_core)
+
+gmax_set_warnings(capture_refusal_test)
+gmax_set_sanitizers(capture_refusal_test)
+
+add_test(NAME capture_refusal COMMAND capture_refusal_test)

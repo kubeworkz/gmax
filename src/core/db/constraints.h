@@ -188,4 +188,18 @@ struct ClockDomains {
 ClockDomains clock_domains(const Constraints& constraints, const FlatNetlist& flat,
                            const StringTable& strings);
 
+// One declared clock and how many state-holding gates sample its net. The names
+// are sorted and unique; two names on one net appear separately and report the
+// same gates, because they are one domain with two names. A clock whose source
+// resolves to no net is left out, as in `clock_domains`.
+struct ClockGateCount {
+    std::string clock;
+    std::size_t gates = 0;
+
+    friend bool operator==(const ClockGateCount&, const ClockGateCount&) = default;
+};
+
+std::vector<ClockGateCount> clock_gate_counts(const Constraints& constraints,
+                                              const FlatNetlist& flat, const StringTable& strings);
+
 }  // namespace gmax::db

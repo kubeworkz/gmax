@@ -26,6 +26,8 @@
 #include "core/db/db.h"
 #include "core/db/design.h"
 #include "core/db/status.h"
+#include "core/dft/capture.h"
+#include "core/dft/capture_refusal.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/sdc.h"
 #include "core/frontend/sdc_constraints.h"
@@ -419,6 +421,21 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     const std::vector<db::NetId> observables = primary_outputs(database, primary_output_error);
     if (!primary_output_error.empty()) {
         err << "gmax: " << primary_output_error << "\n";
+        return ExitCode::Design;
+    }
+
+    // ADR-013 section 4: a procedure the run cannot apply refuses it here,
+    // after the constraint checks and before the fault list is read, so a refused
+    // run prints no fault count and writes no report. ExitCode::Design is the same
+    // status a load failure and an incomplete set use; refusals add no new code.
+    const gmax::dft::CaptureProcedure capture_procedure =
+        gmax::dft::resolve_capture_procedure(database.constraints());
+    const std::vector<gmax::dft::CaptureRefusal> capture_refusals =
+        gmax::dft::find_capture_refusals(
+            capture_procedure, database.constraints(),
+            db::clock_gate_counts(database.constraints(), database.flat(), database.strings()));
+    if (!capture_refusals.empty()) {
+        gmax::dft::write_capture_refusals(err, capture_refusals);
         return ExitCode::Design;
     }
 

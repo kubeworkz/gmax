@@ -52,6 +52,26 @@ add_test(NAME cli.run-atpg
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-run-atpg
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/run_atpg.cmake)
 
+# ADR-013 section 4: a procedure the run cannot apply refuses the run with exit 2,
+# no fault count, no report and an untouched database. Condition 5 is the one
+# trigger a run can reach on this branch, because the run derives its procedure
+# and the scan model and DFT003 are not implemented yet.
+add_test(NAME cli.capture-refusal-no-clock
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-no-clock
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_no_clock.cmake)
+
+# The granularity boundary of the same condition: one clock that does clock state
+# keeps the run alive, so only an emptied clock list refuses.
+add_test(NAME cli.capture-refusal-boundary
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:capture_refusal_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-refusal-boundary
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_refusal_boundary.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.

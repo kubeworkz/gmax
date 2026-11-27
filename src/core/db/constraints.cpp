@@ -316,4 +316,51 @@ ClockDomains clock_domains(const Constraints& constraints, const FlatNetlist& fl
     return domains;
 }
 
+std::vector<ClockGateCount> clock_gate_counts(const Constraints& constraints,
+                                              const FlatNetlist& flat, const StringTable& strings) {
+    std::vector<ClockGateCount> counts;
+    counts.reserve(constraints.clocks.size());
+    for (const ConstraintClock& clock : constraints.clocks) {
+        if (clock.source.empty()) {
+            continue;
+        }
+        NetId net = kInvalidId;
+        for (NetId candidate = 0; candidate < flat.net_count(); ++candidate) {
+            if (strings.at(flat.name_id[candidate]) == clock.source) {
+                net = candidate;
+                break;
+            }
+        }
+        ClockGateCount count;
+        count.clock = clock.name;
+        if (net != kInvalidId) {
+            for (std::uint32_t gate = 0; gate < flat.gate_count(); ++gate) {
+                if (!state_holding(flat.type[gate])) {
+                    continue;
+                }
+                // A DFF's and a DLAT's second fanin is the clock input, as in
+                // `clock_domains`.
+                const std::uint32_t begin = flat.fanin_begin[gate];
+                if (begin + 1 >= flat.fanin_begin[gate + 1]) {
+                    continue;
+                }
+                if (flat.fanins[begin + 1] == net) {
+                    ++count.gates;
+                }
+            }
+        }
+        counts.push_back(std::move(count));
+    }
+    std::sort(counts.begin(), counts.end(),
+              [](const ClockGateCount& left, const ClockGateCount& right) {
+                  return left.clock < right.clock;
+              });
+    counts.erase(std::unique(counts.begin(), counts.end(),
+                             [](const ClockGateCount& left, const ClockGateCount& right) {
+                                 return left.clock == right.clock;
+                             }),
+                 counts.end());
+    return counts;
+}
+
 }  // namespace gmax::db
