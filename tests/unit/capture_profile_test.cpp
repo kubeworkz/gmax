@@ -143,6 +143,14 @@ void test_unknown_kind() {
     expect(has_code(result, fe::DiagnosticCode::CaptureProfileInvalid), "the finding is invalid");
     expect(names_object(result, "capture.kind"), "the finding names the kind key");
     expect(result.declared, "a refused capture still counts as declared");
+
+    // `none` is the empty procedure's marker, not a capture kind a profile may
+    // declare: a declared procedure always has cycles.
+    const dft::CaptureProfileResult marker =
+        read(R"({"capture": {"kind": "none", "cycles": []}})", make_constraints());
+    expect(!marker.ok, "a profile cannot declare the empty-procedure marker");
+    expect(has_code(marker, fe::DiagnosticCode::CaptureProfileInvalid),
+           "the marker is refused as an invalid kind");
 }
 
 void test_simultaneous() {

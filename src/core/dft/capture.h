@@ -20,6 +20,12 @@ enum class CaptureKind : std::uint8_t {
     Simultaneous,
     Grouped,
     Sequential,
+    // Not a capture kind: the marker an empty procedure carries. A design whose
+    // SDC declares no capture clock has no cycle to describe, and section 6 calls
+    // that `absent` rather than naming a shape, so the model says so instead of
+    // borrowing a kind whose definition the procedure does not meet. No profile may
+    // declare it and no procedure with a cycle carries it.
+    None,
 };
 
 std::string_view capture_kind_name(CaptureKind kind);
@@ -107,8 +113,10 @@ std::uint32_t capture_hash(const CaptureProcedure& procedure);
 // Two or more cycles are sequential, so a design with a single clock comes back
 // simultaneous rather than as a sequential procedure without a second cycle. A
 // clock with no declared group is its own group, so undeclared clocks are never
-// simultaneous. Empty when the constraints declare no clock. Declared rows of
-// set_clock_groups do not enter the derived order; they shape a declared procedure.
+// simultaneous. Empty when the constraints declare no clock, and an empty procedure
+// carries `CaptureKind::None` because it makes no capture claim at all. Declared
+// rows of set_clock_groups do not enter the derived order; they shape a declared
+// procedure.
 CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints);
 
 // The timing set for one group, taking period and waveform from the bytewise

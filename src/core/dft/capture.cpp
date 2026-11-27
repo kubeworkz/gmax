@@ -41,10 +41,13 @@ std::string join(const std::vector<std::string>& names) {
 
 // ADR-013 section 1's shapes, read off the cycles themselves: one cycle with one
 // group is simultaneous, one cycle with several groups is grouped, and two or more
-// cycles are sequential. An empty procedure has no shape; a run that reaches this
-// with no cycle refuses (section 4 condition 5), so the default kind only keeps
-// the encoding total.
+// cycles are sequential. None of the three describes a procedure with no cycle, so
+// an empty procedure carries the `none` marker: it makes no capture claim, which
+// section 6 reports as `absent`, and it does not borrow a shape it fails.
 CaptureKind kind_from_cycles(const std::vector<CaptureCycle>& cycles) {
+    if (cycles.empty()) {
+        return CaptureKind::None;
+    }
     if (cycles.size() != 1) {
         return CaptureKind::Sequential;
     }
@@ -71,8 +74,10 @@ std::string_view capture_kind_name(const CaptureKind kind) {
         return "grouped";
     case CaptureKind::Sequential:
         return "sequential";
+    case CaptureKind::None:
+        return "none";
     }
-    return "sequential";
+    return "none";
 }
 
 std::string_view capture_intermediate_state_name(const CaptureIntermediateState state) {
@@ -227,8 +232,9 @@ CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints) {
     }
     // Section 1 reads the kind off the cycles, and a design with one clock makes
     // one cycle of one group: simultaneous, not a sequential procedure that happens
-    // to have a single cycle. Deriving it here means every caller gets a shape the
-    // ADR allows, whichever entry point built the procedure.
+    // to have a single cycle. No cycle means no capture claim at all, marked `none`.
+    // Deriving it here means every caller gets a shape the ADR allows, whichever
+    // entry point built the procedure.
     procedure.kind = kind_from_cycles(procedure.cycles);
     return procedure;
 }

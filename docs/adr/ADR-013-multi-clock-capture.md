@@ -54,6 +54,12 @@ Three kinds are defined, and no others:
 - **sequential**: two or more cycles, one group each, in order. Legal only when
   every domain captured before the last cycle is scanned or masked (section 2).
 
+A procedure with no cycle is none of these kinds. A design whose constraints
+declare no capture clock makes no capture claim, which section 6 reports as
+`absent`; the model marks its kind `none`, a value no profile can declare and no
+procedure with a cycle carries. The three kinds stay the whole vocabulary of
+capture.
+
 The profile (TBD-06) chooses the kind and the order; the SDC decides which
 clocks exist, their groups and their waveforms. When the profile declares no
 procedure, the engine derives one and marks it `derived`: sequential, one

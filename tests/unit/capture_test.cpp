@@ -158,11 +158,28 @@ void test_derived_procedure() {
 
 void test_empty_procedure() {
     db::Constraints absent;
-    expect(dft::resolve_capture_procedure(absent).cycles.empty(), "no constraints, no cycles");
+    const dft::CaptureProcedure unconstrained = dft::resolve_capture_procedure(absent);
+    expect(unconstrained.cycles.empty(), "no constraints, no cycles");
+    expect(unconstrained.kind == dft::CaptureKind::None,
+           "a design with no constraints claims no capture kind");
 
     db::Constraints declared;
     declared.present = true;
-    expect(dft::resolve_capture_procedure(declared).cycles.empty(), "no clocks, no cycles");
+    const dft::CaptureProcedure clockless = dft::resolve_capture_procedure(declared);
+    expect(clockless.cycles.empty(), "no clocks, no cycles");
+    expect(clockless.kind == dft::CaptureKind::None,
+           "a design with no capture clock claims no capture kind");
+    expect(dft::capture_kind_name(clockless.kind) == "none", "the marker names itself none");
+
+    // None of section 1's shapes fits, so the identity says so instead of naming a
+    // shape the procedure cannot have, and the two empty procedures agree.
+    const std::string payload = dft::canonical_capture_payload(clockless);
+    expect(payload.rfind("gmax-capture-4\nkind\tnone\n", 0) == 0,
+           "the payload marks a procedure that claims no capture");
+    expect(dft::canonical_capture_payload(unconstrained) == payload,
+           "no constraints and no clocks have one identity");
+    expect(dft::capture_hash(clockless) == db::crc32(std::string_view(payload)),
+           "the marker is what the hash covers");
 }
 
 void test_duplicate_clock_kept() {
@@ -388,6 +405,8 @@ void test_clock_exclusion() {
     const dft::CaptureProcedure emptied =
         dft::exclude_idle_clocks(derived, constraints, {{"clk_a", 0}, {"clk_b", 0}}, dropped);
     expect(emptied.cycles.empty(), "dropping every clock empties the procedure");
+    expect(emptied.kind == dft::CaptureKind::None,
+           "an emptied procedure claims no capture kind either");
     expect(dropped == (std::vector<std::string>{"clk_a", "clk_b"}),
            "both drops are reported in name order");
 
