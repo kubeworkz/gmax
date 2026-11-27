@@ -70,4 +70,10 @@ struct CaptureProfileResult {
 CaptureProfileResult read_capture_profile(std::string_view text, const db::Constraints& constraints,
                                           std::string_view source = "<capture-profile>");
 
+// Reads one profile document from `path`. A file that cannot be opened is a
+// diagnostic like any other, so the caller reports I/O and syntax the same way
+// instead of distinguishing them at the call site.
+CaptureProfileResult read_capture_profile_file(const std::string& path,
+                                               const db::Constraints& constraints);
+
 }  // namespace gmax::dft

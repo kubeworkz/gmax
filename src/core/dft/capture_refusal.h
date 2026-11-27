@@ -46,8 +46,8 @@ struct CaptureRefusal {
 //
 // Conditions 2 (`intermediate-state`) and 6 (`crossing-without-lockup`) are not
 // evaluated by this pass. Condition 6 needs the netlist, so it lives in
-// capture_crossing.h and covers the sequential pairs a derived procedure can
-// produce. Section 2 needs
+// capture_crossing.h, which covers both the same-cycle group pairs and the
+// sequential pairs section 5 names. Section 2 needs
 // the scan-cell observability model (WP-104) to decide whether a domain is fully
 // scanned, and condition 6 needs the DFT003 crossing evaluation with its
 // lockup-latch and false-path excuses (ADR-013 section 5). A check that cannot

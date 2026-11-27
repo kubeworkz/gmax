@@ -28,6 +28,7 @@
 #include "core/db/status.h"
 #include "core/dft/capture.h"
 #include "core/dft/capture_crossing.h"
+#include "core/dft/capture_profile.h"
 #include "core/dft/capture_refusal.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/sdc.h"
@@ -128,6 +129,33 @@ bool parse_threads(const Invocation& invocation, std::size_t& threads, std::stri
         threads = static_cast<std::size_t>(value);
     }
     return true;
+}
+
+// The option named `name`, or nullptr when the command line did not carry it. The
+// parser rejects a repeated option, so at most one match exists.
+const OptionValue* find_option(const Invocation& invocation, const std::string_view name) {
+    for (const OptionValue& option : invocation.options) {
+        if (option.name == name) {
+            return &option;
+        }
+    }
+    return nullptr;
+}
+
+// ADR-013 section 4: a profile the reader rejects is an unreadable procedure, which is
+// a run-level failure without a refusal code -- none of the six conditions judged a
+// procedure that never existed. The object path inside the document names the place to
+// fix, and the message already names the file, so no zero line number is printed.
+void print_profile_diagnostics(const std::vector<frontend::Diagnostic>& diagnostics,
+                               std::ostream& err) {
+    for (const frontend::Diagnostic& diagnostic : diagnostics) {
+        err << "gmax: " << frontend::diagnostic_code_name(diagnostic.code) << ": "
+            << diagnostic.message;
+        if (!diagnostic.object.empty()) {
+            err << " (" << diagnostic.object << ')';
+        }
+        err << '\n';
+    }
 }
 
 bool parse_budget(const std::vector<std::string>& positionals, atpg::PodemBudget& budget,
@@ -439,12 +467,35 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     // dropped from the procedure before it is applied, so the procedure the run
     // grades is the one without it. A drop that leaves another clock is a warning;
     // a drop that empties the list is section 4's condition 5.
+    // ADR-013 section 1: the profile declares the procedure and the SDC decides which
+    // clocks exist, their groups and their waveforms, so the document is read against
+    // the constraints the run already loaded. Without one the engine derives the
+    // procedure, and a profile that carries no capture object derives it too.
+    const OptionValue* profile_option = find_option(invocation, "profile");
+    if (profile_option != nullptr && profile_option->value.empty()) {
+        err << "gmax: profile path must not be empty\n";
+        return ExitCode::Usage;
+    }
+    gmax::dft::CaptureProfileResult profile;
+    if (profile_option != nullptr) {
+        profile =
+            gmax::dft::read_capture_profile_file(profile_option->value, database.constraints());
+        if (!profile.ok) {
+            // Section 4: the findings print, the run exits 2 and writes nothing. The
+            // check runs before the fault list is read, like every other refusal.
+            print_profile_diagnostics(profile.diagnostics, err);
+            return ExitCode::Design;
+        }
+    }
+    const gmax::dft::CaptureProcedure declared_procedure =
+        profile.declared ? profile.procedure
+                         : gmax::dft::resolve_capture_procedure(database.constraints());
+
     const std::vector<db::ClockGateCount> clock_gates =
         db::clock_gate_counts(database.constraints(), database.flat(), database.strings());
     std::vector<std::string> dropped_clocks;
-    const gmax::dft::CaptureProcedure capture_procedure =
-        gmax::dft::exclude_idle_clocks(gmax::dft::resolve_capture_procedure(database.constraints()),
-                                       database.constraints(), clock_gates, dropped_clocks);
+    const gmax::dft::CaptureProcedure capture_procedure = gmax::dft::exclude_idle_clocks(
+        declared_procedure, database.constraints(), clock_gates, dropped_clocks);
     // ADR-013 section 5: DFT003 is a question about the design, so it is a second
     // pass over the same procedure. Both passes are merged before the block is
     // written, so one run reports every reason instead of one reason per run.
@@ -1106,6 +1157,7 @@ bool register_commands(Cli& cli, std::string& error) {
         {"report-dir", "directory for coverage.json and manifest.json", false},
     };
     run_spec.options = {
+        {"profile", "capture.json", "capture procedure declaration; derived when absent"},
         {"threads", "N", "worker threads; 1 (the default) stays single-threaded"},
     };
     if (!cli.add_command(std::move(run_spec), run_atpg_handler, error)) {

@@ -185,6 +185,47 @@ std::vector<std::string> cycle_clocks(const CaptureCycle& cycle) {
     return clocks;
 }
 
+// Section 5's other half: every ordered pair of groups in one cycle. The groups of a
+// cycle capture at different edge times, so a path from one group's flop to another's
+// crosses a clock boundary with nothing between the two edges holding the value. A
+// clock the pair repeats is condition 4's finding, not a crossing.
+void check_same_cycle_crossings(const CaptureProcedure& procedure,
+                                const db::Constraints& constraints, const FlatNetlist& flat,
+                                const StringTable& strings, std::vector<CaptureRefusal>& refusals) {
+    for (std::size_t c = 0; c < procedure.cycles.size(); ++c) {
+        const std::vector<CaptureGroup>& groups = procedure.cycles[c].groups;
+        for (std::size_t launch_group = 0; launch_group < groups.size(); ++launch_group) {
+            for (std::size_t capture_group = 0; capture_group < groups.size(); ++capture_group) {
+                if (launch_group == capture_group) {
+                    continue;
+                }
+                for (const std::string& launch : groups[launch_group].timing.clocks) {
+                    const NetId launch_net = clock_net(constraints, flat, strings, launch);
+                    if (launch_net == db::kInvalidId) {
+                        continue;
+                    }
+                    for (const std::string& capture : groups[capture_group].timing.clocks) {
+                        const NetId capture_net = clock_net(constraints, flat, strings, capture);
+                        if (capture == launch || capture_net == db::kInvalidId ||
+                            !crossing_exists(constraints, flat, strings, launch_net, capture_net)) {
+                            continue;
+                        }
+                        CaptureRefusal refusal;
+                        refusal.code = CaptureRefusalCode::CrossingWithoutLockup;
+                        refusal.detail =
+                            "cycle " + std::to_string(c) + " pulses '" + launch + "' at edge " +
+                            db::canonical_decimal(groups[launch_group].timing.edge) + " and '" +
+                            capture + "' at edge " +
+                            db::canonical_decimal(groups[capture_group].timing.edge) +
+                            ", and the path between them has no lockup latch or false path";
+                        refusals.push_back(std::move(refusal));
+                    }
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 std::vector<CaptureRefusal> find_crossing_refusals(const CaptureProcedure& procedure,
@@ -192,6 +233,9 @@ std::vector<CaptureRefusal> find_crossing_refusals(const CaptureProcedure& proce
                                                    const db::FlatNetlist& flat,
                                                    const db::StringTable& strings) {
     std::vector<CaptureRefusal> refusals;
+    // The same-cycle pairs are asked before the sequential ones only so the two halves
+    // read in section 5's order; the caller sorts into contract order either way.
+    check_same_cycle_crossings(procedure, constraints, flat, strings, refusals);
     for (std::size_t earlier = 0; earlier < procedure.cycles.size(); ++earlier) {
         const std::vector<std::string> launch_clocks = cycle_clocks(procedure.cycles[earlier]);
         for (std::size_t later = earlier + 1; later < procedure.cycles.size(); ++later) {

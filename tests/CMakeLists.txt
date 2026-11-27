@@ -83,6 +83,16 @@ add_test(NAME cli.capture-crossing
     -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-crossing
     -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_crossing.cmake)
 
+# ADR-013 sections 1 and 5: --profile makes a declared grouped procedure reachable,
+# so the same-cycle DFT003 pair, a shape the constraints forbid, an unreadable
+# profile and a profile that declares nothing are pinned here.
+add_test(NAME cli.capture-profile
+  COMMAND ${CMAKE_COMMAND}
+    -DGMAX_BINARY=$<TARGET_FILE:gmax>
+    -DFIXTURE_BINARY=$<TARGET_FILE:cross_domain_fixture>
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli-capture-profile
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/process/capture_profile.cmake)
+
 # WP-011's benchmark exit check: the pinned Yosys frontend, fault collapse, and
 # PODEM are exercised on the real ISCAS'85 netlists, including the coverage
 # denominators, hashes, manifest, and repeated-run report determinism.

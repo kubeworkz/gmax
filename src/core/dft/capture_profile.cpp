@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -350,6 +351,25 @@ CaptureProfileResult read_capture_profile(const std::string_view text,
     check_shape(result.procedure, result.diagnostics, source);
     result.ok = !frontend::has_errors(result.diagnostics);
     return result;
+}
+
+CaptureProfileResult read_capture_profile_file(const std::string& path,
+                                               const db::Constraints& constraints) {
+    CaptureProfileResult result;
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        // The document is named in the message as well as the source, because a
+        // caller prints one line per finding and a reader has to know which file.
+        add(result.diagnostics, DiagnosticCode::IoError, {},
+            "cannot open capture profile '" + path + "'", path);
+        return result;
+    }
+    std::string text;
+    char buffer[4096];
+    while (file.read(buffer, static_cast<std::streamsize>(sizeof(buffer))) || file.gcount() > 0) {
+        text.append(buffer, static_cast<std::size_t>(file.gcount()));
+    }
+    return read_capture_profile(text, constraints, path);
 }
 
 }  // namespace gmax::dft

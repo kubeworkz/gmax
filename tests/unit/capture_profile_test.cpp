@@ -538,6 +538,17 @@ void test_intermediate_state() {
            "a null intermediate state materialises nothing");
 }
 
+// A profile that cannot be opened is a diagnostic rather than an exception, so the
+// caller has one way to report a document it cannot use.
+void test_unreadable_file() {
+    const db::Constraints constraints = make_constraints();
+    const dft::CaptureProfileResult missing =
+        dft::read_capture_profile_file("capture-profile-does-not-exist.json", constraints);
+    expect(!missing.ok, "a missing profile is not readable");
+    expect(!missing.declared, "a missing profile declares nothing");
+    expect(has_code(missing, fe::DiagnosticCode::IoError), "the finding is an I/O error");
+}
+
 }  // namespace
 
 int main() {
@@ -554,6 +565,7 @@ int main() {
     test_unknown_keys_ignored();
     test_identity();
     test_intermediate_state();
+    test_unreadable_file();
 
     if (failures != 0) {
         std::cerr << failures << " failure(s)" << std::endl;
