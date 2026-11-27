@@ -33,8 +33,14 @@ namespace gmax::dft {
 // optional diagnostic label and is not part of the procedure identity. `edge` is
 // optional per group, but
 // a cycle gives it for every group or for none: when it gives none, the
-// deterministic default layout of section 3 applies. Unknown keys are ignored so
-// that a newer profile does not fail an older reader.
+// deterministic default layout of section 3 applies. `intermediate` is optional
+// on every cycle but the last, where it is a refusal: it is either one state for
+// the whole cycle (`"intermediate": "masked"`) or the exact mapping from captured
+// clock to state (`{"clk_a": "masked"}`), which names every clock the cycle
+// captures and no other. `scanned` and `masked` are the only states (section 2),
+// and a cycle without the key keeps the `scanned` default, so a profile that does
+// not mention intermediate state reads as fully scanned. Unknown keys are
+// ignored so that a newer profile does not fail an older reader.
 //
 // A clock the constraints do not declare is a parse error rather than a silent
 // zeroed timing set, because the profile may only name clocks the SDC creates.
