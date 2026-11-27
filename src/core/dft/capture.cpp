@@ -63,6 +63,16 @@ std::string_view capture_kind_name(const CaptureKind kind) {
     return "sequential";
 }
 
+std::string_view capture_intermediate_state_name(const CaptureIntermediateState state) {
+    switch (state) {
+    case CaptureIntermediateState::Scanned:
+        return "scanned";
+    case CaptureIntermediateState::Masked:
+        return "masked";
+    }
+    return "scanned";
+}
+
 std::string canonical_capture_payload(const CaptureProcedure& procedure) {
     // Unlike the constraint payload, nothing here is sorted by line: cycle and
     // group order carry meaning (section 1), so they are written in order. Only
@@ -72,8 +82,9 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
     // Version 2 dropped the group label: section 6 excludes provenance, and a
     // label is a diagnostic rather than part of the procedure. Version 3 writes
     // each cycle's groups in edge order, so the same groups listed differently
-    // by a profile produce the same bytes.
-    std::string out = "gmax-capture-3\n";
+    // by a profile produce the same bytes. Version 4 adds the intermediate
+    // state of a non-final cycle's domains (section 5).
+    std::string out = "gmax-capture-4\n";
     append(out, "kind");
     out.append(capture_kind_name(procedure.kind));
     out.push_back('\n');
@@ -133,6 +144,39 @@ std::string canonical_capture_payload(const CaptureProcedure& procedure) {
             line.push_back('\n');
             out.append(line);
         }
+
+        // Section 5: a non-final cycle records what happens to every domain it
+        // does not pulse. The domains come from the cycle's own groups and are
+        // written sorted, so the bytes never depend on how the groups were
+        // ordered. The final cycle observes everything, so it writes no state
+        // and its absence is the encoding.
+        if (c + 1 < procedure.cycles.size()) {
+            std::vector<std::string> domains;
+            for (const CaptureGroup& group : cycle.groups) {
+                for (const std::string& clock : group.timing.clocks) {
+                    if (std::find(domains.begin(), domains.end(), clock) == domains.end()) {
+                        domains.push_back(clock);
+                    }
+                }
+            }
+            std::sort(domains.begin(), domains.end());
+            for (const std::string& domain : domains) {
+                CaptureIntermediateState state = CaptureIntermediateState::Scanned;
+                for (const auto& entry : cycle.intermediate) {
+                    if (entry.first == domain) {
+                        state = entry.second;
+                        break;
+                    }
+                }
+                std::string line;
+                append(line, "intermediate");
+                append_number(line, c);
+                append(line, domain);
+                append(line, capture_intermediate_state_name(state));
+                line.push_back('\n');
+                out.append(line);
+            }
+        }
     }
     return out;
 }
@@ -157,11 +201,16 @@ CaptureProcedure resolve_capture_procedure(const db::Constraints& constraints) {
     std::sort(names.begin(), names.end());
 
     procedure.cycles.reserve(names.size());
-    for (const std::string& name : names) {
+    for (std::size_t i = 0; i < names.size(); ++i) {
         CaptureGroup group;
-        group.timing = capture_timing_set(constraints, {name}, 0.0);
+        group.timing = capture_timing_set(constraints, {names[i]}, 0.0);
         CaptureCycle cycle;
         cycle.groups.push_back(std::move(group));
+        // A cycle the engine does not fill observes nothing, so section 5's
+        // default is stated rather than left implicit on every non-final cycle.
+        if (i + 1 < names.size()) {
+            cycle.intermediate.push_back({names[i], CaptureIntermediateState::Scanned});
+        }
         procedure.cycles.push_back(std::move(cycle));
     }
     return procedure;

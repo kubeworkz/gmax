@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/db/constraints.h"
@@ -22,6 +23,17 @@ enum class CaptureKind : std::uint8_t {
 };
 
 std::string_view capture_kind_name(CaptureKind kind);
+
+// ADR-013 section 5: on a non-final cycle every domain the cycle does not pulse
+// is either fully scanned or masked. `Scanned` is the default and a claim the
+// engine verifies; `Masked` makes every observation depending on the domain an
+// X, so a masked domain has to be recorded explicitly.
+enum class CaptureIntermediateState : std::uint8_t {
+    Scanned,
+    Masked,
+};
+
+std::string_view capture_intermediate_state_name(CaptureIntermediateState state);
 
 // One group's timing set (ADR-013 section 3): the clocks it pulses, the period
 // and waveform they share, and the group's edge time inside its cycle. `clocks`
@@ -53,6 +65,11 @@ struct CaptureGroup {
 
 struct CaptureCycle {
     std::vector<CaptureGroup> groups;
+    // Per-domain intermediate state (section 5), meaningful only on a non-final
+    // cycle. Empty means the default, `Scanned`; a masked domain must be
+    // recorded. Entry order is not identity: the payload writes the domains
+    // sorted by clock name.
+    std::vector<std::pair<std::string, CaptureIntermediateState>> intermediate;
 
     friend bool operator==(const CaptureCycle&, const CaptureCycle&) = default;
 };
@@ -70,9 +87,10 @@ struct CaptureProcedure {
 
 // The canonical payload the capture hash is computed over (ADR-013 section 6):
 // cycles in order, groups in edge order, clocks sorted bytewise within a group,
-// and one decimal encoding. Source paths, comments, whitespace, line and column
-// numbers, database IDs, the `derived` flag and a group's diagnostic label are
-// excluded by construction.
+// each non-final cycle's intermediate state per domain, and one decimal
+// encoding. Source paths, comments, whitespace, line and column numbers,
+// database IDs, the `derived` flag and a group's diagnostic label are excluded
+// by construction.
 std::string canonical_capture_payload(const CaptureProcedure& procedure);
 
 // CRC32 of the canonical payload, printed as eight hex digits like the other

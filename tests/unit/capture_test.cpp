@@ -131,6 +131,15 @@ void test_derived_procedure() {
         expect(procedure.cycles[0].groups[0].timing.period == 10.0, "cycle keeps clk_a period");
         expect(procedure.cycles[0].groups[0].timing.edge == 0.0, "derived cycle starts at zero");
         expect(procedure.cycles[0].groups[0].name.empty(), "a derived group has no SDC name");
+        // Section 5: a non-final cycle states the state of the domain it does not
+        // pulse, and the engine's default is to scan it.
+        expect(procedure.cycles[0].intermediate.size() == 1,
+               "a non-final cycle records one intermediate state");
+        expect(procedure.cycles[0].intermediate[0].first == "clk_a",
+               "the state names the cycle's own domain");
+        expect(procedure.cycles[0].intermediate[0].second == dft::CaptureIntermediateState::Scanned,
+               "the derived default is scanned");
+        expect(procedure.cycles[1].intermediate.empty(), "the final cycle records no state");
     }
 
     const dft::CaptureProcedure again = dft::resolve_capture_procedure(constraints);
@@ -179,7 +188,7 @@ void test_canonical_payload() {
     const dft::CaptureProcedure procedure = dft::resolve_capture_procedure(constraints);
     const std::string payload = dft::canonical_capture_payload(procedure);
 
-    expect(payload.rfind("gmax-capture-3\n", 0) == 0, "payload carries its own version");
+    expect(payload.rfind("gmax-capture-4\n", 0) == 0, "payload carries its own version");
     expect(payload.find("sequential") != std::string::npos, "payload names the kind");
     expect(payload.find("clk_a") != std::string::npos, "payload names the clocks");
     expect(payload.find("derived") == std::string::npos, "provenance is excluded from the payload");
@@ -225,6 +234,29 @@ void test_canonical_payload() {
            "a group label is not hashed");
     expect(dft::canonical_capture_payload(labelled).find("fast_domain") == std::string::npos,
            "the label text never reaches the payload");
+
+    // Section 5: only a non-final cycle writes an intermediate line, the default
+    // is written rather than omitted, and a masked domain changes the identity.
+    expect(payload.find("intermediate\t0\tclk_a\tscanned") != std::string::npos,
+           "a non-final cycle writes its default state");
+    expect(payload.find("intermediate\t1\t") == std::string::npos,
+           "the final cycle writes no intermediate state");
+
+    dft::CaptureProcedure masked = procedure;
+    masked.cycles[0].intermediate[0].second = dft::CaptureIntermediateState::Masked;
+    expect(dft::capture_hash(masked) != dft::capture_hash(procedure),
+           "the intermediate state is part of the hash");
+    expect(dft::canonical_capture_payload(masked).find("intermediate\t0\tclk_a\tmasked") !=
+               std::string::npos,
+           "a masked domain is written as masked");
+
+    // The state belongs to the cycle's domains, so a cycle that pulses both of
+    // its domains in one group still states each of them.
+    dft::CaptureProcedure both = procedure;
+    both.cycles[0].groups[0].timing.clocks = {"clk_a", "clk_b"};
+    expect(dft::canonical_capture_payload(both).find("intermediate\t0\tclk_b\tscanned") !=
+               std::string::npos,
+           "every domain of a cycle is stated");
 }
 
 void test_group_order() {
