@@ -136,7 +136,7 @@ endif()
 #    very design that graded in case 1. The declared kind is what the run applied.
 run(lockup "${WORK_DIR}/simultaneous.json" 2)
 check_contains("${RUN_ERR}"
-    "simultaneous-across-groups: cycle 0 pulses 'clk_a' (no declared group)"
+    "simultaneous-across-groups: cycle 0 pulses 'clk_a' (no declared group) and 'clk_b' (no declared group), which set_clock_groups keeps apart"
     "condition 1 finding")
 check_absent("${RUN_ERR}" "crossing-without-lockup" "one group is one capture edge")
 if(EXISTS "${WORK_DIR}/lockup-report")
