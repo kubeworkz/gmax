@@ -234,7 +234,17 @@ std::string manifest_json(const RunManifest& manifest) {
     out << ",\"command\":\"run_atpg\"";
     out << ",\"design\":{\"name\":" << json_string(manifest.design)
         << ",\"gates\":" << manifest.gates << ",\"nets\":" << manifest.nets << '}';
-    out << ",\"inputs\":{\"profile\":null,\"libraries\":[]";
+    // ADR-013 section 6: a run with a profile reports it as an input with the same
+    // path, hash and algorithm shape the netlist and fault list use, so a masked run
+    // can be audited from its own report instead of the command line that produced it.
+    out << ",\"inputs\":{\"profile\":";
+    if (manifest.profile_path.empty()) {
+        out << "null";
+    } else {
+        out << "{\"path\":" << json_string(manifest.profile_path) << ",\"hash\":\""
+            << hex32(manifest.profile_hash) << "\",\"algorithm\":\"crc32\"}";
+    }
+    out << ",\"libraries\":[]";
     out << ",\"netlist\":{\"path\":" << json_string(manifest.design_path) << ",\"hash\":\""
         << hex32(manifest.netlist_hash) << "\",\"algorithm\":\"crc32\"}";
     out << ",\"fault_list\":{\"path\":" << json_string(manifest.faults_path) << ",\"hash\":\""

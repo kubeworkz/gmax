@@ -176,6 +176,10 @@ The coverage and manifest reports gain one `capture` object inside the existing
 - `hash`: CRC32 of the canonical procedure payload.
 - In the manifest only, `cycles`: the canonical procedure, one entry per cycle
   with its groups, clocks and edge times.
+- In the manifest only, `inputs.profile`: the profile the run read, as its path
+  and the CRC32 of its bytes, or null when the run had none and the procedure
+  was derived. A masked run is auditable from its own report, because the
+  declaration that excuses it is named there.
 
 The procedure payload is canonical: cycles in order, groups in edge order,
 clocks sorted bytewise within a group, numeric fields in one canonical decimal

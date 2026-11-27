@@ -108,6 +108,8 @@ check_text("${manifest}" "\"max_backtracks\":100000" "c432 manifest options")
 check_text("${manifest}" "\"status\":\"complete\"" "c432 manifest result")
 check_text("${manifest}" "\"detected\":479" "c432 manifest result")
 check_text("${manifest}" "\"untestable\":5" "c432 manifest result")
+# No profile was given, so the input is reported as absent rather than invented.
+check_text("${manifest}" "\"inputs\":{\"profile\":null" "c432 manifest profile")
 
 # A time-budget abort must not hand the fault to the SAT closer with a fixed
 # conflict allowance. With a 1 ms per-fault budget PODEM exhausts its deadline

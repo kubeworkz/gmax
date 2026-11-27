@@ -79,6 +79,11 @@ check_contains("${plain_coverage}"
     "unmasked counts")
 file(READ "${WORK_DIR}/plain-report/manifest.json" plain_manifest)
 check_contains("${plain_manifest}" "\"capture\":{\"status\":\"enforced\"" "unmasked capture")
+# The profile is an input of the run, so the manifest names the document it read and
+# the CRC32 of its bytes: the run can be audited from its report alone.
+check_contains("${plain_manifest}"
+    "\"inputs\":{\"profile\":{\"path\":\"${WORK_DIR}/sequential.json\",\"hash\":\"69d832c6\",\"algorithm\":\"crc32\"}"
+    "the plain run records the profile it read")
 
 # 2. Masking clk_a removes the q_a0 observation, so the element fault that needed it
 #    is counted masked inside untestable and the denominators do not move.
@@ -118,6 +123,10 @@ if(NOT masked_entry_count EQUAL 1)
 endif()
 
 # 3. The mask is part of the procedure the run applied, and the run is deterministic.
+file(READ "${WORK_DIR}/masked-report/manifest.json" masked_manifest)
+check_contains("${masked_manifest}"
+    "\"inputs\":{\"profile\":{\"path\":\"${WORK_DIR}/masked.json\",\"hash\":\"145fa428\",\"algorithm\":\"crc32\"}"
+    "the masked run records the profile that declared the mask")
 check_contains("${masked_coverage}"
     "\"capture\":{\"status\":\"enforced\",\"procedure\":\"sequential\"" "masked capture")
 run("${WORK_DIR}/masked.json" "${WORK_DIR}/masked-repeat")

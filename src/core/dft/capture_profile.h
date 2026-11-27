@@ -63,6 +63,12 @@ struct CaptureProfileResult {
     bool declared = false;
     CaptureProcedure procedure;
     std::vector<frontend::Diagnostic> diagnostics;
+    // ADR-013 section 6: the document the run read is a run input, so its path and
+    // the CRC32 of the bytes that were parsed travel with the result. Both are set
+    // even when the document carries no capture object, because the profile is an
+    // input then too; empty and zero only when there was no document at all.
+    std::string path;
+    std::uint32_t hash = 0;
 };
 
 // Parses one profile document against the constraints the SDC produced. `source`

@@ -138,6 +138,11 @@ struct RunManifest {
     std::string constraints_path;
     db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
     std::uint32_t constraints_hash = 0;
+    // ADR-013 section 6: the capture profile is a run input of its own, so it is
+    // reported with the path the run read and the CRC32 of its bytes. Empty when the
+    // run had no profile, which the reader writes as a null input.
+    std::string profile_path;
+    std::uint32_t profile_hash = 0;
     // The same object as the coverage report's, plus the procedure body.
     CaptureReport capture;
     // The same DFT019 findings the coverage report carries.

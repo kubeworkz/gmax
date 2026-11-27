@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/db/constraints.h"
+#include "core/db/crc32.h"
 #include "core/dft/capture.h"
 #include "core/frontend/diagnostics.h"
 #include "core/frontend/json.h"
@@ -282,6 +283,8 @@ CaptureProfileResult read_capture_profile(const std::string_view text,
                                           const db::Constraints& constraints,
                                           const std::string_view source) {
     CaptureProfileResult result;
+    result.path = std::string(source);
+    result.hash = db::crc32(text);
 
     JsonValue root;
     std::string error;

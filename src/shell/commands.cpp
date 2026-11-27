@@ -786,6 +786,8 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         // path is provenance only and is never part of the hash.
         manifest.constraints_status = constraints_status;
         manifest.constraints_hash = constraints_hash_value;
+        manifest.profile_path = profile.path;
+        manifest.profile_hash = profile.hash;
         manifest.capture = capture_report;
         manifest.false_paths = false_path_warnings;
         manifest.gates = database.flat().gate_count();
