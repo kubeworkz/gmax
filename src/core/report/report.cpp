@@ -82,18 +82,61 @@ std::string hex32(const std::uint32_t value) {
     return out.str();
 }
 
+// ADR-013 section 6's `capture` object. An absent run has no procedure, so the
+// kind, provenance and hash are null rather than invented; the manifest also lists
+// the procedure body, which the coverage report leaves to its hash.
+void capture_entry(std::ostringstream& out, const CaptureReport& capture, const bool with_cycles) {
+    out << "{\"status\":\"" << (capture.absent ? "absent" : "enforced") << "\",\"procedure\":";
+    if (capture.absent) {
+        out << "null";
+    } else {
+        out << json_string(capture.procedure);
+    }
+    out << ",\"derived\":" << (capture.derived ? "true" : "false") << ",\"hash\":";
+    if (capture.absent) {
+        out << "null";
+    } else {
+        out << '"' << hex32(capture.hash) << '"';
+    }
+    if (with_cycles) {
+        out << ",\"cycles\":[";
+        for (std::size_t c = 0; c < capture.cycles.size(); ++c) {
+            if (c != 0) {
+                out << ',';
+            }
+            out << "{\"groups\":[";
+            for (std::size_t g = 0; g < capture.cycles[c].groups.size(); ++g) {
+                if (g != 0) {
+                    out << ',';
+                }
+                const CaptureGroupReport& group = capture.cycles[c].groups[g];
+                out << "{\"clocks\":[";
+                for (std::size_t k = 0; k < group.clocks.size(); ++k) {
+                    if (k != 0) {
+                        out << ',';
+                    }
+                    out << json_string(group.clocks[k]);
+                }
+                out << "],\"edge\":" << db::canonical_decimal(group.edge) << '}';
+            }
+            out << "]}";
+        }
+        out << ']';
+    }
+    out << '}';
+}
+
 std::string coverage_json(const CoverageReport& report) {
     const CoverageSummary& summary = report.summary;
     std::ostringstream out;
-    out << "{\"schema\":\"gmax-coverage-2\"";
+    out << "{\"schema\":\"gmax-coverage-3\"";
     out << ",\"design\":" << json_string(report.design);
     out << ",\"netlist_hash\":\"" << hex32(report.netlist_hash) << '"';
     out << ",\"fault_list_hash\":\"" << hex32(report.fault_list_hash) << '"';
     // ADR-012: a separate identity and status. An absent set reports a null
-    // hash rather than a hash of nothing. The enforced list is empty in this
-    // slice because no engine applies resolved values yet, and
-    // capture_constraints stays not-enforced until the scan/multi-clock engine
-    // lands (ADR-012 section 4).
+    // hash rather than a hash of nothing. ADR-013 section 6 replaces the
+    // not-enforced capture string with a `capture` object beside the enforced
+    // list, which names only what the run applied.
     out << ",\"constraints\":{\"status\":\""
         << db::constraints_status_name(report.constraints_status) << "\",\"hash\":";
     if (report.constraints_status == db::ConstraintsStatus::Absent) {
@@ -108,7 +151,9 @@ std::string coverage_json(const CoverageReport& report) {
         }
         out << json_string(report.enforced[index]);
     }
-    out << "],\"capture\":\"not-enforced\"}";
+    out << "],\"capture\":";
+    capture_entry(out, report.capture, false);
+    out << '}';
     out << ",\"counts\":{\"raw\":" << summary.raw << ",\"collapsed\":" << summary.collapsed
         << ",\"detected\":" << summary.detected << ",\"untestable\":" << summary.untestable
         << ",\"aborted\":" << summary.aborted << ",\"raw_detected\":" << summary.raw_detected
@@ -146,7 +191,7 @@ std::string coverage_json(const CoverageReport& report) {
 std::string manifest_json(const RunManifest& manifest) {
     const CoverageSummary& summary = manifest.summary;
     std::ostringstream out;
-    out << "{\"schema\":\"gmax-run-manifest-2\"";
+    out << "{\"schema\":\"gmax-run-manifest-3\"";
     out << ",\"tool\":{\"name\":\"gmax\",\"version\":" << json_string(manifest.tool_version) << '}';
     out << ",\"command\":\"run_atpg\"";
     out << ",\"design\":{\"name\":" << json_string(manifest.design)
@@ -165,7 +210,11 @@ std::string manifest_json(const RunManifest& manifest) {
     } else {
         out << '"' << hex32(manifest.constraints_hash) << '"';
     }
-    out << ",\"algorithm\":\"crc32\"}}";
+    out << ",\"algorithm\":\"crc32\",\"capture\":";
+    capture_entry(out, manifest.capture, true);
+    // The capture object closes itself; these close the constraints object and the
+    // inputs object that holds it.
+    out << "}}";
     out << ",\"coverage\":{\"path\":" << json_string(manifest.coverage_path) << ",\"hash\":\""
         << hex32(manifest.coverage_hash) << "\",\"algorithm\":\"crc32\"}";
     out << ",\"options\":{\"max_backtracks\":" << manifest.budget.max_backtracks

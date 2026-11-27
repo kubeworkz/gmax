@@ -47,6 +47,32 @@ struct CoverageSummary {
     std::size_t backtracks = 0;
 };
 
+// ADR-013 section 6: one group of one capture cycle, as the manifest lists it.
+struct CaptureGroupReport {
+    std::vector<std::string> clocks;  // bytewise sorted, as the payload writes them
+    double edge = 0.0;
+};
+
+struct CaptureCycleReport {
+    std::vector<CaptureGroupReport> groups;  // in edge order, as section 1 orders them
+};
+
+// ADR-013 section 6's `capture` object. `absent` is the run's word for no capture
+// claim: no constraints section, or no capture clock, so no procedure ran. Otherwise
+// a procedure ran and the remaining fields describe it. A refused run writes no
+// report at all, so a refusal never appears here.
+struct CaptureReport {
+    bool absent = true;
+    // The capture kind's name: `simultaneous`, `grouped` or `sequential`. Empty when
+    // absent, because a procedure with no cycle claims no capture and carries no kind.
+    std::string procedure;
+    bool derived = false;
+    std::uint32_t hash = 0;
+    // The canonical procedure body. The coverage report carries the object without
+    // it; the manifest writes it, one entry per cycle.
+    std::vector<CaptureCycleReport> cycles;
+};
+
 struct CoverageReport {
     std::string design;
     std::uint32_t netlist_hash = 0;
@@ -58,6 +84,7 @@ struct CoverageReport {
     db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
     std::uint32_t constraints_hash = 0;
     std::vector<std::string> enforced;
+    CaptureReport capture;
     atpg::PodemBudget budget;
     CoverageSummary summary;
     std::vector<FaultOutcome> faults;
@@ -82,6 +109,8 @@ struct RunManifest {
     std::string constraints_path;
     db::ConstraintsStatus constraints_status = db::ConstraintsStatus::Absent;
     std::uint32_t constraints_hash = 0;
+    // The same object as the coverage report's, plus the procedure body.
+    CaptureReport capture;
     std::uint32_t gates = 0;
     std::uint32_t nets = 0;
     atpg::PodemBudget budget;

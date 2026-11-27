@@ -60,3 +60,29 @@ endif()
 if(NOT EXISTS "${reports}/coverage.json")
     message(FATAL_ERROR "the boundary run wrote no coverage report")
 endif()
+
+# ADR-013 section 6: the run applied the one surviving clock, so the reports claim
+# it as enforced, simultaneous (one cycle with one group) and derived, with the
+# procedure body listing the clock that is actually pulsed.
+file(READ "${reports}/coverage.json" coverage_text)
+string(FIND "${coverage_text}"
+    "\"capture\":{\"status\":\"enforced\",\"procedure\":\"simultaneous\",\"derived\":true,\"hash\":\""
+    capture_position)
+if(capture_position EQUAL -1)
+    message(FATAL_ERROR "the coverage report claims no enforced procedure: ${coverage_text}")
+endif()
+if(NOT EXISTS "${reports}/manifest.json")
+    message(FATAL_ERROR "the boundary run wrote no manifest")
+endif()
+file(READ "${reports}/manifest.json" manifest_text)
+string(FIND "${manifest_text}"
+    "\"capture\":{\"status\":\"enforced\",\"procedure\":\"simultaneous\",\"derived\":true,\"hash\":\""
+    manifest_position)
+if(manifest_position EQUAL -1)
+    message(FATAL_ERROR "the manifest claims no enforced procedure: ${manifest_text}")
+endif()
+string(FIND "${manifest_text}" "\"cycles\":[{\"groups\":[{\"clocks\":[\"clk_a\"],\"edge\":0}]}]"
+    cycles_position)
+if(cycles_position EQUAL -1)
+    message(FATAL_ERROR "the manifest does not carry the applied procedure: ${manifest_text}")
+endif()

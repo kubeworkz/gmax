@@ -17,6 +17,7 @@
 #include "core/db/dfdb.h"
 #include "core/db/flat.h"
 #include "core/db/string_table.h"
+#include "core/frontend/json.h"
 #include "core/report/report.h"
 
 namespace db = gmax::db;
@@ -382,8 +383,8 @@ void test_report_claims_no_enforcement() {
     report.constraints_status = db::ConstraintsStatus::Complete;
     report.constraints_hash = 0x1234abcdu;
     const std::string json = gmax::report::coverage_json(report);
-    expect(json.find("\"schema\":\"gmax-coverage-2\"") != std::string::npos,
-           "the coverage schema is the constraint-aware one");
+    expect(json.find("\"schema\":\"gmax-coverage-3\"") != std::string::npos,
+           "the coverage schema is the capture-aware one");
     std::string constraints_object = "\"constraints\":{\"status\":\"complete\",\"hash\":\"";
     constraints_object += gmax::report::hex32(0x1234abcdu);
     constraints_object += '"';
@@ -393,8 +394,80 @@ void test_report_claims_no_enforcement() {
            "the enforced set is empty until enforcement lands");
     expect(json.find("\"enforced\":[\"case_analysis\"]") == std::string::npos,
            "the report never claims case analysis");
-    expect(json.find("\"capture\":\"not-enforced\"") != std::string::npos,
-           "capture constraints remain not enforced");
+    expect(json.find("\"capture\":{\"status\":\"absent\",\"procedure\":null,"
+                     "\"derived\":false,\"hash\":null}") != std::string::npos,
+           "a report with no procedure claims no capture");
+}
+
+// ADR-013 section 6: the capture object names the procedure the run applied, its
+// provenance and its payload hash, and only the manifest carries the body.
+void test_report_capture_object() {
+    gmax::report::CoverageReport coverage;
+    coverage.design = "top";
+    coverage.constraints_status = db::ConstraintsStatus::Complete;
+    coverage.constraints_hash = 0x1234abcdu;
+    coverage.capture.absent = false;
+    coverage.capture.procedure = "grouped";
+    coverage.capture.derived = true;
+    coverage.capture.hash = 0x00abcdefu;
+    gmax::report::CaptureGroupReport group;
+    group.clocks = {"clk_a", "clk_b"};
+    group.edge = 12.5;
+    gmax::report::CaptureCycleReport cycle;
+    cycle.groups = {group};
+    coverage.capture.cycles = {cycle};
+
+    const std::string json = gmax::report::coverage_json(coverage);
+    expect(json.find("\"capture\":{\"status\":\"enforced\",\"procedure\":\"grouped\","
+                     "\"derived\":true,\"hash\":\"00abcdef\"}") != std::string::npos,
+           "a graded run reports the procedure it applied");
+    expect(json.find("cycles") == std::string::npos,
+           "the coverage report carries no procedure body");
+
+    // The reports are hand-built, so they are parsed rather than matched: a broken
+    // brace or a comma in the wrong place would pass every substring check.
+    gmax::frontend::JsonValue coverage_parse;
+    std::string parse_error;
+    expect(gmax::frontend::parse_json(json, coverage_parse, parse_error),
+           "the coverage report is well-formed JSON");
+    const gmax::frontend::JsonValue* coverage_capture = coverage_parse.find("constraints");
+    if (coverage_capture != nullptr) {
+        coverage_capture = coverage_capture->find("capture");
+    }
+    expect(coverage_capture != nullptr, "the coverage report carries the capture object");
+    expect(coverage_capture != nullptr && coverage_capture->find("status") != nullptr,
+           "the capture object carries its status");
+    expect(coverage_capture != nullptr && coverage_capture->find("cycles") == nullptr,
+           "the coverage capture object carries no procedure body");
+
+    gmax::report::RunManifest manifest;
+    manifest.tool_version = "0.1.0";
+    manifest.capture = coverage.capture;
+    const std::string manifest_text = gmax::report::manifest_json(manifest);
+    expect(manifest_text.find("\"schema\":\"gmax-run-manifest-3\"") != std::string::npos,
+           "the manifest schema carries the capture object");
+    gmax::frontend::JsonValue manifest_parse;
+    expect(gmax::frontend::parse_json(manifest_text, manifest_parse, parse_error),
+           "the manifest is well-formed JSON");
+    const gmax::frontend::JsonValue* inputs = manifest_parse.find("inputs");
+    const gmax::frontend::JsonValue* manifest_capture =
+        inputs == nullptr ? nullptr : inputs->find("constraints");
+    if (manifest_capture != nullptr) {
+        manifest_capture = manifest_capture->find("capture");
+    }
+    expect(manifest_capture != nullptr,
+           "the manifest carries the capture object inside inputs.constraints");
+    const gmax::frontend::JsonValue* cycles =
+        manifest_capture == nullptr ? nullptr : manifest_capture->find("cycles");
+    expect(cycles != nullptr && cycles->is_array() && cycles->array.size() == 1,
+           "the manifest lists one cycle of the applied procedure");
+
+    expect(manifest_text.find("\"capture\":{\"status\":\"enforced\","
+                              "\"procedure\":\"grouped\",\"derived\":true,"
+                              "\"hash\":\"00abcdef\",\"cycles\":[{\"groups\":"
+                              "[{\"clocks\":[\"clk_a\",\"clk_b\"],\"edge\":12.5}]}]}") !=
+               std::string::npos,
+           "the manifest carries the canonical procedure with its clocks and edge");
 }
 
 }  // namespace
@@ -409,6 +482,7 @@ int main() {
     test_podem_applies_case_analysis();
     test_sat_applies_case_analysis();
     test_report_claims_no_enforcement();
+    test_report_capture_object();
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed" << std::endl;
         return 1;

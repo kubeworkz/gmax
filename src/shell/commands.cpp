@@ -599,6 +599,29 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
     if (!case_assignments.empty()) {
         coverage.enforced.emplace_back("case_analysis");
     }
+    // ADR-013 section 6: the capture object. A procedure with no cycle makes no
+    // capture claim, which the report calls `absent`; anything else reached grading,
+    // so its procedure is `enforced` and the hash covers the canonical payload the
+    // run actually applied.
+    report::CaptureReport capture_report;
+    capture_report.absent = capture_procedure.cycles.empty();
+    if (!capture_report.absent) {
+        capture_report.procedure =
+            std::string(gmax::dft::capture_kind_name(capture_procedure.kind));
+        capture_report.derived = capture_procedure.derived;
+        capture_report.hash = gmax::dft::capture_hash(capture_procedure);
+        for (const gmax::dft::CaptureCycle& cycle : capture_procedure.cycles) {
+            report::CaptureCycleReport cycle_report;
+            for (const gmax::dft::CaptureGroup& group : cycle.groups) {
+                report::CaptureGroupReport group_report;
+                group_report.clocks = group.timing.clocks;
+                group_report.edge = group.timing.edge;
+                cycle_report.groups.push_back(std::move(group_report));
+            }
+            capture_report.cycles.push_back(std::move(cycle_report));
+        }
+    }
+    coverage.capture = capture_report;
     coverage.budget = budget;
     coverage.summary = summary;
     coverage.faults = std::move(outcomes);
@@ -630,6 +653,7 @@ ExitCode run_atpg_handler(const Invocation& invocation, std::ostream& out, std::
         // path is provenance only and is never part of the hash.
         manifest.constraints_status = constraints_status;
         manifest.constraints_hash = constraints_hash_value;
+        manifest.capture = capture_report;
         manifest.gates = database.flat().gate_count();
         manifest.nets = database.flat().net_count();
         manifest.budget = budget;

@@ -1,8 +1,9 @@
 # ADR-012: a clock is enforceable only on a top-level input port. read_sdc
 # resolves every clock source, warns when one lands anywhere else, and reports
 # how many declared clocks actually clock a state-holding gate. Clocks change no
-# fault outcome, so the graded run's coverage block keeps an empty enforced list
-# and capture not-enforced.
+# fault outcome, so the graded run's coverage block keeps an empty enforced list.
+# A graded run reports the procedure it applied in the capture object (ADR-013
+# section 6), not a flat not-enforced string.
 #
 # The sequential fixture is saved by a C++ fixture rather than ingested through
 # Yosys: the pinned recipe is structural, this test is about the constraint view
